@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="img/favicon.png" />
+  <title>CONTACT - ADACT</title>
+  <link rel="stylesheet" href="css/adact-styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+</head>
+
+<body>
+  <div class="wrapper">
+    <header class="header">
+      <div class="header__container">
+        <a href="index.html" class="header__logo logo"><img src="img/LOGO-Slogan-Grey.png" alt="ADACT" /><span
+            class="header__logo-text">ADACT</span></a>
+        <div class="header__navigation">
+          <div class="header__menu menu">
+            <nav class="menu__body">
+              <ul class="menu__list">
+                <li class="menu__item"><a href="index.html" class="menu__link">Home</a></li>
+                <li class="menu__item"><a href="about.html" class="menu__link">About</a></li>
+                <li class="menu__item"><a href="services.html" class="menu__link">Services</a></li>
+              </ul>
+              <a href="contact.html" class="actions-header__button">Contact Us</a>
+            </nav>
+          </div>
+          <div class="header__actions actions-header">
+            <button type="button" class="menu__icon icon-menu"><span></span></button>
+          </div>
+        </div>
+      </div>
+      <div class="header__tagline">
+        <span class="header__tagline-text">Driven To Deliver</span>
+      </div>
+    </header>
+    <main class="page">
+      <section class="page__main main main_contact main_pages"
+        style="background-image: url('img/Contact.jpg'); background-size: cover; background-position: center;">
+        <div class="main__container main__container_pages">
+          <h1 class="main__title">Contact Us</h1>
+          <div class="main__text main__text_pages">
+            Get in touch with our team to discuss your ADAC and civil engineering drafting needs.
+          </div>
+        </div>
+      </section>
+      <section class="page__contact contact">
+        <div class="contact__container">
+          <div class="contact__content">
+            <div class="contact__form">
+              <form action="https://formsubmit.co/adactgroup@gmail.com" method="POST" id="contact-form">
+                <input type="hidden" name="_captcha" value="false">
+                <input type="hidden" name="_next" value="https://www.adactgroup.com/thank-you.html">
+                <div class="form__group required">
+                  <label for="name" class="form__label">Your Name</label>
+                  <input type="text" id="name" name="name" class="form__input" placeholder="Enter your full name"
+                    required />
+                </div>
+                <div class="form__group required">
+                  <label for="email" class="form__label">Your Email</label>
+                  <input type="email" id="email" name="email" class="form__input" placeholder="Enter your email address"
+                    required />
+                </div>
+                <div class="form__group">
+                  <label for="phone" class="form__label">Your Phone</label>
+                  <input type="tel" id="phone" name="phone" class="form__input" placeholder="Enter your phone number" />
+                </div>
+                <div class="form__group">
+                  <label for="service" class="form__label">Service Required</label>
+                  <select id="service" name="service" class="form__input">
+                    <option value="">Select a service</option>
+                    <option value="adac">ADAC Files Creation</option>
+                    <option value="as-constructed">As-Constructed Plans</option>
+                    <option value="civil">Civil Engineering Drafting</option>
+                  </select>
+                </div>
+                <div class="form__group required">
+                  <label for="message" class="form__label">Your Message</label>
+                  <textarea id="message" name="message" class="form__textarea"
+                    placeholder="Please describe your project or inquiry" required></textarea>
+                </div>
+                <button type="submit" class="button">
+                  <i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Send Message
+                </button>
+              </form>
+            </div>
+            <div class="contact__info">
+              <div class="contact-info">
+                <div class="contact-info__item">
+                  <div class="contact-info__icon">
+                    <i class="fas fa-map-marker-alt"></i>
+                  </div>
+                  <div class="contact-info__content">
+                    <h3 class="contact-info__title">Our Location</h3>
+                    <p class="contact-info__text">Sunshine Coast, Queensland, Australia</p>
+                  </div>
+                </div>
+                <div class="contact-info__item">
+                  <div class="contact-info__icon">
+                    <i class="fas fa-phone"></i>
+                  </div>
+                  <div class="contact-info__content">
+                    <h3 class="contact-info__title">Phone</h3>
+                    <p class="contact-info__text">+61 123 456 789</p>
+                  </div>
+                </div>
+                <div class="contact-info__item">
+                  <div class="contact-info__icon">
+                    <i class="fas fa-envelope"></i>
+                  </div>
+                  <div class="contact-info__content">
+                    <h3 class="contact-info__title">Email</h3>
+                    <p class="contact-info__text">adactgroup@gmail.com</p>
+                  </div>
+                </div>
+                <div class="contact-info__item">
+                  <div class="contact-info__icon">
+                    <i class="fas fa-clock"></i>
+                  </div>
+                  <div class="contact-info__content">
+                    <h3 class="contact-info__title">Business Hours</h3>
+                    <p class="contact-info__text">Monday - Friday: 9:00 AM - 5:00 PM</p>
+                  </div>
+                </div>
+              </div>
+              <div class="map">
+                <iframe
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d117858.72176898754!2d152.833333!3d-26.65!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x6b9c5c3c3c3c3c3c%3A0x3c3c3c3c3c3c3c3c!2sSunshine%20Coast%2C%20QLD!5e0!3m2!1sen!2sau!4v1620000000000!5m2!1sen!2sau"
+                  allowfullscreen="" loading="lazy"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="footer">
+      <div class="footer__container">
+        <div class="footer__info">
+          <a href="index.html" class="footer__logo">
+            <img src="img/LOGO-Black-Transparent.png" alt="ADACT" />
+          </a>
+          <div class="footer__brand">
+            <span class="footer__brand-name">ADACT</span>
+            <span class="footer__brand-tagline">Driven to Deliver</span>
+          </div>
+          <a href="mailto:AdactGroup@Gmail.com" class="footer__email">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 4L8 9L2 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round" />
+              <rect x="1" y="3" width="14" height="10" rx="1" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+            AdactGroup@Gmail.com
+          </a>
+        </div>
+        <div class="footer__copyright">Copyright © 2025 ADACT – All Rights Reserved</div>
+      </div>
+    </footer>
+  </div>
+  <script src="js/script.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const contactForm = document.getElementById('contact-form');
+      const submitButton = contactForm.querySelector('button[type="submit"]');
+
+      if (contactForm) {
+        contactForm.addEventListener('submit', function (e) {
+          // Disable submit button and show loading state
+          submitButton.disabled = true;
+          submitButton.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>Sending...';
+
+          // Basic form validation
+          const name = document.getElementById('name').value;
+          const email = document.getElementById('email').value;
+          const message = document.getElementById('message').value;
+
+          if (!name || !email || !message) {
+            e.preventDefault();
+            alert('Please fill in all required fields.');
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Send Message';
+          }
+        });
+      }
+    });
+  </script>
+</body>
+
+</html>
