@@ -164,20 +164,68 @@
       const contactForm = document.getElementById('contact-form');
       const submitButton = contactForm.querySelector('button[type="submit"]');
 
+      // Sanitization function to remove potentially harmful characters
+      function sanitizeInput(input) {
+        // Remove HTML tags
+        input = input.replace(/<[^>]*>/g, '');
+        // Remove script tags and their content
+        input = input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        // Remove potentially harmful characters
+        input = input.replace(/[<>"'&]/g, '');
+        // Trim whitespace
+        return input.trim();
+      }
+
+      // Email validation function
+      function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+      }
+
+      // Phone number validation function
+      function isValidPhone(phone) {
+        if (!phone) return true; // Phone is optional
+        const phoneRegex = /^[\d\s+\-()]{8,}$/;
+        return phoneRegex.test(phone);
+      }
+
       if (contactForm) {
         contactForm.addEventListener('submit', function (e) {
           // Disable submit button and show loading state
           submitButton.disabled = true;
           submitButton.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>Sending...';
 
-          // Basic form validation
-          const name = document.getElementById('name').value;
-          const email = document.getElementById('email').value;
-          const message = document.getElementById('message').value;
+          // Get form values
+          const name = sanitizeInput(document.getElementById('name').value);
+          const email = sanitizeInput(document.getElementById('email').value);
+          const phone = sanitizeInput(document.getElementById('phone').value);
+          const service = sanitizeInput(document.getElementById('service').value);
+          const message = sanitizeInput(document.getElementById('message').value);
 
-          if (!name || !email || !message) {
+          // Validate inputs
+          let isValid = true;
+          let errorMessage = '';
+
+          if (!name) {
+            isValid = false;
+            errorMessage = 'Please enter your name.';
+          } else if (!email) {
+            isValid = false;
+            errorMessage = 'Please enter your email address.';
+          } else if (!isValidEmail(email)) {
+            isValid = false;
+            errorMessage = 'Please enter a valid email address.';
+          } else if (!isValidPhone(phone)) {
+            isValid = false;
+            errorMessage = 'Please enter a valid phone number.';
+          } else if (!message) {
+            isValid = false;
+            errorMessage = 'Please enter your message.';
+          }
+
+          if (!isValid) {
             e.preventDefault();
-            alert('Please fill in all required fields.');
+            alert(errorMessage);
             submitButton.disabled = false;
             submitButton.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Send Message';
           }
