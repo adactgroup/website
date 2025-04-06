@@ -57,15 +57,18 @@
                   <label for="name" class="form__label">Your Name</label>
                   <input type="text" id="name" name="name" class="form__input" placeholder="Enter your full name"
                     required />
+                  <div class="form__error" id="name-error"></div>
                 </div>
                 <div class="form__group required">
                   <label for="email" class="form__label">Your Email</label>
                   <input type="email" id="email" name="email" class="form__input" placeholder="Enter your email address"
                     required />
+                  <div class="form__error" id="email-error"></div>
                 </div>
                 <div class="form__group">
                   <label for="phone" class="form__label">Your Phone</label>
                   <input type="tel" id="phone" name="phone" class="form__input" placeholder="Enter your phone number" />
+                  <div class="form__error" id="phone-error"></div>
                 </div>
                 <div class="form__group">
                   <label for="service" class="form__label">Service Required</label>
@@ -75,11 +78,13 @@
                     <option value="as-constructed">As-Constructed Plans</option>
                     <option value="civil">Civil Engineering Drafting</option>
                   </select>
+                  <div class="form__error" id="service-error"></div>
                 </div>
                 <div class="form__group required">
                   <label for="message" class="form__label">Your Message</label>
                   <textarea id="message" name="message" class="form__textarea"
                     placeholder="Please describe your project or inquiry" required></textarea>
+                  <div class="form__error" id="message-error"></div>
                 </div>
                 <button type="submit" class="button">
                   <i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Send Message
@@ -189,11 +194,30 @@
         return phoneRegex.test(phone);
       }
 
+      // Function to show error message
+      function showError(fieldId, message) {
+        const errorElement = document.getElementById(`${fieldId}-error`);
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+        document.getElementById(fieldId).classList.add('form__input--error');
+      }
+
+      // Function to clear error message
+      function clearError(fieldId) {
+        const errorElement = document.getElementById(`${fieldId}-error`);
+        errorElement.textContent = '';
+        errorElement.style.display = 'none';
+        document.getElementById(fieldId).classList.remove('form__input--error');
+      }
+
       if (contactForm) {
         contactForm.addEventListener('submit', function (e) {
           // Disable submit button and show loading state
           submitButton.disabled = true;
           submitButton.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>Sending...';
+
+          // Clear all previous errors
+          ['name', 'email', 'phone', 'service', 'message'].forEach(field => clearError(field));
 
           // Get form values
           const name = sanitizeInput(document.getElementById('name').value);
@@ -204,31 +228,42 @@
 
           // Validate inputs
           let isValid = true;
-          let errorMessage = '';
 
           if (!name) {
             isValid = false;
-            errorMessage = 'Please enter your name.';
-          } else if (!email) {
+            showError('name', 'Please enter your name');
+          }
+
+          if (!email) {
             isValid = false;
-            errorMessage = 'Please enter your email address.';
+            showError('email', 'Please enter your email address');
           } else if (!isValidEmail(email)) {
             isValid = false;
-            errorMessage = 'Please enter a valid email address.';
-          } else if (!isValidPhone(phone)) {
+            showError('email', 'Please enter a valid email address');
+          }
+
+          if (!isValidPhone(phone)) {
             isValid = false;
-            errorMessage = 'Please enter a valid phone number.';
-          } else if (!message) {
+            showError('phone', 'Please enter a valid phone number');
+          }
+
+          if (!message) {
             isValid = false;
-            errorMessage = 'Please enter your message.';
+            showError('message', 'Please enter your message');
           }
 
           if (!isValid) {
             e.preventDefault();
-            alert(errorMessage);
             submitButton.disabled = false;
             submitButton.innerHTML = '<i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Send Message';
           }
+        });
+
+        // Add input event listeners to clear errors when user types
+        ['name', 'email', 'phone', 'service', 'message'].forEach(field => {
+          document.getElementById(field).addEventListener('input', function () {
+            clearError(field);
+          });
         });
       }
     });

@@ -2320,3 +2320,18 @@ button:disabled {
         width: 100%;
     }
 }
+
+.form__error {
+    display: none;
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.form__input--error {
+    border-color: #dc3545 !important;
+}
+
+.form__input--error:focus {
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
