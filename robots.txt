@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://adactgroup.com.au/sitemap.xml
