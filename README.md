@@ -36,4 +36,4 @@ https://yourusername.github.io/adact-website/
 ## Contact
 
 For any inquiries, please contact:
-- Email: AdactGroup@Gmail.com 
+- Email: projects@adact.com.au
