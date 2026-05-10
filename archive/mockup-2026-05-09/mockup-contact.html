@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact | ADACT Website Mockup</title>
+  <meta name="description"
+    content="Professional contact page mockup for ADACT project enquiries and ADAC file quote requests." />
+  <link rel="stylesheet" href="css/mockup-pages.css" />
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="topbar">
+      <div class="topbar__inner">
+        <span>ADAC files, as-constructed plans, and civil engineering drafting for infrastructure projects</span>
+        <a href="mailto:projects@adact.com.au">projects@adact.com.au</a>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Main navigation">
+      <a class="brand" href="mockup-professional.html">
+        <img src="img/LOGO-Black-Transparent.png" alt="ADACT logo" />
+        <span>
+          <span class="brand__name">ADACT</span>
+          <span class="brand__tagline">Driven to deliver</span>
+        </span>
+      </a>
+      <div class="nav__links">
+        <a href="mockup-professional.html">Home</a>
+        <a href="mockup-about.html">About</a>
+        <a href="mockup-services.html">Services</a>
+        <a href="mockup-contact.html" class="is-current">Contact</a>
+      </div>
+      <a class="button" href="mockup-contact.html">Contact Us</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-hero" style="--page-image: url('img/project-images/contact-hero.png');" aria-labelledby="page-title">
+      <img class="page-hero__image" src="img/project-images/contact-hero.png" alt="" aria-hidden="true" />
+      <div class="page-hero__inner">
+        <span class="eyebrow">Contact</span>
+        <h1 id="page-title">Contact Us</h1>
+        <p>
+          Get in touch with our team to discuss your ADAC and civil engineering drafting needs.
+        </p>
+      </div>
+    </section>
+
+    <section class="section section--muted">
+      <div class="section-inner contact-layout">
+        <div class="contact-aside">
+          <aside class="contact-card">
+            <p class="section-kicker">Project enquiries</p>
+            <h2>Get in touch with our team.</h2>
+            <p>
+              We're available to contact 24/7. Send your project enquiry and ADACT will come back to you as soon as
+              possible.
+            </p>
+
+            <div class="contact-list">
+              <div>
+                <strong>Email</strong>
+                <a href="mailto:projects@adact.com.au">projects@adact.com.au</a>
+              </div>
+              <div>
+                <strong>Phone</strong>
+                <a href="tel:0422899019">0422 899 019</a>
+              </div>
+              <div>
+                <strong>Location</strong>
+                <span>Based on the Sunshine Coast, servicing projects across Australia</span>
+              </div>
+            </div>
+          </aside>
+
+          <div class="contact-image">
+            <img src="img/project-images/contact-us.png" alt="ADACT contact page preview" />
+          </div>
+        </div>
+
+        <form class="form" action="https://formsubmit.co/projects@adact.com.au" method="POST">
+          <input type="hidden" name="_subject" value="New ADACT project enquiry" />
+          <input type="hidden" name="_captcha" value="false" />
+
+          <label>
+            Your Name
+            <input type="text" name="name" placeholder="Enter your full name" required />
+          </label>
+
+          <label>
+            Your Email
+            <input type="email" name="email" placeholder="Enter your email address" required />
+          </label>
+
+          <label>
+            Your Phone
+            <input type="tel" name="phone" placeholder="Enter your phone number" />
+          </label>
+
+          <label>
+            Service Required
+            <select name="service" required>
+              <option value="">Select a service</option>
+              <option value="ADAC File Creation">ADAC File Creation</option>
+              <option value="As-Constructed Plans">As-Constructed Plans</option>
+              <option value="Civil Engineering Drafting">Civil Engineering Drafting</option>
+            </select>
+          </label>
+
+          <label>
+            Your Message
+            <textarea name="message" placeholder="Please describe your project or inquiry" required></textarea>
+          </label>
+
+          <button class="button" type="submit">Send Message</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-inner">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Before you send</p>
+            <h2>Helpful details for your enquiry.</h2>
+          </div>
+          <p>
+            A few useful details help ADACT understand your project and respond with the right next step.
+          </p>
+        </div>
+
+        <div class="grid-3">
+          <article class="panel">
+            <div class="panel__body">
+              <span class="panel__label">Service</span>
+              <h3>Service required</h3>
+              <p>Let us know whether you need ADAC files, as-constructed plans, or civil engineering drafting.</p>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel__body">
+              <span class="panel__label">Project</span>
+              <h3>Project or inquiry</h3>
+              <p>Describe the project and include any relevant survey files, design plans, or documentation.</p>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel__body">
+              <span class="panel__label">Contact</span>
+              <h3>Contact details</h3>
+              <p>Include the best email and phone number so ADACT can get back to you quickly.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <span>ADACT Group · ABN 36 633 668 743</span>
+      <span>Servicing projects across Australia</span>
+    </div>
+  </footer>
+</body>
+
+</html>
