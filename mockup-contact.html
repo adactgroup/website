@@ -122,10 +122,11 @@
                 <span class="contact__kicker">Project details</span>
                 <h2>Request a quote</h2>
               </div>
-              <form action="https://formsubmit.co/projects@adact.com.au" method="POST" id="contact-form"
-                enctype="multipart/form-data">
-                <input type="hidden" name="_captcha" value="false">
-                <input type="hidden" name="_next" value="mockup-thank-you.html">
+              <form action="https://api.web3forms.com/submit" method="POST" id="contact-form">
+                <input type="hidden" name="access_key" value="0f09de80-04f6-4ea0-b465-9aa96c5789a1">
+                <input type="hidden" name="subject" value="New ADACT website enquiry">
+                <input type="hidden" name="from_name" value="ADACT Website">
+                <input type="hidden" name="redirect" value="https://www.adact.com.au/thank-you.html">
                 <div class="form__group required">
                   <label for="name" class="form__label">Your Name</label>
                   <input type="text" id="name" name="name" class="form__input" placeholder="Enter your full name"
@@ -150,11 +151,8 @@
                   <div class="form__error" id="message-error"></div>
                 </div>
                 <div class="form__group">
-                  <label for="attachment" class="form__label">Project File</label>
-                  <input type="file" id="attachment" name="attachment[]" class="form__input form__file"
-                    accept=".pdf,.dwg,.dxf,.xml,.zip,.png,.jpg,.jpeg" multiple />
-                  <p class="form__help">Optional. Attach PDF, DWG/DXF, XML, ZIP or image files up to 10MB total.</p>
-                  <div class="form__error" id="attachment-error"></div>
+                  <p class="form__help">For project files, please email plans, survey files or supporting documentation
+                    to <a href="mailto:projects@adact.com.au">projects@adact.com.au</a>.</p>
                 </div>
                 <button type="submit" class="button">
                   Send Message
@@ -234,14 +232,13 @@
           submitButton.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i>Sending...';
 
           // Clear all previous errors
-          ['name', 'email', 'phone', 'message', 'attachment'].forEach(field => clearError(field));
+          ['name', 'email', 'phone', 'message'].forEach(field => clearError(field));
 
           // Get form values
           const name = sanitizeInput(document.getElementById('name').value);
           const email = sanitizeInput(document.getElementById('email').value);
           const phone = sanitizeInput(document.getElementById('phone').value);
           const message = sanitizeInput(document.getElementById('message').value);
-          const attachments = Array.from(document.getElementById('attachment').files);
 
           // Validate inputs
           let isValid = true;
@@ -269,12 +266,6 @@
             showError('message', 'Please enter your project information');
           }
 
-          const attachmentSize = attachments.reduce((total, file) => total + file.size, 0);
-          if (attachmentSize > 10 * 1024 * 1024) {
-            isValid = false;
-            showError('attachment', 'Please keep attachments under 10MB total');
-          }
-
           if (!isValid) {
             e.preventDefault();
             submitButton.disabled = false;
@@ -283,7 +274,7 @@
         });
 
         // Add input event listeners to clear errors when user types
-        ['name', 'email', 'phone', 'message', 'attachment'].forEach(field => {
+        ['name', 'email', 'phone', 'message'].forEach(field => {
           const fieldElement = document.getElementById(field);
           if (fieldElement) {
             fieldElement.addEventListener('input', function () {
