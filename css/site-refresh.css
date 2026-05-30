@@ -397,7 +397,7 @@ h3,
     gap: 54px;
     width: min(1200px, calc(100% - 48px));
     margin: 0 auto;
-    padding: 86px 0;
+    padding: 86px 0 42px;
 }
 
 .about-story__kicker,
@@ -477,7 +477,7 @@ h3,
     align-items: center;
     width: min(1200px, calc(100% - 48px));
     margin: 0 auto;
-    padding: 0 0 86px;
+    padding: 42px 0 86px;
 }
 
 .about-owner__portrait {
