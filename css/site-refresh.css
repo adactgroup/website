@@ -466,6 +466,77 @@ h3,
     line-height: 1.44;
 }
 
+.about-owner {
+    background: #ffffff;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.about-owner__container {
+    display: grid;
+    grid-template-columns: minmax(180px, 300px) minmax(0, 1fr);
+    gap: 46px;
+    align-items: center;
+    width: min(1200px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 0 0 86px;
+}
+
+.about-owner__portrait {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 4 / 5;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--mockup-line);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.about-owner__portrait img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: cover;
+    object-position: center 28%;
+    display: block;
+}
+
+.about-owner__content {
+    max-width: 760px;
+}
+
+.about-owner__kicker {
+    display: inline-flex;
+    margin-bottom: 16px;
+    color: var(--mockup-blue);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.about-owner__title {
+    margin: 0 0 18px;
+    color: var(--mockup-ink);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+    font-weight: 800;
+    line-height: 1.08;
+}
+
+.about-owner__content p {
+    margin: 0;
+    color: var(--mockup-body);
+    font-size: 1.08rem;
+    line-height: 1.58;
+}
+
+.about-owner__content p + p {
+    margin-top: 14px;
+}
+
 .about-capabilities {
     background: var(--mockup-panel);
 }
@@ -931,6 +1002,15 @@ h3,
     border-radius: 8px;
     color: var(--mockup-navy);
     font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-weight: 800;
+}
+
+.contact-panel__contact-name {
+    display: block;
+    margin-top: 8px;
+    color: var(--mockup-body);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 0.96rem;
     font-weight: 800;
 }
 
@@ -1502,6 +1582,19 @@ h3,
     background: rgba(255, 255, 255, 0.08);
 }
 
+.contact-strip__button--phone {
+    flex-direction: column;
+    gap: 4px;
+    line-height: 1.05;
+}
+
+.contact-strip__button--phone span {
+    font-size: 0.78rem;
+    font-weight: 800;
+    opacity: 0.82;
+    text-transform: uppercase;
+}
+
 .contact-strip__button--primary {
     border-color: #ffffff;
     background: #ffffff;
@@ -1636,15 +1729,22 @@ h3,
 
     .about-story__container,
     .about-capabilities__container,
+    .about-owner__container,
     .about-pricing__container {
         width: min(100% - 32px, 1200px);
     }
 
     .about-story__container,
+    .about-owner__container,
     .about-pricing__container {
         grid-template-columns: 1fr;
         gap: 28px;
         padding: 58px 0;
+    }
+
+    .about-owner__portrait {
+        width: min(100%, 280px);
+        justify-self: start;
     }
 
     .about-capabilities__container {
