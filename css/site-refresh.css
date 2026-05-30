@@ -389,7 +389,6 @@ h3,
 
 .about-story {
     background: #ffffff;
-    border-bottom: 1px solid var(--mockup-line);
 }
 
 .about-story__container {
@@ -485,6 +484,7 @@ h3,
     display: flex;
     align-items: center;
     justify-content: center;
+    justify-self: center;
     aspect-ratio: 4 / 5;
     min-height: 0;
     overflow: hidden;
@@ -1744,7 +1744,7 @@ h3,
 
     .about-owner__portrait {
         width: min(100%, 280px);
-        justify-self: start;
+        justify-self: center;
     }
 
     .about-capabilities__container {
