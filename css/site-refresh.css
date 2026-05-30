@@ -970,8 +970,8 @@ h3,
 
 .contact-panel {
     display: grid;
-    gap: 14px;
-    padding: 30px;
+    gap: 18px;
+    padding: 28px;
 }
 
 .contact-panel__label {
@@ -983,26 +983,44 @@ h3,
     text-transform: uppercase;
 }
 
-.contact-panel__primary {
-    color: var(--mockup-ink);
-    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
-    font-size: clamp(1.15rem, 2vw, 1.6rem);
-    font-weight: 800;
-    line-height: 1.15;
+.contact-panel__methods {
+    display: grid;
+    gap: 12px;
 }
 
-.contact-panel__phone {
+.contact-panel__method {
     display: inline-flex;
-    min-height: 50px;
+    min-height: 52px;
     align-items: center;
     justify-content: center;
-    justify-self: start;
-    padding: 12px 18px;
+    min-width: 0;
+    padding: 13px 22px;
     border: 1px solid var(--mockup-line);
     border-radius: 8px;
+    background: #ffffff;
     color: var(--mockup-navy);
     font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 1.02rem;
     font-weight: 800;
+    line-height: 1;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.contact-panel__method:hover {
+    border-color: rgba(11, 31, 58, 0.3);
+    background: #eef4fa;
+}
+
+.contact-panel__method--primary {
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+.contact-panel__method--primary:hover {
+    background: #08264c;
+    color: #ffffff;
 }
 
 .contact-image {
@@ -1837,7 +1855,7 @@ h3,
         border-left: 0;
     }
 
-    .contact-panel__phone {
+    .contact-panel__method {
         width: 100%;
     }
 
