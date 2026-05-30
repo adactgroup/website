@@ -1005,15 +1005,6 @@ h3,
     font-weight: 800;
 }
 
-.contact-panel__contact-name {
-    display: block;
-    margin-top: 8px;
-    color: var(--mockup-body);
-    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
-    font-size: 0.96rem;
-    font-weight: 800;
-}
-
 .contact-image {
     min-height: 260px;
     overflow: hidden;
@@ -1580,19 +1571,6 @@ h3,
 .contact-strip__button:hover {
     border-color: rgba(255, 255, 255, 0.7);
     background: rgba(255, 255, 255, 0.08);
-}
-
-.contact-strip__button--phone {
-    flex-direction: column;
-    gap: 4px;
-    line-height: 1.05;
-}
-
-.contact-strip__button--phone span {
-    font-size: 0.78rem;
-    font-weight: 800;
-    opacity: 0.82;
-    text-transform: uppercase;
 }
 
 .contact-strip__button--primary {
