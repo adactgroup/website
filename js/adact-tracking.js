@@ -2,10 +2,18 @@
   window.dataLayer = window.dataLayer || [];
 
   function pushEvent(name, data) {
-    window.dataLayer.push(Object.assign({
+    var eventData = Object.assign({
       event: name,
       page_path: window.location.pathname
-    }, data || {}));
+    }, data || {});
+
+    window.dataLayer.push(eventData);
+
+    if (typeof window.gtag === 'function') {
+      var analyticsData = Object.assign({}, eventData);
+      delete analyticsData.event;
+      window.gtag('event', name, analyticsData);
+    }
   }
 
   function isQuoteLink(link, text, href) {
