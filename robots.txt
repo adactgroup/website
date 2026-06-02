@@ -1,3 +1,7 @@
 User-agent: *
 Allow: /
-Sitemap: https://adactgroup.com.au/sitemap.xml
+Disallow: /img/Blake.png
+Disallow: /img/Jayden.jpeg
+Disallow: /img/James.jpeg
+Disallow: /img/Alex.jpeg
+Sitemap: https://adact.com.au/sitemap.xml
