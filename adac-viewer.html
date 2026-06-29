@@ -13,15 +13,15 @@
   </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Open an ADAC XML file in the ADACT browser viewer to inspect mapped assets, layers, attributes and basic file checks." />
-  <meta name="keywords" content="ADAC viewer, ADAC XML viewer, ADACT, civil asset mapping, infrastructure assets, ADAC files" />
+  <meta name="description" content="Use the free ADACT ADAC XML Viewer to upload ADAC files, inspect mapped infrastructure assets, review layers, attributes, labels and basic file checks online." />
+  <meta name="keywords" content="ADAC XML viewer, ADAC viewer, free ADAC viewer, online ADAC XML viewer, open ADAC XML file, ADACT, civil asset mapping, infrastructure assets" />
   <link rel="icon" href="favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="512x512" href="img/favicon.png" />
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
   <link rel="canonical" href="https://adact.com.au/adac-viewer.html" />
-  <title>ADAC Viewer | ADACT</title>
-  <meta property="og:title" content="ADAC Viewer | ADACT" />
-  <meta property="og:description" content="Inspect ADAC XML assets, map geometry, layers and attributes in a browser-based viewer." />
+  <title>ADAC XML Viewer | Free Online ADAC Viewer Tool | ADACT</title>
+  <meta property="og:title" content="ADAC XML Viewer | Free Online ADAC Viewer Tool | ADACT" />
+  <meta property="og:description" content="Upload ADAC XML files to inspect mapped civil infrastructure assets, layers, labels, attributes and basic file checks in a browser-based viewer." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://adact.com.au/adac-viewer.html" />
   <meta property="og:image" content="https://adact.com.au/img/adact-search-preview.png" />
@@ -32,12 +32,97 @@
   <meta name="geo.position" content="-27.4698;153.0251" />
   <meta name="ICBM" content="-27.4698, 153.0251" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="ADAC Viewer | ADACT" />
-  <meta name="twitter:description" content="Inspect ADAC XML assets, map geometry, layers and attributes in a browser-based viewer." />
+  <meta name="twitter:title" content="ADAC XML Viewer | Free Online ADAC Viewer Tool | ADACT" />
+  <meta name="twitter:description" content="Upload ADAC XML files to inspect mapped civil infrastructure assets, layers, labels, attributes and basic file checks in a browser-based viewer." />
   <meta name="twitter:image" content="https://adact.com.au/img/adact-search-preview.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "@id": "https://adact.com.au/adac-viewer.html#webapp",
+        "name": "ADACT ADAC XML Viewer",
+        "alternateName": "ADAC Viewer",
+        "url": "https://adact.com.au/adac-viewer.html",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "browserRequirements": "Requires a modern web browser with JavaScript enabled.",
+        "description": "A free online ADAC XML viewer for uploading ADAC files and inspecting mapped civil infrastructure assets, layers, labels, attributes and basic file checks.",
+        "image": "https://adact.com.au/img/adact-search-preview.png",
+        "publisher": {
+          "@type": "Organization",
+          "name": "ADACT",
+          "url": "https://adact.com.au/",
+          "logo": "https://adact.com.au/img/LOGO-Slogan-Black.png"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "AUD"
+        },
+        "featureList": [
+          "Upload one or more ADAC XML files",
+          "Inspect mapped civil infrastructure assets",
+          "Toggle asset layers and reference overlays",
+          "Review asset attributes, geometry and labels",
+          "Export an ADAC report PDF"
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "@id": "https://adact.com.au/adac-viewer.html#breadcrumb",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://adact.com.au/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "ADAC XML Viewer",
+            "item": "https://adact.com.au/adac-viewer.html"
+          }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://adact.com.au/adac-viewer.html#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is the ADACT ADAC XML Viewer?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The ADACT ADAC XML Viewer is a free browser-based tool for opening ADAC XML files and reviewing mapped infrastructure assets, layers, labels, attributes and basic file checks."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Who is the ADAC Viewer for?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The viewer is intended for engineers, surveyors, asset managers, developers and project teams who need to inspect ADAC XML files before submission, review or handover."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does the ADAC Viewer replace certified validation?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. The viewer assists with review and interpretation only. Users should still confirm ADAC XML data against council, utility, project and professional requirements."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260629b" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260629c" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -74,9 +159,9 @@
         <div class="adac-viewer__mast">
           <div>
             <span class="adac-viewer__kicker">ADAC Viewer</span>
-            <h1 class="adac-viewer__title">Inspect ADAC XML files on a live asset map</h1>
+            <h1 class="adac-viewer__title">Free ADAC XML Viewer for civil infrastructure assets</h1>
             <p class="adac-viewer__intro">
-              Upload ADAC XML files to review mapped geometry, asset layers, properties and basic file checks directly in your browser.
+              Upload ADAC XML files to review mapped geometry, asset layers, labels, attributes, reports and basic file checks directly in your browser.
             </p>
           </div>
           <div class="adac-viewer__actions" aria-label="ADAC viewer actions">
@@ -301,6 +386,56 @@
             </div>
           </aside>
         </div>
+
+        <section class="adac-viewer__seo" aria-labelledby="adac-viewer-about-title">
+          <div class="adac-viewer__seo-heading">
+            <span class="adac-viewer__seo-kicker">Online ADAC XML viewer</span>
+            <h2 id="adac-viewer-about-title">Open, inspect and review ADAC XML files online</h2>
+            <p>
+              The ADACT ADAC Viewer is a free browser-based tool for reviewing ADAC XML files used in civil infrastructure and as constructed asset handover workflows. Upload one or more XML files to inspect mapped assets, layer groups, attributes, labels, geometry and basic file checks in a visual workspace.
+            </p>
+          </div>
+          <div class="adac-viewer__seo-grid">
+            <article class="adac-viewer__seo-card">
+              <h3>What the ADAC Viewer checks</h3>
+              <p>
+                Review asset locations, point, line and polygon geometry, ADAC IDs, status, owner, notes, layer visibility, mapped labels and report-ready asset details before progressing files through project review or submission.
+              </p>
+            </article>
+            <article class="adac-viewer__seo-card">
+              <h3>Who uses the tool</h3>
+              <p>
+                Engineers, surveyors, asset managers, developers and project teams can use the viewer to open ADAC XML files, compare mapped assets, inspect attributes and communicate issues quickly during handover review.
+              </p>
+            </article>
+            <article class="adac-viewer__seo-card">
+              <h3>ADAC XML review support</h3>
+              <p>
+                The viewer assists with ADAC XML review and interpretation. It does not replace certified engineering validation, council or utility acceptance checks, survey verification, or project-specific submission requirements.
+              </p>
+            </article>
+          </div>
+          <div class="adac-viewer__faq" aria-label="ADAC Viewer frequently asked questions">
+            <details>
+              <summary>What is the ADACT ADAC XML Viewer?</summary>
+              <p>
+                It is a free online ADAC XML viewer for opening ADAC files and reviewing mapped civil infrastructure assets, layers, labels, attributes and basic file checks.
+              </p>
+            </details>
+            <details>
+              <summary>Who is the ADAC Viewer for?</summary>
+              <p>
+                It is designed for engineers, surveyors, asset managers, developers and project teams who need to inspect ADAC XML files before submission, review or handover.
+              </p>
+            </details>
+            <details>
+              <summary>Does the ADAC Viewer replace certified validation?</summary>
+              <p>
+                No. The viewer is an inspection and review aid only. Users should confirm ADAC XML data against council, utility, project and professional requirements before relying on it.
+              </p>
+            </details>
+          </div>
+        </section>
       </section>
 
       <div class="viewer-terms-modal" data-role="terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title" hidden>
