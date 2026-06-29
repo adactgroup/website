@@ -2,12 +2,15 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://adact.com.au/</loc>
+    <lastmod>2026-06-29</lastmod>
   </url>
   <url>
     <loc>https://adact.com.au/about.html</loc>
+    <lastmod>2026-06-29</lastmod>
   </url>
   <url>
     <loc>https://adact.com.au/services.html</loc>
+    <lastmod>2026-06-29</lastmod>
   </url>
   <url>
     <loc>https://adact.com.au/adac-viewer.html</loc>
@@ -15,8 +18,6 @@
   </url>
   <url>
     <loc>https://adact.com.au/contact.html</loc>
-  </url>
-  <url>
-    <loc>https://adact.com.au/thank-you.html</loc>
+    <lastmod>2026-06-29</lastmod>
   </url>
 </urlset>
