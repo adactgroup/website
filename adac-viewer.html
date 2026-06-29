@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FXJD98BGY9"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-FXJD98BGY9');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Open an ADAC XML file in the ADACT browser viewer to inspect mapped assets, layers, attributes and basic file checks." />
+  <meta name="keywords" content="ADAC viewer, ADAC XML viewer, ADACT, civil asset mapping, infrastructure assets, ADAC files" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="512x512" href="img/favicon.png" />
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
+  <link rel="canonical" href="https://adact.com.au/adac-viewer.html" />
+  <title>ADAC Viewer | ADACT</title>
+  <meta property="og:title" content="ADAC Viewer | ADACT" />
+  <meta property="og:description" content="Inspect ADAC XML assets, map geometry, layers and attributes in a browser-based viewer." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://adact.com.au/adac-viewer.html" />
+  <meta property="og:image" content="https://adact.com.au/img/adact-search-preview.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="geo.region" content="AU-QLD" />
+  <meta name="geo.placename" content="Queensland" />
+  <meta name="geo.position" content="-27.4698;153.0251" />
+  <meta name="ICBM" content="-27.4698, 153.0251" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="ADAC Viewer | ADACT" />
+  <meta name="twitter:description" content="Inspect ADAC XML assets, map geometry, layers and attributes in a browser-based viewer." />
+  <meta name="twitter:image" content="https://adact.com.au/img/adact-search-preview.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="css/adact-styles.css" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260629b" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+</head>
+
+<body>
+  <div class="wrapper">
+    <header class="header">
+      <div class="header__container">
+        <a href="index.html" class="header__logo logo"><img src="img/mockup-header-logo.png" alt="ADACT" /><span
+            class="header__logo-text">ADACT</span></a>
+        <div class="header__navigation">
+          <div class="header__menu menu">
+            <nav class="menu__body" aria-label="Main navigation">
+              <ul class="menu__list">
+                <li class="menu__item"><a href="index.html" class="menu__link">Home</a></li>
+                <li class="menu__item"><a href="about.html" class="menu__link">About</a></li>
+                <li class="menu__item"><a href="services.html" class="menu__link">Services</a></li>
+                <li class="menu__item"><a href="adac-viewer.html" class="menu__link menu__link--active">ADAC Viewer</a></li>
+              </ul>
+              <a href="contact.html" class="actions-header__button">Contact Us</a>
+            </nav>
+          </div>
+          <div class="header__actions actions-header">
+            <button type="button" class="menu__icon icon-menu"><span></span></button>
+          </div>
+        </div>
+      </div>
+      <div class="header__tagline">
+        <span class="header__tagline-text">Driven To Deliver</span>
+      </div>
+    </header>
+
+    <main class="page viewer-page">
+      <section class="adac-viewer" id="adac-viewer" aria-label="ADAC XML viewer">
+        <div class="adac-viewer__mast">
+          <div>
+            <span class="adac-viewer__kicker">ADAC Viewer</span>
+            <h1 class="adac-viewer__title">Inspect ADAC XML files on a live asset map</h1>
+            <p class="adac-viewer__intro">
+              Upload ADAC XML files to review mapped geometry, asset layers, properties and basic file checks directly in your browser.
+            </p>
+          </div>
+          <div class="adac-viewer__actions" aria-label="ADAC viewer actions">
+            <label class="viewer-button viewer-button--primary" for="adac-file-input">
+              <i class="fa-solid fa-upload" aria-hidden="true"></i>
+              <span>Upload XMLs</span>
+            </label>
+            <input type="file" id="adac-file-input" class="adac-viewer__file-input" accept=".xml,text/xml,application/xml" multiple />
+            <span class="viewer-report-export">
+              <button class="viewer-button" type="button" data-action="export-report-pdf" data-role="export-report-pdf" aria-haspopup="dialog" aria-expanded="false" hidden>
+                <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+                <span>Download report PDF</span>
+              </button>
+              <span class="viewer-report-menu" data-role="report-export-menu" role="dialog" aria-label="Report export options" hidden>
+                <span class="viewer-report-menu__panel">
+                  <span class="viewer-report-menu__header">
+                    <span>Report export</span>
+                    <button type="button" class="viewer-report-menu__close" data-action="close-report-export-menu" aria-label="Close report export options">
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                  <button class="viewer-report-menu__option" type="button" data-action="export-combined-report-pdf">
+                    <strong>One combined report</strong>
+                    <small>All loaded XMLs in one PDF</small>
+                  </button>
+                  <button class="viewer-report-menu__option" type="button" data-action="export-separate-report-pdfs">
+                    <strong>Separate reports</strong>
+                    <small>One PDF per XML</small>
+                  </button>
+                </span>
+              </span>
+            </span>
+            <button class="viewer-button" type="button" data-action="clear-files">
+              <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+              <span>Clear</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="viewer-status" role="status" aria-live="polite">
+          <span class="viewer-status__dot"></span>
+          <span class="viewer-status__message" data-role="status-text">Load a file or sample to begin.</span>
+          <details class="viewer-status-checks">
+            <summary class="viewer-status-checks__summary">
+              <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+              <span>Validation</span>
+              <strong data-role="check-count">0 checks</strong>
+            </summary>
+            <ul class="viewer-checks" data-role="check-list"></ul>
+          </details>
+        </div>
+
+        <div class="viewer-shell">
+          <section class="viewer-map-panel" aria-label="Mapped ADAC assets">
+            <div class="viewer-toolbar">
+              <div class="viewer-search">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" data-role="asset-search" placeholder="Search assets, layers or IDs" aria-label="Search ADAC assets" />
+              </div>
+              <div class="viewer-basemap-switch" aria-label="Map background">
+                <button type="button" class="is-active" data-map-mode="grid" aria-pressed="true">Grid</button>
+                <button type="button" data-map-mode="map" aria-pressed="false">Map</button>
+                <button type="button" data-map-mode="satellite" aria-pressed="false">Satellite</button>
+              </div>
+              <div class="viewer-tool-buttons" aria-label="Map tools">
+                <button type="button" data-action="fit" title="Fit map" aria-label="Fit map">
+                  <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                </button>
+                <span class="viewer-label-tool">
+                  <button type="button" data-action="toggle-label-menu" data-role="label-button" title="Labels" aria-label="Labels" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                  </button>
+                  <span class="viewer-label-menu" data-role="label-menu" role="dialog" aria-label="Label options" hidden>
+                    <span class="viewer-label-menu__panel">
+                      <button type="button" data-action="set-label-simple">
+                        <strong>Simple</strong>
+                        <small>Asset ID</small>
+                      </button>
+                      <button type="button" data-action="set-label-detailed">
+                        <strong>Detailed</strong>
+                        <small>As Constructed Labels</small>
+                      </button>
+                      <button type="button" data-action="set-label-off">
+                        <strong>Off</strong>
+                        <small>Hide asset labels</small>
+                      </button>
+                    </span>
+                  </span>
+                </span>
+                <span class="viewer-measure-tool">
+                  <button type="button" data-action="toggle-measure-menu" data-role="measurement-button" title="Measurements" aria-label="Measurements" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fa-solid fa-ruler-combined" aria-hidden="true"></i>
+                  </button>
+                  <span class="viewer-measure-menu" data-role="measurement-menu" role="dialog" aria-label="Measurement tools" hidden>
+                    <span class="viewer-measure-menu__panel">
+                      <button type="button" data-action="set-measure-distance">
+                        <strong>Distance</strong>
+                        <small>Line length</small>
+                      </button>
+                      <button type="button" data-action="set-measure-area">
+                        <strong>Area</strong>
+                        <small>Closed polygon</small>
+                      </button>
+                      <button type="button" data-action="clear-measurement">
+                        <strong>Clear</strong>
+                        <small>Stop measuring</small>
+                      </button>
+                    </span>
+                  </span>
+                </span>
+                <button type="button" data-action="open-terms" data-role="terms-button" title="Terms and conditions" aria-label="Terms and conditions" aria-haspopup="dialog" aria-expanded="false">
+                  <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div class="viewer-canvas-wrap">
+              <details class="viewer-map-layer-panel">
+                <summary class="viewer-map-layer-panel__summary">
+                  <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                  <span>Layers</span>
+                  <strong data-role="visible-layer-count">0 visible</strong>
+                </summary>
+                <div class="viewer-map-layer-panel__body">
+                  <div class="viewer-layer-stack">
+                    <section class="viewer-layer-section" aria-label="XML asset layers">
+                      <div class="viewer-layer-section__heading">
+                        <span>XML assets</span>
+                        <strong>Asset layers</strong>
+                      </div>
+                      <div class="viewer-layer-list" data-role="layer-list"></div>
+                    </section>
+                    <section class="viewer-layer-section" aria-label="Map overlay layers">
+                      <div class="viewer-layer-section__heading">
+                        <span>Map overlays</span>
+                        <strong data-role="overlay-status">All off</strong>
+                      </div>
+                      <div class="viewer-overlay-list" data-role="overlay-list"></div>
+                    </section>
+                  </div>
+                </div>
+              </details>
+              <details class="viewer-map-label-panel" data-role="label-layer-panel" hidden>
+                <summary class="viewer-map-layer-panel__summary">
+                  <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                  <span>Labels</span>
+                  <strong data-role="visible-label-count">0 visible</strong>
+                </summary>
+                <div class="viewer-map-layer-panel__body">
+                  <div class="viewer-layer-stack">
+                    <section class="viewer-layer-section" aria-label="Visible asset labels">
+                      <div class="viewer-layer-section__heading">
+                        <span>Asset labels</span>
+                        <strong>Label groups</strong>
+                      </div>
+                      <div class="viewer-layer-list" data-role="label-layer-list"></div>
+                    </section>
+                  </div>
+                </div>
+              </details>
+              <aside class="suggestion-widget" data-role="suggestion-widget" aria-label="ADAC Viewer suggestions">
+                <button class="suggestion-widget__toggle" type="button" data-action="toggle-suggestions" aria-expanded="false">
+                  <i class="fa-solid fa-lightbulb" aria-hidden="true"></i>
+                  <span>Suggestions</span>
+                </button>
+                <div class="suggestion-widget__panel" data-role="suggestion-panel" aria-hidden="true">
+                  <div class="suggestion-widget__header">
+                    <div>
+                      <span>Feedback</span>
+                      <strong>Suggest an improvement</strong>
+                    </div>
+                    <button type="button" data-action="close-suggestions" aria-label="Close suggestions">
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                  <form class="suggestion-form" id="suggestion-form" action="https://api.web3forms.com/submit" method="POST">
+                    <input type="hidden" name="access_key" value="0f09de80-04f6-4ea0-b465-9aa96c5789a1" />
+                    <input type="hidden" name="subject" value="ADAC Viewer feature suggestion" />
+                    <input type="hidden" name="from_name" value="ADACT ADAC Viewer" />
+                    <input type="hidden" name="redirect" value="https://www.adact.com.au/adac-viewer.html" />
+                    <input type="checkbox" name="botcheck" class="suggestion-form__botcheck" tabindex="-1" autocomplete="off" />
+                    <label>
+                      <span>Suggestion type</span>
+                      <select name="suggestion_type">
+                        <option value="Feature idea">Feature idea</option>
+                        <option value="Viewer improvement">Viewer improvement</option>
+                        <option value="Bug or issue">Bug or issue</option>
+                        <option value="Other feedback">Other feedback</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Your suggestion</span>
+                      <textarea name="message" rows="4" placeholder="What would make this viewer more useful?" required></textarea>
+                    </label>
+                    <label>
+                      <span>Email</span>
+                      <input type="email" name="email" placeholder="Optional, if you would like a reply" />
+                    </label>
+                    <button type="submit" class="suggestion-form__submit">
+                      <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                      <span>Send suggestion</span>
+                    </button>
+                    <p class="suggestion-form__status" data-role="suggestion-status" role="status" aria-live="polite"></p>
+                  </form>
+                </div>
+              </aside>
+              <canvas id="adac-map-canvas" width="1100" height="680" aria-label="ADAC asset map"></canvas>
+              <div class="viewer-measure-readout" data-role="measurement-readout" hidden>
+                <span data-role="measurement-mode">Measurement</span>
+                <strong data-role="measurement-value">0 m</strong>
+              </div>
+              <div class="viewer-empty" data-role="empty-state">
+                <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
+                <strong>Load an ADAC XML file</strong>
+                <span>The map, layer controls and asset list will update automatically.</span>
+              </div>
+            </div>
+          </section>
+
+          <aside class="viewer-inspector" aria-label="Asset details">
+            <div class="viewer-details" data-role="feature-details">
+              <span>Select an asset to inspect its XML attributes and geometry summary.</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <div class="viewer-terms-modal" data-role="terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title" hidden>
+        <div class="viewer-terms-modal__backdrop" data-action="close-terms"></div>
+        <div class="viewer-terms-modal__panel">
+          <div class="viewer-terms-modal__header">
+            <div>
+              <span>ADAC Viewer</span>
+              <h2 id="terms-title">Terms and conditions</h2>
+            </div>
+            <button type="button" data-action="close-terms" aria-label="Close terms and conditions">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="viewer-terms-modal__body">
+            <p>
+              The ADACT ADAC Viewer provides access to a free XML viewing tool for informational and general-use purposes only. The viewer is intended to assist engineers, surveyors, asset managers and developers in reviewing ADAC XML files. ADACT does not create, verify, certify, or guarantee the accuracy of the data presented from uploaded XML files.
+            </p>
+            <p>
+              The tool is provided "as is" and is not a substitute for certified engineering validation, council acceptance processes, survey verification, or proprietary ADAC software. Users are solely responsible for confirming the correctness, context, suitability and use of any results derived from this viewer.
+            </p>
+            <h3>Terms and Conditions</h3>
+            <ol>
+              <li><strong>Use of data:</strong> The viewer may be used for professional and commercial review workflows, but it is provided free of charge and without warranty. By using this viewer, you acknowledge that uploaded data is suitable for browser-based review and does not contain confidential, personal, restricted, or otherwise sensitive information.</li>
+              <li><strong>Intellectual property:</strong> The ADACT ADAC Viewer interface, structure, source code, branding and associated content are the intellectual property of ADACT unless otherwise stated. You may not reproduce, copy, distribute, modify, or reverse engineer any part of the viewer without prior written consent.</li>
+              <li><strong>Data accuracy and interpretation:</strong> While the viewer aims to parse and display ADAC XML content accurately, ADACT does not warrant that displayed data is free from errors, omissions, schema interpretation differences, coordinate issues, or misclassification. Users must independently confirm interpretations using appropriate software, source records, and professional judgment.</li>
+              <li><strong>Liability:</strong> To the fullest extent permitted under Australian law, ADACT disclaims liability for loss, damage, delay, decisions, rework, compliance issues, or indirect and consequential loss arising from use of, or reliance on, outputs generated by this viewer.</li>
+              <li><strong>User conduct:</strong> Users agree not to misuse the viewer for unlawful, malicious, automated, excessive, or disruptive purposes. Attempts to compromise the security, integrity, availability, or operation of the site are prohibited.</li>
+              <li><strong>Changes to terms:</strong> ADACT may update or modify these terms at any time. Continued use of the viewer after changes are published constitutes acceptance of the revised terms.</li>
+              <li><strong>Governing law:</strong> These terms are governed by the laws of Queensland and the applicable federal laws of Australia. Any disputes arising from use of this viewer are subject to the jurisdiction of the courts of Queensland.</li>
+              <li><strong>Third-party data sources:</strong> Map backgrounds, cadastre, council, utility, REST service, and other reference overlays may be supplied by third-party data providers. Users are responsible for reviewing and complying with the relevant provider terms, licences and attribution requirements, including services such as <a href="https://unitywater.maps.arcgis.com/sharing/rest/content/items/f43e43dce9a54fd0b1e3366653e6a0f9/data" target="_blank" rel="noopener">Unitywater public data</a> where applicable.</li>
+            </ol>
+            <p>
+              By accessing and using the ADACT ADAC Viewer, you acknowledge that you have read, understood and agreed to these disclaimers and terms and conditions.
+            </p>
+          </div>
+          <div class="viewer-terms-modal__footer">
+            <button type="button" class="viewer-terms-modal__accept" data-action="accept-terms">
+              <i class="fa-solid fa-check" aria-hidden="true"></i>
+              <span>I understand and agree</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__container">
+        <div class="footer__bottom">
+          <span>Copyright &copy; 2026 ADACT. All rights reserved.</span>
+          <span>ABN 36 633 668 743</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+  <script src="js/script.js"></script>
+  <script src="js/adac-viewer.js?v=20260629aq"></script>
+  <script src="js/adact-tracking.js?v=20260602"></script>
+</body>
+
+</html>
