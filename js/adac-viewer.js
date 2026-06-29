@@ -45,10 +45,10 @@
     water_hydrant: planStyle("water_hydrant", "#0000ff", 27, 0.25, 1),
     water_meter: planStyle("water_meter", "#0000ff", 28, 0.25, 0.9),
     water_service: planStyle("water_service", "#0000ff", 29, 0.25, 1.2),
-    sewer_pipe: planStyle("sewer_pipe", "#0000ff", 30, 0.35, 1.2),
-    sewer_connection: planStyle("sewer_connection", "#0000ff", 31, 0.25, 1.2),
-    sewer_node: planStyle("sewer_node", "#0000ff", 35, 0.25, 1.1),
-    sewer_fitting: planStyle("sewer_fitting", "#0000ff", 34, 0.25, 0.95),
+    sewer_pipe: planStyle("sewer_pipe", "#6f42c1", 30, 0.35, 1.2),
+    sewer_connection: planStyle("sewer_connection", "#6f42c1", 31, 0.25, 1.2),
+    sewer_node: planStyle("sewer_node", "#6f42c1", 35, 0.25, 1.1),
+    sewer_fitting: planStyle("sewer_fitting", "#6f42c1", 34, 0.25, 0.95),
     stormwater_pipe: planStyle("stormwater_pipe", "#00ff00", 36, 0.3, 1.2),
     stormwater_pit: planStyle("stormwater_pit", "#00ff00", 37, 0.25, 1),
     stormwater_end_structure: planStyle("stormwater_end_structure", "#00ff00", 37, 0.25, 1),
@@ -3184,7 +3184,7 @@
   function isInlinePipeStructureAsset(element) {
     const tag = normalizeDetailKey(cleanName(element?.tagName || ""));
     const path = getAssetPathFromStructure(element).toLowerCase();
-    if (path.startsWith("sewerage/pipes/")) return tag === "pipenonpressure" || tag === "pipepressure" || tag === "pipe";
+    if (path.startsWith("sewerage/pipes")) return tag === "pipenonpressure" || tag === "pipepressure" || tag === "pipe";
     if (path.startsWith("sewerage/connections/")) return tag === "connection";
     if (path.startsWith("watersupply/pipes/")) return tag === "pipe";
     if (path.startsWith("watersupply/waterservices/")) return tag === "waterservice";
