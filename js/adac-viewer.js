@@ -1748,12 +1748,47 @@
       return value.flatMap((item, index) => flattenReportValueRows(item, `${prefix} ${index + 1}`.trim()));
     }
     if (value && typeof value === "object") {
+      const dimensionRow = reportDimensionContainerRow(value, prefix);
+      if (dimensionRow) return [dimensionRow];
       return Object.entries(value).flatMap(([key, child]) => {
         const childPrefix = `${prefix} ${friendlyReportLabel(key)}`.trim();
         return flattenReportValueRows(child, childPrefix);
       });
     }
     return prefix ? [[prefix, value]] : [];
+  }
+
+  function reportDimensionContainerRow(value, prefix) {
+    const normalizedPrefix = normalizeDetailKey(prefix);
+    const baseLabel = reportDimensionContainerBaseLabel(normalizedPrefix);
+    if (!baseLabel) return null;
+
+    const dimensions = reportObjectDimensionValues(value);
+    if (dimensions.diameter) {
+      return [`${baseLabel} Circular`, dimensions.diameter];
+    }
+    return null;
+  }
+
+  function reportDimensionContainerBaseLabel(normalizedPrefix) {
+    if (normalizedPrefix === "chambersize" || normalizedPrefix === "chambersizerectangular" || normalizedPrefix === "chambersizecircular") return "Chamber Size";
+    if (normalizedPrefix === "lidsize" || normalizedPrefix === "lidsizerectangular" || normalizedPrefix === "lidsizecircular") return "Lid Size";
+    return "";
+  }
+
+  function reportObjectDimensionValues(value) {
+    const dimensions = {};
+    Object.entries(value || {}).forEach(([key, item]) => {
+      if (item && typeof item === "object") return;
+      const normalized = normalizeDetailKey(key);
+      const formatted = formatReportValue(item);
+      if (!formatted) return;
+      if (normalized.includes("diameter")) dimensions.diameter = formatted;
+      else if (normalized.includes("length")) dimensions.length = formatted;
+      else if (normalized.includes("width")) dimensions.width = formatted;
+      else if (normalized.includes("height") || normalized.includes("depth")) dimensions.height = formatted;
+    });
+    return dimensions;
   }
 
   function reportAssetSectionTitle(assetPath) {
