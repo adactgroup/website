@@ -1643,7 +1643,59 @@
       const formatted = formatReportValue(value);
       if (formatted) rows[label] = formatted;
     });
-    return rows;
+    return reorderReportAssetRows(rows);
+  }
+
+  function reorderReportAssetRows(rows) {
+    const entries = Object.entries(rows);
+    const chamberLidEntries = entries
+      .map(([label, value], index) => ({ label, value, index }))
+      .filter((entry) => isChamberLidReportRow(entry.label));
+    if (chamberLidEntries.length < 2) return rows;
+
+    const firstChamberLidIndex = Math.min(...chamberLidEntries.map((entry) => entry.index));
+    const sortedChamberLidEntries = chamberLidEntries
+      .slice()
+      .sort((a, b) => reportChamberLidRowOrder(a.label) - reportChamberLidRowOrder(b.label) || a.index - b.index);
+
+    const resultEntries = [];
+    entries.forEach(([label, value], index) => {
+      if (index === firstChamberLidIndex) {
+        sortedChamberLidEntries.forEach((entry) => resultEntries.push([entry.label, entry.value]));
+      }
+      if (!isChamberLidReportRow(label)) resultEntries.push([label, value]);
+    });
+    return Object.fromEntries(resultEntries);
+  }
+
+  function isChamberLidReportRow(label) {
+    const normalized = normalizeDetailKey(label);
+    return normalized.includes("chamberconstruction")
+      || normalized.includes("chambersize")
+      || normalized.includes("lidsize")
+      || normalized.endsWith("lidtype");
+  }
+
+  function reportChamberLidRowOrder(label) {
+    const normalized = normalizeDetailKey(label);
+    let order = 99;
+    if (normalized.includes("chamberconstruction")) order = 10;
+    else if (normalized.includes("chambersizerectangular")) order = 20;
+    else if (normalized.includes("chambersizecircular")) order = 30;
+    else if (normalized.includes("chambersize")) order = 25;
+    else if (normalized.includes("lidsizerectangular")) order = 40;
+    else if (normalized.includes("lidsizecircular")) order = 50;
+    else if (normalized.includes("lidsize")) order = 45;
+    else if (normalized.endsWith("lidtype")) order = 60;
+    return order + reportDimensionRowOrder(normalized) / 100;
+  }
+
+  function reportDimensionRowOrder(normalizedLabel) {
+    if (normalizedLabel.includes("length")) return 1;
+    if (normalizedLabel.includes("width")) return 2;
+    if (normalizedLabel.includes("height")) return 3;
+    if (normalizedLabel.includes("diameter")) return 4;
+    return 9;
   }
 
   function reportGeometryRows(value, includeZ) {
