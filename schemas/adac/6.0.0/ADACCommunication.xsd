@@ -1,0 +1,370 @@
+<?xml version="1.0"?>
+<!-- version 6.0.0 created by Blake Slaven October 2023 (Lion Systems)-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.adac.com.au" targetNamespace="http://www.adac.com.au" elementFormDefault="qualified" attributeFormDefault="unqualified" version="6.0.0">
+	<!-- INCLUDES -->
+	<!-- Enumerated Types -->
+	<xs:include schemaLocation="./ADACEnumeratedTypes.xsd">
+		<xs:annotation>
+			<xs:documentation>Uses ADAC enumerated SimpleType definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- Global Types -->
+	<xs:include schemaLocation="./ADACGlobalTypes.xsd">
+		<xs:annotation>
+			<xs:documentation>Contains ADAC globally referenced type definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- Geometry -->
+	<xs:include schemaLocation="./ADACGeometry.xsd">
+		<xs:annotation>
+			<xs:documentation>Contains ADAC geometry definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- **************************************************************************************** -->
+	<!-- Communication - Contains the specification for all Communication information                     -->
+	<!-- **************************************************************************************** -->
+	<xs:complexType name="objectModelCommunication">
+		<xs:annotation>
+			<xs:documentation>Data structure constraining information for communication features</xs:documentation>
+		</xs:annotation>
+		<xs:sequence minOccurs="1" maxOccurs="1">
+			<xs:element name="Pits" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Communication Pits</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Pit" type="Feature_Communication_Pit" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents a communication pit feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Conduits" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Communication Conduits</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Conduit" type="Feature_Communication_Conduit" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an communication conduit feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Cables" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Communication Cables</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Cable" type="Feature_Communication_Cable" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an communication cable feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Fittings" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Communication Fittings</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Fitting" type="Feature_Communication_Fitting" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an communication fitting feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="MonitoringStations" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Communication Monitoring Stations</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="MonitoringStation" type="Feature_Communication_MonitoringStation" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an communication monitoring station feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+	</xs:complexType>
+	<!-- **************************************************************************************** -->
+	<!-- Features - Contains the specification for all Communication Features                         -->
+	<!-- **************************************************************************************** -->
+	<!-- Feature Communication Pits -->
+  <xs:complexType name="Feature_Communication_Pit">
+    <xs:annotation>
+      <xs:documentation>Represents a communication pit feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="elec_comm_pit_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of communication pit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Surface" type="communication_pit_surface" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The surface in which the pit is installed</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Material" type="elec_comm_pit_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The pit material type eg: Plastic, Concrete</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidMaterial" type="elec_comm_pit_lid_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The lid material type eg: Plastic, Concrete</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidDesignation" type="communication_pit_lid_designation" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Label on Lid</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidLoadRating" type="communication_pit_lid_load_rating" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Access cover and frames load rating as per AS3996</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="KeyType" type="elec_comm_pit_key_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Key type used to open lid</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Size" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>Represents the essential dimensions of the pit. Contains a choice of structures that pertain to different configurations.</xs:documentation>
+            </xs:annotation>
+            <xs:complexType>
+              <xs:choice minOccurs="1" maxOccurs="1">
+                <xs:element name="Rectangular" type="rectangular_struct_mm" minOccurs="1" maxOccurs="1" nillable="false">
+                  <xs:annotation>
+                    <xs:documentation>Dimensions of a rectangular pit</xs:documentation>
+                  </xs:annotation>
+                </xs:element>
+                <xs:element name="Circular" type="circular_struct_mm" minOccurs="1" maxOccurs="1" nillable="false">
+                  <xs:annotation>
+                    <xs:documentation>Dimensions of a circular pit</xs:documentation>
+                  </xs:annotation>
+                </xs:element>
+              </xs:choice>
+            </xs:complexType>
+          </xs:element>
+          <xs:element name="Depth_m" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The depth of the pit in metres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="SurfaceLevel_m" type="xs:float" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Surface level of pit, measured at the centre of the pit lid (in metres against the vertical datum).</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Communication Conduits -->
+  <xs:complexType name="Feature_Communication_Conduit">
+    <xs:annotation>
+      <xs:documentation>Represents an communication conduit feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Use" type="communication_conduit_use" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The primary use for the conduit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Material" type="communication_conduit_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The conduit material type eg: PVC, Galvanised etc</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Placement" type="communication_conduit_placement" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>This describes where/how the communication conduit is placed</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Protection" type="elec_comm_conduit_protection" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of conduit protection used eg: Concrete encased, warning tape only</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Size_mm" type="communication_conduit_size" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The size of the conduit in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="TraceWire" type="xs:boolean" minOccurs="1" maxOccurs="1" nillable="true">
+            <xs:annotation>
+              <xs:documentation>True or false value indicating whether a trace wire is present</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Configuration" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Utilised when there is multiple conduit diameters utilised in the same trench. The configuration of the conduits laid in the trench, ie Quantity x Size eg. 2 x 80mm +  1 x 50mm</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfConduits" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Total number of communication conduits on alignment</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="AverageDepth_mm" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The average depth of the communication conduit in the trench/run in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_linear_multipath_complex" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Communication Cables -->
+  <xs:complexType name="Feature_Communication_Cable">
+    <xs:annotation>
+      <xs:documentation>Represents an communication cable feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="communication_cable_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ConductorMaterial" type="communication_cable_conductor_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Describes the material of the conductor utilised in the cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Insulation" type="communication_cable_insulation" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Insulation around cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfCores" type="communication_cable_number_of_cores" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The number of cores or fibres in the cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Placement" type="elec_comm_cable_placement" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Describes the placement of the cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="FibreType" type="communication_cable_fibre_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of fibre</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfCables" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The number of cables in the conduit/run</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Configuration" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Utilised when there is multiple cable sizes utilised in the same conduit. The configuration of the cables in conduit, ie Quantity x Size eg. 2 x 6 Core +  1 x 72 Core</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_linear_multipath_complex" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Communication Fittings -->
+  <xs:complexType name="Feature_Communication_Fitting">
+    <xs:annotation>
+      <xs:documentation>Represents an communication fitting feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Purpose" type="communication_fitting_purpose" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Purpose of the communication fitting</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Type" type="communication_fitting_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of Communication fitting e.g. Splice Point, Junction</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MountType" type="communication_fitting_mount_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of mount made for the communication fitting</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:group ref="manufacturer_model_details" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Standard element group called in to support manufacturer and model details</xs:documentation>
+            </xs:annotation>
+          </xs:group>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Communication Monitoring Stations -->
+  <xs:complexType name="Feature_Communication_MonitoringStation">
+    <xs:annotation>
+      <xs:documentation>Represents an communication monitoring station feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="communication_monitoring_station_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of the monitoring station</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Telemetry" type="xs:boolean" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>True or false value indicating whether a station has telemetry fitted</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+</xs:schema>

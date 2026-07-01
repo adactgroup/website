@@ -1,6 +1,7 @@
 (function () {
   const root = document.getElementById("adac-viewer");
   if (!root) return;
+  const viewerScriptUrl = document.currentScript?.src || new URL("js/adac-viewer.js", document.baseURI).href;
 
   const reportPage = {
     width: 841.8898,
@@ -18,6 +19,61 @@
   const reportContactEmail = "projects@adact.com.au";
   const reportLogoPath = "img/LOGO-Black-Transparent.png";
   let reportLogoImagePromise = null;
+  let xmlValidatorPromise = null;
+  const schemaBundleCache = new Map();
+  const schemaValueLookupCache = new Map();
+
+  const adacSchemaConfigs = {
+    v5: {
+      key: "v5",
+      label: "ADAC 5.0.1",
+      version: "5.0.1",
+      basePath: "schemas/adac/5.0.1/",
+      rootFile: "ADAC_V501.xsd",
+      files: [
+        "ADAC_V501.xsd",
+        "ADACStringTypes.xsd",
+        "ADACEnhancements.xsd",
+        "ADACEnumeratedTypes_Generic.xsd",
+        "ADACGlobalTypes.xsd",
+        "ADACTransport.xsd",
+        "ADACSewerage.xsd",
+        "ADACOpenSpace.xsd",
+        "ADACWaterSupply.xsd",
+        "ADACStormWater.xsd",
+        "ADACSurface.xsd",
+        "ADACSupplementary.xsd",
+        "ADACCadastre.xsd",
+        "ADACGeometry.xsd",
+        "ADACEnumeratedTypes.xsd",
+      ],
+    },
+    v6: {
+      key: "v6",
+      label: "ADAC 6.0.0",
+      version: "6.0.0",
+      basePath: "schemas/adac/6.0.0/",
+      rootFile: "ADAC_V600.xsd",
+      files: [
+        "ADAC_V600.xsd",
+        "ADACCommunication.xsd",
+        "ADACStringTypes.xsd",
+        "ADACEnhancements.xsd",
+        "ADACGlobalTypes.xsd",
+        "ADACTransport.xsd",
+        "ADACSewerage.xsd",
+        "ADACElectrical.xsd",
+        "ADACOpenSpace.xsd",
+        "ADACWaterSupply.xsd",
+        "ADACStormWater.xsd",
+        "ADACSurface.xsd",
+        "ADACSupplementary.xsd",
+        "ADACCadastre.xsd",
+        "ADACGeometry.xsd",
+        "ADACEnumeratedTypes.xsd",
+      ],
+    },
+  };
 
   const layerPalette = {
     Water: "#1268c4",
@@ -948,6 +1004,9 @@
     fileMetas: [],
     loadedFiles: [],
     reportBundles: [],
+    schemaValidationResults: [],
+    validationErrorResults: [],
+    repairPreview: null,
     assetKinds: new Set(),
     locationCheck: {
       status: "idle",
@@ -1007,6 +1066,7 @@
     overlayStatus: root.querySelector("[data-role='overlay-status']"),
     checkCount: root.querySelector("[data-role='check-count']"),
     checkList: root.querySelector("[data-role='check-list']"),
+    repairedXmlDownloadButton: root.querySelector("[data-role='download-repaired-xml']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1015,6 +1075,8 @@
     sortSelect: root.querySelector("[data-role='asset-sort']"),
     details: root.querySelector("[data-role='feature-details']"),
     empty: root.querySelector("[data-role='empty-state']"),
+    schemaValidationPanel: root.querySelector("[data-role='schema-validation-panel']"),
+    repairPreviewBanner: root.querySelector("[data-role='repair-preview-banner']"),
     dropzone: root.querySelector("[data-role='dropzone']"),
     suggestionWidget: document.querySelector("[data-role='suggestion-widget']"),
     suggestionPanel: document.querySelector("[data-role='suggestion-panel']"),
@@ -1224,6 +1286,14 @@
       clearAssetFilters();
     } else if (action === "clear-files") {
       clearLoadedFiles();
+    } else if (action === "preview-repaired-xml") {
+      previewSuggestedXmlRepairs();
+    } else if (action === "download-repaired-xml") {
+      downloadSuggestedRepairedXml();
+    } else if (action === "preview-selected-validation-fixes") {
+      previewSelectedValidationFixes();
+    } else if (action === "continue-repaired-preview") {
+      continueRepairedPreview();
     } else if (action === "toggle-suggestions") {
       toggleSuggestions();
     } else if (action === "close-suggestions") {
@@ -2565,21 +2635,33 @@
   }
 
   function loadXml(xmlText, fileName, options = { replace: true }) {
-    loadXmlFiles([{ xmlText, fileName }], options);
+    return loadXmlFiles([{ xmlText, fileName }], options);
   }
 
-  function loadXmlFiles(files, options = { replace: false }) {
+  async function loadXmlFiles(files, options = { replace: false }) {
     const replace = Boolean(options.replace);
     const parsedFiles = [];
     const parseErrors = [];
+    const validationErrors = [];
 
-    files.forEach(({ xmlText, fileName }) => {
+    state.repairPreview = null;
+    state.validationErrorResults = [];
+    renderRepairPreviewBanner();
+    renderValidationPanel();
+    setStatus(`Validating ${files.length} XML file${files.length === 1 ? "" : "s"} against the ADAC schema...`, false);
+
+    for (const { xmlText, fileName } of files) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(xmlText, "application/xml");
       const parseError = doc.querySelector("parsererror");
       if (parseError) {
-        parseErrors.push({ fileName, message: getParseErrorSummary(parseError) });
-        return;
+        parseErrors.push({ fileName, xmlText, ...getParseErrorDetails(parseError, xmlText) });
+        continue;
+      }
+      const schemaValidation = await validateAdacSchema(xmlText, fileName, doc);
+      if (!schemaValidation.valid) {
+        validationErrors.push({ ...schemaValidation, xmlText });
+        continue;
       }
       const features = extractFeatures(doc);
       parsedFiles.push({
@@ -2588,24 +2670,62 @@
         features,
         fileMeta: extractFileMeta(doc),
         reportBundle: extractReportBundle(doc, fileName),
+        schemaValidation,
       });
-    });
+    }
+
+    const failedValidationResults = [
+      ...parseErrors.map((error) => ({
+        fileName: error.fileName,
+        xmlText: error.xmlText,
+        schemaLabel: "XML",
+        status: "parse-error",
+        errors: [{ ...error, loc: error.loc || null }],
+      })),
+      ...validationErrors,
+    ];
+    state.validationErrorResults = failedValidationResults;
 
     if (!parsedFiles.length) {
       if (replace || !state.features.length) {
         clearLoadedFiles(false);
       }
-      const message = parseErrors.length
-        ? `The XML could not be parsed: ${parseErrors[0].message}`
+      state.validationErrorResults = failedValidationResults;
+      const message = state.validationErrorResults.length
+        ? getValidationFailureStatusMessage(state.validationErrorResults)
         : "No XML files were loaded.";
       setStatus(message, true);
       renderAll();
       return;
     }
 
+    applyParsedFilesToState(parsedFiles, {
+      replace,
+      validationErrorResults: failedValidationResults,
+    });
+
+    const loadedAssetCount = parsedFiles.reduce((total, item) => total + item.features.length, 0);
+    const loadedReportAssetCount = parsedFiles.reduce((total, item) => total + item.reportBundle.assets.length, 0);
+    const loadedFileCount = parsedFiles.length;
+    const skippedCount = state.validationErrorResults.length;
+    const skippedText = skippedCount ? ` ${skippedCount} file${skippedCount === 1 ? "" : "s"} failed validation and were not loaded.` : "";
+    if (state.features.length) {
+      setStatus(`Loaded ${loadedAssetCount} mapped assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}.${skippedText}`, Boolean(skippedCount));
+    } else if (loadedReportAssetCount) {
+      setStatus(`Loaded ${loadedReportAssetCount} report assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}, but no mapped asset geometry was found.${skippedText}`, Boolean(skippedCount));
+    } else {
+      setStatus("The XML loaded, but no mapped asset geometry was found.", true);
+    }
+    centerViewerInViewport();
+  }
+
+  function applyParsedFilesToState(parsedFiles, options = {}) {
+    const replace = Boolean(options.replace);
     if (replace) {
       clearLoadedFiles(false);
     }
+    state.validationErrorResults = options.validationErrorResults || [];
+    if (options.repairPreview) state.repairPreview = options.repairPreview;
 
     const startingFileCount = state.loadedFiles.length;
     parsedFiles.forEach((item, fileIndex) => {
@@ -2634,6 +2754,11 @@
         fileName: item.fileName,
         fileId,
       });
+      state.schemaValidationResults.push({
+        ...item.schemaValidation,
+        fileName: item.fileName,
+        fileId,
+      });
       state.features.push(...fileFeatures);
     });
 
@@ -2653,19 +2778,613 @@
     renderFilterOptions();
     updateFilteredFeatures();
     runReceiverLocationCheck();
+  }
 
-    const loadedAssetCount = parsedFiles.reduce((total, item) => total + item.features.length, 0);
-    const loadedReportAssetCount = parsedFiles.reduce((total, item) => total + item.reportBundle.assets.length, 0);
-    const loadedFileCount = parsedFiles.length;
-    const skippedText = parseErrors.length ? ` ${parseErrors.length} file${parseErrors.length === 1 ? "" : "s"} could not be parsed.` : "";
-    if (state.features.length) {
-      setStatus(`Loaded ${loadedAssetCount} mapped assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}.${skippedText}`, Boolean(parseErrors.length));
-    } else if (loadedReportAssetCount) {
-      setStatus(`Loaded ${loadedReportAssetCount} report assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}, but no mapped asset geometry was found.${skippedText}`, Boolean(parseErrors.length));
-    } else {
-      setStatus("The XML loaded, but no mapped asset geometry was found.", true);
+  async function previewSuggestedXmlRepairs() {
+    const repairPlan = getSuggestedXmlRepairPlan(state.validationErrorResults);
+    if (!repairPlan || !repairPlan.patches.length) {
+      setStatus("No high-confidence XML repairs are available for this upload.", true);
+      renderValidationPanel();
+      return;
     }
+
+    setStatus(`Building repaired preview for ${repairPlan.fileName || "uploaded XML"}...`, false);
+    const repairedXmlText = applyXmlRepairPatches(repairPlan.xmlText, repairPlan.patches);
+    const repairedFileName = buildRepairedXmlFileName(repairPlan.fileName);
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(repairedXmlText, "application/xml");
+    const parseError = doc.querySelector("parsererror");
+    if (parseError) {
+      const details = getParseErrorDetails(parseError, repairedXmlText);
+      state.repairPreview = {
+        status: "failed",
+        message: `The suggested patch did not produce well-formed XML: ${details.message || "XML parse error."}`,
+        patches: repairPlan.patches,
+        repairedXmlText,
+        repairedFileName,
+      };
+      setStatus(state.repairPreview.message, true);
+      renderAll();
+      return;
+    }
+
+    const schemaValidation = await validateAdacSchema(repairedXmlText, repairedFileName, doc);
+    const features = extractFeatures(doc);
+    const reportBundle = extractReportBundle(doc, repairedFileName);
+    if (!features.length && !reportBundle.assets.length) {
+      state.repairPreview = {
+        status: "failed",
+        message: "The suggested patch produced XML, but no ADAC assets were found to preview.",
+        patches: repairPlan.patches,
+        repairedXmlText,
+        repairedFileName,
+      };
+      setStatus(state.repairPreview.message, true);
+      renderAll();
+      return;
+    }
+
+    const remainingErrorCount = normalizeValidationErrors(schemaValidation.errors).length;
+    const repairPreview = {
+      active: true,
+      status: "active",
+      originalFileName: repairPlan.fileName,
+      repairedFileName,
+      repairedXmlText,
+      patches: repairPlan.patches,
+      validationPassed: Boolean(schemaValidation.valid),
+      remainingErrorCount: schemaValidation.valid ? 0 : remainingErrorCount,
+      remainingErrors: schemaValidation.valid ? [] : normalizeValidationErrors(schemaValidation.errors).slice(0, 12),
+      dismissed: Boolean(schemaValidation.valid),
+    };
+
+    applyParsedFilesToState([{
+      fileName: repairedFileName,
+      doc,
+      features,
+      fileMeta: extractFileMeta(doc),
+      reportBundle,
+      schemaValidation: {
+        ...schemaValidation,
+        fileName: repairedFileName,
+        repairedPreview: true,
+      },
+    }], {
+      replace: true,
+      validationErrorResults: [],
+      repairPreview,
+    });
+
+    const warning = repairPreview.validationPassed
+      ? "The repaired XML now passes ADAC schema validation and is open in the viewer."
+      : `Step 1 is previewed. Step 2 still has ${repairPreview.remainingErrorCount} schema issue${repairPreview.remainingErrorCount === 1 ? "" : "s"} to fix.`;
+    setStatus(`Previewing viewer-repaired XML. Original file still failed validation. ${warning}`, true);
     centerViewerInViewport();
+  }
+
+  function getSuggestedXmlRepairPlan(results = []) {
+    for (const result of results) {
+      const patches = getSuggestedXmlRepairPatches(result);
+      if (patches.length) {
+        return {
+          fileName: result.fileName || "uploaded.xml",
+          xmlText: result.xmlText || "",
+          schemaLabel: result.schemaLabel || "ADAC schema",
+          patches,
+        };
+      }
+    }
+    return null;
+  }
+
+  function getSuggestedXmlRepairPatches(result) {
+    if (!result?.xmlText) return [];
+    const patches = [];
+    normalizeValidationErrors(result.errors).forEach((error) => {
+      if (error?.repair?.confidence === "high") {
+        patches.push(error.repair);
+        return;
+      }
+      const schemaPatch = getSchemaRenameRepairPatch(error);
+      if (schemaPatch) patches.push(schemaPatch);
+    });
+    const seen = new Set();
+    return patches.filter((patch) => {
+      const key = patch.key || `${patch.type}:${patch.lineNumber || ""}:${patch.from || ""}:${patch.to || ""}:${patch.text || ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      patch.key = key;
+      return true;
+    });
+  }
+
+  function getSchemaRenameRepairPatch(error) {
+    const message = cleanValidationErrorMessage(error?.message || error?.rawMessage || "");
+    const unexpectedMatch = message.match(/^Element '([^']+)': This element is not expected\.(?: Expected is(?: one of)? \( ([^)]+) \)\.)?/i);
+    if (!unexpectedMatch || !unexpectedMatch[2]) return null;
+    const from = formatXmlToken(unexpectedMatch[1]);
+    const expectedElements = parseExpectedXmlElements(unexpectedMatch[2]);
+    if (expectedElements.length !== 1) return null;
+    const to = expectedElements[0];
+    if (!isHighConfidenceElementRename(from, to)) return null;
+    const lineText = error?.xmlContext?.lineText || "";
+    if (lineText && !new RegExp(`<${escapeRegExp(from)}(?:\\s|>)`, "i").test(lineText)) return null;
+    return {
+      type: "rename-element",
+      confidence: "high",
+      from,
+      to,
+      lineNumber: error?.loc?.lineNumber || error?.xmlContext?.lineNumber || null,
+      label: `Rename <${from}> to <${to}> because the schema expects that exact element here.`,
+    };
+  }
+
+  function parseExpectedXmlElements(text) {
+    return String(text || "")
+      .split(",")
+      .map((item) => formatXmlToken(item.replace(/[{}]/g, "").trim()))
+      .filter(Boolean);
+  }
+
+  function isHighConfidenceElementRename(from, to) {
+    if (!from || !to || from === to) return false;
+    const lowerFrom = from.toLowerCase();
+    const lowerTo = to.toLowerCase();
+    if (lowerFrom.replace(/_m$/, "_mm") === lowerTo) return true;
+    if (lowerFrom.replace(/m$/, "mm") === lowerTo && /depth|diameter|height|width|length|size|chainage/.test(lowerFrom)) return true;
+    return false;
+  }
+
+  function applyXmlRepairPatches(xmlText, patches = []) {
+    let repairedXmlText = String(xmlText || "");
+    const lineInsertions = patches
+      .filter((patch) => patch.type === "insert-before-line" && patch.lineNumber && patch.text)
+      .sort((a, b) => Number(b.lineNumber) - Number(a.lineNumber));
+    lineInsertions.forEach((patch) => {
+      const lines = repairedXmlText.split(/\r?\n/);
+      const index = Math.max(0, Math.min(lines.length, Number(patch.lineNumber) - 1));
+      lines.splice(index, 0, patch.text);
+      repairedXmlText = lines.join("\n");
+    });
+    patches
+      .filter((patch) => patch.type === "rename-element" && patch.from && patch.to)
+      .forEach((patch) => {
+        const from = escapeRegExp(patch.from);
+        repairedXmlText = repairedXmlText
+          .replace(new RegExp(`<${from}(\\s|>)`, "g"), `<${patch.to}$1`)
+          .replace(new RegExp(`</${from}>`, "g"), `</${patch.to}>`);
+      });
+    return repairedXmlText;
+  }
+
+  function buildRepairedXmlFileName(fileName = "uploaded.xml") {
+    const cleanName = String(fileName || "uploaded.xml").replace(/\.xml$/i, "");
+    return `${cleanName}_viewer-repaired.xml`;
+  }
+
+  function downloadSuggestedRepairedXml() {
+    const preview = state.repairPreview;
+    if (!preview?.repairedXmlText) {
+      setStatus("No repaired XML is available to download yet.", true);
+      return;
+    }
+    const blob = new Blob([preview.repairedXmlText], { type: "application/xml;charset=utf-8" });
+    downloadBlob(blob, preview.repairedFileName || buildRepairedXmlFileName(preview.originalFileName));
+    setStatus("Downloaded the viewer-repaired XML copy. The original upload was not changed.", false);
+  }
+
+  async function previewSelectedValidationFixes() {
+    const selections = getSelectedValidationFixes();
+    if (!selections.length) {
+      setStatus("Choose or enter at least one validation fix before previewing.", true);
+      return;
+    }
+    if (selections[0].resultKey === "preview") {
+      const preview = state.repairPreview;
+      if (!preview?.repairedXmlText) {
+        setStatus("The repaired XML preview is not available for the selected fixes.", true);
+        return;
+      }
+      const selectedForPreview = selections.filter((selection) => selection.resultKey === "preview");
+      const repairedXmlText = applySelectedValidationFixes(
+        preview.repairedXmlText,
+        { errors: preview.remainingErrors || [] },
+        selectedForPreview
+      );
+      await previewPatchedXmlText({
+        originalFileName: preview.originalFileName || "uploaded.xml",
+        repairedXmlText,
+        patches: [
+          ...(preview.patches || []),
+          ...selectedForPreview.map((selection) => ({
+            label: `Set <${selection.element}> to '${selection.value}'.`,
+          })),
+        ],
+        statusPrefix: "Previewing viewer-repaired XML. Original file still failed validation.",
+      });
+      return;
+    }
+    const result = state.validationErrorResults[selections[0].resultIndex];
+    if (!result?.xmlText) {
+      setStatus("The original XML text is not available for this validation result.", true);
+      return;
+    }
+    const selectedForResult = selections.filter((selection) => selection.resultKey === selections[0].resultKey);
+    const repairedXmlText = applySelectedValidationFixes(result.xmlText, result, selectedForResult);
+    await previewPatchedXmlText({
+      originalFileName: result.fileName || "uploaded.xml",
+      repairedXmlText,
+      patches: selectedForResult.map((selection) => ({
+        label: `Set <${selection.element}> to '${selection.value}'.`,
+      })),
+      statusPrefix: "Previewing viewer-repaired XML. Original file still failed validation.",
+    });
+  }
+
+  function getSelectedValidationFixes() {
+    const containers = [els.schemaValidationPanel, els.repairPreviewBanner].filter(Boolean);
+    return containers.flatMap((container) => Array.from(container.querySelectorAll("[data-repair-index]")))
+      .map((control) => ({
+        resultKey: String(control.dataset.repairResult || "0"),
+        resultIndex: Number(control.dataset.repairResult || 0),
+        errorIndex: Number(control.dataset.repairIndex || 0),
+        element: control.dataset.repairElement || "",
+        value: String(control.value || "").trim(),
+      }))
+      .filter((selection) => selection.element && selection.value);
+  }
+
+  function applySelectedValidationFixes(xmlText, result, selections = []) {
+    let repairedXmlText = String(xmlText || "");
+    selections.forEach((selection) => {
+      const error = normalizeValidationErrors(result.errors)[selection.errorIndex];
+      repairedXmlText = replaceXmlElementValueForError(repairedXmlText, error, selection.element, selection.value);
+    });
+    return repairedXmlText;
+  }
+
+  function replaceXmlElementValueForError(xmlText, error, element, value) {
+    const escapedElement = escapeRegExp(element);
+    const replaceValue = (match, openTag, currentValue, closeTag) => `${openTag}${escapeXmlText(value)}${closeTag}`;
+    const lineNumber = error?.loc?.lineNumber || error?.xmlContext?.lineNumber || null;
+    if (lineNumber) {
+      const lines = String(xmlText || "").split(/\r?\n/);
+      const index = Number(lineNumber) - 1;
+      if (lines[index]) {
+        const linePattern = new RegExp(`(<${escapedElement}(?:\\s[^>]*)?>)([^<]*)(<\\/${escapedElement}>)`, "i");
+        if (linePattern.test(lines[index])) {
+          lines[index] = lines[index].replace(linePattern, replaceValue);
+          return lines.join("\n");
+        }
+      }
+    }
+    return String(xmlText || "").replace(new RegExp(`(<${escapedElement}(?:\\s[^>]*)?>)([^<]*)(<\\/${escapedElement}>)`, "i"), replaceValue);
+  }
+
+  function escapeXmlText(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  async function previewPatchedXmlText({ originalFileName, repairedXmlText, patches = [], statusPrefix = "Previewing viewer-repaired XML." }) {
+    const repairedFileName = buildRepairedXmlFileName(originalFileName);
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(repairedXmlText, "application/xml");
+    const parseError = doc.querySelector("parsererror");
+    if (parseError) {
+      const details = getParseErrorDetails(parseError, repairedXmlText);
+      setStatus(`The selected fixes did not produce well-formed XML: ${details.message || "XML parse error."}`, true);
+      return;
+    }
+
+    const schemaValidation = await validateAdacSchema(repairedXmlText, repairedFileName, doc);
+    const features = extractFeatures(doc);
+    const reportBundle = extractReportBundle(doc, repairedFileName);
+    if (!features.length && !reportBundle.assets.length) {
+      setStatus("The selected fixes produced XML, but no ADAC assets were found to preview.", true);
+      return;
+    }
+
+    const remainingErrorCount = normalizeValidationErrors(schemaValidation.errors).length;
+    const repairPreview = {
+      active: true,
+      status: "active",
+      originalFileName,
+      repairedFileName,
+      repairedXmlText,
+      patches,
+      validationPassed: Boolean(schemaValidation.valid),
+      remainingErrorCount: schemaValidation.valid ? 0 : remainingErrorCount,
+      remainingErrors: schemaValidation.valid ? [] : normalizeValidationErrors(schemaValidation.errors).slice(0, 12),
+      dismissed: Boolean(schemaValidation.valid),
+    };
+
+    applyParsedFilesToState([{
+      fileName: repairedFileName,
+      doc,
+      features,
+      fileMeta: extractFileMeta(doc),
+      reportBundle,
+      schemaValidation: {
+        ...schemaValidation,
+        fileName: repairedFileName,
+        repairedPreview: true,
+      },
+    }], {
+      replace: true,
+      validationErrorResults: [],
+      repairPreview,
+    });
+
+    const warning = repairPreview.validationPassed
+      ? "The repaired XML now passes ADAC schema validation and is open in the viewer."
+      : `The repaired preview still has ${repairPreview.remainingErrorCount} schema issue${repairPreview.remainingErrorCount === 1 ? "" : "s"} to fix.`;
+    setStatus(`${statusPrefix} ${warning}`, true);
+    centerViewerInViewport();
+  }
+
+  async function validateAdacSchema(xmlText, fileName, doc) {
+    const schemaConfig = getAdacSchemaConfig(doc);
+    if (!schemaConfig) {
+      return {
+        fileName,
+        valid: false,
+        status: "unsupported",
+        schemaLabel: "Unsupported ADAC schema",
+        errors: [],
+        message: getUnsupportedSchemaMessage(doc),
+      };
+    }
+
+    try {
+      const [xmllint, schemaBundle] = await Promise.all([
+        loadXmlValidator(),
+        loadAdacSchemaBundle(schemaConfig),
+      ]);
+      const validation = await xmllint.validateXML({
+        xml: {
+          fileName: sanitizeValidationFileName(fileName || "uploaded.xml", "xml"),
+          contents: xmlText,
+        },
+        schema: [schemaBundle.root],
+        preload: schemaBundle.preload,
+        initialMemoryPages: 32 * xmllint.memoryPages.MiB,
+        maxMemoryPages: 256 * xmllint.memoryPages.MiB,
+      });
+      return {
+        fileName,
+        valid: Boolean(validation.valid),
+        status: validation.valid ? "valid" : "invalid",
+        schemaKey: schemaConfig.key,
+        schemaVersion: schemaConfig.version,
+        schemaLabel: schemaConfig.label,
+	        errors: (validation.errors || []).map((error) => ({
+	          ...error,
+	          schemaKey: schemaConfig.key,
+	          xmlContext: getValidationXmlContext(xmlText, error),
+	        })),
+	        rawOutput: validation.rawOutput || "",
+	      };
+    } catch (error) {
+      return {
+        fileName,
+        valid: false,
+        status: "validator-error",
+        schemaKey: schemaConfig.key,
+        schemaVersion: schemaConfig.version,
+        schemaLabel: schemaConfig.label,
+        errors: [{ message: error.message || String(error), loc: null }],
+        message: `The ${schemaConfig.label} validator could not complete.`,
+      };
+    }
+  }
+
+  function loadXmlValidator() {
+    if (!xmlValidatorPromise) {
+      const validatorUrl = new URL("vendor/xmllint-wasm/index-browser.mjs", viewerScriptUrl).href;
+      xmlValidatorPromise = import(validatorUrl);
+    }
+    return xmlValidatorPromise;
+  }
+
+  async function loadAdacSchemaBundle(schemaConfig) {
+    if (schemaBundleCache.has(schemaConfig.key)) return schemaBundleCache.get(schemaConfig.key);
+    const bundlePromise = Promise.all(schemaConfig.files.map(async (fileName) => ({
+      fileName,
+      contents: prepareAdacSchemaForValidation(schemaConfig, fileName, await fetchTextFile(`${schemaConfig.basePath}${fileName}`)),
+    }))).then((files) => {
+      const rootSchema = files.find((file) => file.fileName === schemaConfig.rootFile);
+      if (!rootSchema) throw new Error(`Missing root schema ${schemaConfig.rootFile}.`);
+      schemaValueLookupCache.set(schemaConfig.key, buildSchemaValueLookup(files));
+      return {
+        root: rootSchema,
+        preload: files.filter((file) => file.fileName !== schemaConfig.rootFile),
+      };
+    });
+    schemaBundleCache.set(schemaConfig.key, bundlePromise);
+    return bundlePromise;
+  }
+
+  function prepareAdacSchemaForValidation(schemaConfig, fileName, contents) {
+    if (fileName === schemaConfig.rootFile || fileName === "ADACGlobalTypes.xsd") return contents;
+    return contents.replace(
+      /<xs:include\s+schemaLocation\s*=\s*["']\.?\/?(ADACGeometry|ADACGlobalTypes|ADACEnumeratedTypes|ADACStringTypes)\.xsd["']\s*(?:\/>|>[\s\S]*?<\/xs:include>)/gi,
+      ""
+    );
+  }
+
+  function buildSchemaValueLookup(files) {
+    const parser = new DOMParser();
+    const typeValues = new Map();
+    const elementTypes = new Map();
+    const contextElementTypes = new Map();
+    const complexTypeAssetNames = new Map();
+
+    files.forEach((file) => {
+      const doc = parser.parseFromString(file.contents, "application/xml");
+      Array.from(doc.getElementsByTagNameNS("*", "element")).forEach((element) => {
+        const elementName = element.getAttribute("name");
+        const typeName = element.getAttribute("type");
+        if (!elementName || !typeName) return;
+        addSchemaContextType(complexTypeAssetNames, typeName, elementName);
+      });
+
+      Array.from(doc.getElementsByTagNameNS("*", "simpleType")).forEach((simpleType) => {
+        const typeName = simpleType.getAttribute("name");
+        if (!typeName) return;
+        const values = Array.from(simpleType.getElementsByTagNameNS("*", "enumeration"))
+          .map((item) => item.getAttribute("value"))
+          .filter(Boolean);
+        if (values.length) typeValues.set(normalizeSchemaTypeKey(typeName), values);
+      });
+
+      Array.from(doc.getElementsByTagNameNS("*", "element")).forEach((element) => {
+        const elementName = element.getAttribute("name");
+        const typeName = element.getAttribute("type");
+        if (!elementName || !typeName) return;
+        const key = normalizeDetailKey(elementName);
+        if (!elementTypes.has(key)) elementTypes.set(key, new Set());
+        elementTypes.get(key).add(formatXmlToken(typeName));
+      });
+
+      Array.from(doc.getElementsByTagNameNS("*", "complexType")).forEach((complexType) => {
+        const complexTypeName = complexType.getAttribute("name");
+        if (!complexTypeName) return;
+        const contextNames = uniqueValues([
+          complexTypeName,
+          ...(complexTypeAssetNames.get(normalizeSchemaTypeKey(complexTypeName)) || []),
+        ]);
+        if (!contextNames.length) return;
+        Array.from(complexType.getElementsByTagNameNS("*", "element")).forEach((element) => {
+          const elementName = element.getAttribute("name");
+          const typeName = element.getAttribute("type");
+          if (!elementName || !typeName) return;
+          contextNames.forEach((contextName) => {
+            addSchemaContextType(contextElementTypes, `${contextName}/${elementName}`, typeName);
+            getSchemaDomainNamesForComplexType(complexTypeName).forEach((domainName) => {
+              addSchemaContextType(contextElementTypes, `${domainName}/${contextName}/${elementName}`, typeName);
+            });
+          });
+        });
+      });
+    });
+
+    return {
+      typeValues,
+      elementTypes,
+      contextElementTypes,
+    };
+  }
+
+  function addSchemaContextType(map, key, typeName) {
+    const normalizedKey = normalizeSchemaPathKey(key);
+    if (!normalizedKey || !typeName) return;
+    if (!map.has(normalizedKey)) map.set(normalizedKey, new Set());
+    map.get(normalizedKey).add(formatXmlToken(typeName));
+  }
+
+  function getSchemaDomainNamesForComplexType(complexTypeName) {
+    const normalizedType = normalizeSchemaTypeKey(complexTypeName);
+    const domainMatchers = [
+      [/cadastre/, "Cadastre"],
+      [/communication/, "Communication"],
+      [/electrical/, "Electrical"],
+      [/enhancements?/, "Enhancements"],
+      [/openspace/, "OpenSpace"],
+      [/sewerage/, "Sewerage"],
+      [/stormwater/, "StormWater"],
+      [/supplementary/, "Supplementary"],
+      [/surface/, "Surface"],
+      [/transport/, "Transport"],
+      [/(^|feature|objectmodel)water(supply)?/, "WaterSupply"],
+    ];
+    return uniqueValues(domainMatchers
+      .filter(([pattern]) => pattern.test(normalizedType))
+      .map(([, name]) => name));
+  }
+
+  async function fetchTextFile(path) {
+    const response = await fetch(path, { cache: "force-cache" });
+    if (!response.ok) throw new Error(`Could not load ${path}.`);
+    return response.text();
+  }
+
+  function getAdacSchemaConfig(doc) {
+    return adacSchemaConfigs[inferReportSchemaVersion(doc)] || null;
+  }
+
+  function getUnsupportedSchemaMessage(doc) {
+    const rootElement = doc.documentElement;
+    const versionText = String(rootElement.getAttribute("version") || rootElement.getAttribute("Version") || "").trim();
+    return versionText
+      ? `ADAC schema version ${versionText} is not supported by this viewer yet. Supported versions are 5.0.1 and 6.0.0.`
+      : "No supported ADAC schema version was found. Supported versions are 5.0.1 and 6.0.0.";
+  }
+
+  function sanitizeValidationFileName(fileName, extension) {
+    const clean = String(fileName || `uploaded.${extension}`)
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop()
+      .replace(/[^a-z0-9._-]+/gi, "_")
+      .replace(/^-+/, "");
+    return clean || `uploaded.${extension}`;
+  }
+
+  function getValidationXmlContext(xmlText, error) {
+    const lineNumber = Number(error?.loc?.lineNumber || error?.lineNumber || 0);
+    if (!lineNumber || !xmlText) return null;
+    const lines = String(xmlText).split(/\r?\n/);
+    const lineIndex = Math.max(0, Math.min(lines.length - 1, lineNumber - 1));
+    const textToLine = lines.slice(0, lineIndex + 1).join("\n");
+    const stack = [];
+    let lastStartPath = [];
+    const tokenPattern = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<\/?[^>]+>/g;
+    let match;
+    while ((match = tokenPattern.exec(textToLine))) {
+      const token = match[0];
+      if (/^<!--|^<!\[CDATA|^<\?|^<!/.test(token)) continue;
+      const closeMatch = token.match(/^<\s*\/\s*([^\s>]+)/);
+      if (closeMatch) {
+        const name = cleanName(formatXmlToken(closeMatch[1]));
+        const index = findLastStackIndex(stack, name);
+        if (index >= 0) stack.splice(index);
+        continue;
+      }
+      const openMatch = token.match(/^<\s*([^\s/>]+)/);
+      if (!openMatch) continue;
+      const name = cleanName(formatXmlToken(openMatch[1]));
+      if (!name) continue;
+      lastStartPath = [...stack, name];
+      if (!/\/\s*>$/.test(token)) stack.push(name);
+    }
+
+    const path = lastStartPath.length ? lastStartPath : stack;
+    if (!path.length) return null;
+	    return {
+	      lineNumber,
+	      lineText: String(lines[lineIndex] || "").trim(),
+	      nearbyLines: lines.slice(Math.max(0, lineIndex - 12), Math.min(lines.length, lineIndex + 13)),
+	      path,
+	    };
+	  }
+
+  function findLastStackIndex(stack, name) {
+    const normalizedName = normalizeDetailKey(name);
+    for (let index = stack.length - 1; index >= 0; index -= 1) {
+      if (normalizeDetailKey(stack[index]) === normalizedName) return index;
+    }
+    return -1;
+  }
+
+  function getValidationFailureStatusMessage(results) {
+    const first = results[0] || {};
+    const count = results.length;
+    if (first.status === "parse-error") return `The XML could not be parsed: ${first.errors?.[0]?.message || "Invalid XML."}`;
+    if (count === 1) return `${first.fileName || "The XML"} failed ADAC schema validation and was not loaded.`;
+    return `${count} XML files failed ADAC schema validation and were not loaded.`;
   }
 
   function clearLoadedFiles(shouldRender = true) {
@@ -2678,6 +3397,9 @@
     state.fileMetas = [];
     state.loadedFiles = [];
     state.reportBundles = [];
+    state.schemaValidationResults = [];
+    state.validationErrorResults = [];
+    state.repairPreview = null;
     state.assetKinds = new Set();
     state.fileName = "";
     state.zoom = 1;
@@ -3640,6 +4362,8 @@
     renderOverlays();
     renderChecks();
     renderDetails();
+    renderValidationPanel();
+    renderRepairPreviewBanner();
     drawMap();
   }
 
@@ -3648,10 +4372,972 @@
 
     if (els.fileName) els.fileName.textContent = state.fileName || "No file loaded";
     if (els.exportReportButton) els.exportReportButton.hidden = !state.loadedFiles.length;
+    if (els.repairedXmlDownloadButton) els.repairedXmlDownloadButton.hidden = !state.repairPreview?.repairedXmlText;
     if (state.reportBundles.length < 2) closeReportExportMenu();
     if (els.visibleLayerCount) els.visibleLayerCount.textContent = `${visibleLayers} visible`;
     updateLabelPanelState();
-    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0);
+    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0 || shouldShowValidationPanel());
+  }
+
+  function shouldShowValidationPanel() {
+    return state.validationErrorResults.length > 0 && state.features.length === 0;
+  }
+
+  function renderValidationPanel() {
+    if (!els.schemaValidationPanel) return;
+    if (!shouldShowValidationPanel()) {
+      els.schemaValidationPanel.hidden = true;
+      els.schemaValidationPanel.innerHTML = "";
+      return;
+    }
+
+    const repairPlan = getSuggestedXmlRepairPlan(state.validationErrorResults);
+    const repairPanel = renderValidationRepairPanel(repairPlan);
+    const validationActions = renderValidationPanelActions(repairPlan);
+    const resultItems = state.validationErrorResults.map((result, resultIndex) => {
+      const errors = normalizeValidationErrors(result.errors);
+      const visibleErrors = errors.slice(0, 20);
+      const hiddenCount = Math.max(0, errors.length - visibleErrors.length);
+      const errorRows = visibleErrors.map((error, errorIndex) => {
+        const errorDetails = formatValidationErrorDetails(error);
+        const valueControl = renderRepairIssueValueControl(error, errorDetails, errorIndex, resultIndex);
+        return `
+          <li>
+            <span class="viewer-validation-file__location">${escapeHtml(formatValidationErrorLocation(error))}</span>
+            <span class="viewer-validation-file__message">
+              <strong>${escapeHtml(errorDetails.title)}</strong>
+              ${errorDetails.detail ? `<small>${escapeHtml(errorDetails.detail)}</small>` : ""}
+            </span>
+            <span class="viewer-validation-file__suggestion">${escapeHtml(errorDetails.suggestion || "Review this element against the selected ADAC schema.")}</span>
+            ${valueControl}
+          </li>
+        `;
+      }).join("");
+      return `
+        <section class="viewer-validation-file">
+          <div class="viewer-validation-file__header">
+            <span>${escapeHtml(result.schemaLabel || "ADAC schema")}</span>
+            <strong>${escapeHtml(result.fileName || "Uploaded XML")}</strong>
+          </div>
+          <p>${escapeHtml(getValidationResultSummary(result, errors.length))}</p>
+          <div class="viewer-validation-file__columns" aria-hidden="true">
+            <span>Location</span>
+            <span>Issue</span>
+            <span>Suggested fix</span>
+            <span>Value / repair action</span>
+          </div>
+          <ol>${errorRows}</ol>
+          ${hiddenCount ? `<small>${hiddenCount} more validation error${hiddenCount === 1 ? "" : "s"} not shown.</small>` : ""}
+        </section>
+      `;
+    }).join("");
+
+    els.schemaValidationPanel.innerHTML = `
+      <div class="viewer-validation-panel__content">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <div class="viewer-validation-panel__intro">
+          <span>Schema validation failed</span>
+          <h2>XML file not loaded</h2>
+          <p>The uploaded file did not validate against the supported ADAC schema, so it has been blocked from the viewer.</p>
+        </div>
+        <div class="viewer-validation-panel__body">
+          ${repairPanel}
+          <div class="viewer-validation-panel__files">
+            ${resultItems}
+          </div>
+          ${validationActions}
+        </div>
+      </div>
+    `;
+    els.schemaValidationPanel.hidden = false;
+  }
+
+  function renderValidationRepairPanel(repairPlan) {
+    if (!repairPlan || !repairPlan.patches.length) return "";
+    const patchItems = repairPlan.patches.slice(0, 6).map((patch) => `<li>${escapeHtml(patch.label || "Apply a high-confidence XML repair.")}</li>`).join("");
+    const hiddenCount = Math.max(0, repairPlan.patches.length - 6);
+    const failureMessage = state.repairPreview?.status === "failed" && state.repairPreview.message
+      ? `<p>${escapeHtml(state.repairPreview.message)}</p>`
+      : "";
+    return `
+      <section class="viewer-validation-repair" aria-label="Suggested XML repair preview">
+        <div class="viewer-validation-repair__header">
+          <strong>Suggested XML patch available</strong>
+          <p>This will create a temporary viewer-only copy. The uploaded XML file will not be changed.</p>
+          ${failureMessage}
+        </div>
+        <ul>
+          ${patchItems}
+          ${hiddenCount ? `<li>${hiddenCount} more high-confidence repair${hiddenCount === 1 ? "" : "s"} available.</li>` : ""}
+        </ul>
+      </section>
+    `;
+  }
+
+  function renderValidationPanelActions(repairPlan) {
+    const hasRepairPlan = repairPlan && repairPlan.patches.length;
+    const hasValueFixes = hasSelectableValidationFixes();
+    if (!hasRepairPlan && !hasValueFixes && !state.repairPreview?.repairedXmlText) return "";
+    return `
+      <div class="viewer-validation-panel__actions">
+        ${hasRepairPlan ? `
+          <button type="button" data-action="preview-repaired-xml">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            <span>Preview with suggested repairs</span>
+          </button>
+        ` : (hasValueFixes ? `
+          <button type="button" data-action="preview-selected-validation-fixes">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            <span>Apply selected fixes</span>
+          </button>
+        ` : "")}
+        ${state.repairPreview?.repairedXmlText ? `
+          <button type="button" data-action="download-repaired-xml">
+            <i class="fa-solid fa-download" aria-hidden="true"></i>
+            <span>Download patched XML</span>
+          </button>
+        ` : ""}
+      </div>
+    `;
+  }
+
+  function hasSelectableValidationFixes() {
+    return state.validationErrorResults.some((result) => normalizeValidationErrors(result.errors).some((error) => {
+      const details = formatValidationErrorDetails(error);
+      const control = getRepairIssueValueControl(error, details);
+      return control.kind === "select" || control.kind === "input";
+    }));
+  }
+
+  function renderRepairPreviewBanner() {
+    if (!els.repairPreviewBanner) return;
+    const preview = state.repairPreview;
+    if (!preview?.active || preview.dismissed) {
+      els.repairPreviewBanner.hidden = true;
+      els.repairPreviewBanner.innerHTML = "";
+      return;
+    }
+    const patchCount = preview.patches?.length || 0;
+    const schemaText = preview.validationPassed
+      ? "The repaired preview validates against the selected ADAC schema."
+      : `Step 2 has ${preview.remainingErrorCount || 0} schema issue${(preview.remainingErrorCount || 0) === 1 ? "" : "s"} still needing correction.`;
+    const hasValueFixes = hasSelectableRepairPreviewFixes(preview);
+    els.repairPreviewBanner.innerHTML = `
+      <strong>Previewing viewer-repaired XML</strong>
+      <div class="viewer-repair-banner__steps">
+        <section>
+          <span>Step 1</span>
+          <p>${patchCount} temporary XML repair${patchCount === 1 ? "" : "s"} applied in memory only. The original XML file was not changed.</p>
+        </section>
+        <section>
+          <span>Step 2</span>
+          <p>${schemaText}</p>
+          ${renderRepairPreviewRemainingIssues(preview)}
+        </section>
+      </div>
+      <div class="viewer-repair-banner__actions">
+        ${hasValueFixes ? `
+          <button type="button" data-action="preview-selected-validation-fixes">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            <span>Apply selected fixes</span>
+          </button>
+        ` : ""}
+        <button type="button" data-action="download-repaired-xml">
+          <i class="fa-solid fa-download" aria-hidden="true"></i>
+          <span>Download patched XML</span>
+        </button>
+        <button type="button" data-action="continue-repaired-preview">
+          <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          <span>Continue without fixing</span>
+        </button>
+      </div>
+    `;
+    els.repairPreviewBanner.hidden = false;
+  }
+
+  function hasSelectableRepairPreviewFixes(preview) {
+    if (preview?.validationPassed) return false;
+    const errors = Array.isArray(preview?.remainingErrors) ? preview.remainingErrors : [];
+    return errors.some((error) => {
+      const details = formatValidationErrorDetails(error);
+      const control = getRepairIssueValueControl(error, details);
+      return control.kind === "select" || control.kind === "input";
+    });
+  }
+
+  function continueRepairedPreview() {
+    if (!state.repairPreview?.active) return;
+    state.repairPreview.dismissed = true;
+    renderRepairPreviewBanner();
+    setStatus("Continuing with the viewer-repaired preview. The original XML still failed schema validation.", true);
+  }
+
+  function renderRepairPreviewRemainingIssues(preview) {
+    const errors = Array.isArray(preview?.remainingErrors) ? preview.remainingErrors : [];
+    if (preview?.validationPassed || !errors.length) return "";
+    const rows = errors.map((error, index) => {
+      const details = formatValidationErrorDetails(error);
+      const control = renderRepairIssueValueControl(error, details, index, "preview");
+      return `
+        <li>
+          <span class="viewer-repair-banner__issue">
+            <small>${escapeHtml(formatValidationErrorLocation(error))}</small>
+            <strong>${escapeHtml(details.title)}</strong>
+          </span>
+          <span class="viewer-repair-banner__suggestion">${escapeHtml(details.suggestion || details.detail || "Review this value against the ADAC schema.")}</span>
+          ${control}
+        </li>
+      `;
+    }).join("");
+    const hiddenCount = Math.max(0, (preview.remainingErrorCount || errors.length) - errors.length);
+    return `
+      <div class="viewer-repair-banner__issue-headings" aria-hidden="true">
+        <span>Issue</span>
+        <span>Suggested fix</span>
+        <span>Value / repair action</span>
+      </div>
+      <ol class="viewer-repair-banner__issues">
+        ${rows}
+        ${hiddenCount ? `<li><span class="viewer-repair-banner__issue"><small>More</small><strong>${hiddenCount} additional schema issue${hiddenCount === 1 ? "" : "s"}</strong></span><span class="viewer-repair-banner__suggestion">Download the patched XML or continue reviewing the validation checks for the full list.</span><span class="viewer-repair-banner__control">Manual review</span></li>` : ""}
+      </ol>
+    `;
+  }
+
+  function renderRepairIssueValueControl(error, details, index, resultIndex = "") {
+    if (isSuggestedPatchRepair(error)) {
+      return `
+        <span class="viewer-repair-banner__control viewer-repair-banner__control--auto">
+          <span>Suggested patch</span>
+          <strong>Included automatically</strong>
+          <small>No value needed</small>
+        </span>
+      `;
+    }
+    const control = getRepairIssueValueControl(error, details);
+    const label = control.element ? `Choose ${control.element}` : "Choose fix";
+    if (control.kind === "select" && control.options.length) {
+      const options = [
+        `<option value="">Choose value...</option>`,
+        ...control.options.map((value) => `<option value="${escapeHtml(value)}"${value === control.suggestedValue ? " selected" : ""}>${escapeHtml(value)}</option>`),
+      ].join("");
+      return `
+        <label class="viewer-repair-banner__control">
+          <span>${escapeHtml(label)}</span>
+          <select data-repair-index="${index}" data-repair-result="${escapeHtml(resultIndex)}" data-repair-element="${escapeHtml(control.element || "")}">
+            ${options}
+          </select>
+        </label>
+      `;
+    }
+    if (control.kind === "input") {
+      return `
+        <label class="viewer-repair-banner__control">
+          <span>${escapeHtml(label)}</span>
+          <input type="text" value="${escapeHtml(control.suggestedValue || "")}" placeholder="${escapeHtml(control.placeholder || "Enter replacement value")}" data-repair-index="${index}" data-repair-result="${escapeHtml(resultIndex)}" data-repair-element="${escapeHtml(control.element || "")}" />
+        </label>
+      `;
+    }
+    return `<span class="viewer-repair-banner__control viewer-repair-banner__control--manual">Requires manual XML edit</span>`;
+  }
+
+  function isSuggestedPatchRepair(error) {
+    if (error?.repair?.confidence === "high") return true;
+    return Boolean(getSchemaRenameRepairPatch(error));
+  }
+
+  function getRepairIssueValueControl(error, details) {
+    const message = cleanValidationErrorMessage(error?.message || error?.rawMessage || "");
+    const invalidValueMatch = message.match(/^Element '([^']+)': '([^']*)' is not a valid value/i);
+    if (invalidValueMatch) {
+      const element = formatXmlToken(invalidValueMatch[1]);
+      const suppliedValue = invalidValueMatch[2] || "";
+      const typeName = getAtomicTypeName(message);
+      const allowedValues = getAllowedSchemaValuesForError(error, element, typeName);
+      if (allowedValues.length) {
+        const orderedValues = orderRepairAllowedValues(element, allowedValues);
+        return {
+          kind: "select",
+          element,
+          options: orderedValues,
+          suggestedValue: getSuggestedRepairValue(details, suppliedValue, orderedValues, element),
+        };
+      }
+      return {
+        kind: "input",
+        element,
+        suggestedValue: getSuggestedRepairValue(details, suppliedValue, [], element, error),
+        placeholder: formatSchemaTypeName(typeName) || "Replacement value",
+      };
+    }
+
+    const facetMatch = message.match(/^Element '([^']+)': \[facet '([^']+)'\] (.+)$/i);
+    if (facetMatch) {
+      const element = formatXmlToken(facetMatch[1]);
+      const suppliedValue = extractInvalidFacetValue(facetMatch[3]);
+      const inlineAllowedValues = extractAllowedSchemaValues(facetMatch[3]);
+      const allowedValues = inlineAllowedValues.length
+        ? inlineAllowedValues
+        : getAllowedSchemaValuesForError(error, element, getAtomicTypeName(message));
+      if (allowedValues.length) {
+        const orderedValues = orderRepairAllowedValues(element, allowedValues);
+        return {
+          kind: "select",
+          element,
+          options: orderedValues,
+          suggestedValue: getSuggestedRepairValue(details, suppliedValue, orderedValues, element),
+        };
+      }
+      return {
+        kind: "input",
+        element,
+        suggestedValue: getSuggestedRepairValue(details, suppliedValue, [], element, error),
+        placeholder: getNumericBoundarySuggestion(element, facetMatch[2], facetMatch[3]) || "Replacement value",
+      };
+    }
+
+    return { kind: "manual", element: "" };
+  }
+
+  function orderRepairAllowedValues(element, allowedValues = []) {
+    if (!isTypeValueElement(element)) return allowedValues;
+    return [...allowedValues].sort((a, b) => {
+      const rankA = getFallbackValueRank(a);
+      const rankB = getFallbackValueRank(b);
+      return rankA - rankB;
+    });
+  }
+
+  function getFallbackValueRank(value) {
+    const normalized = normalizeCompactValue(value);
+    if (normalized === "unknown") return 2;
+    if (normalized === "other") return 3;
+    return 1;
+  }
+
+  function isTypeValueElement(element) {
+    return normalizeDetailKey(element) === "type";
+  }
+
+  function getSuggestedRepairValue(details, suppliedValue = "", allowedValues = [], element = "", error = null) {
+    if (isOwnerValueElement(element)) {
+      return getSuggestedOwnerRepairValue(error);
+    }
+    const suggestion = String(details?.suggestion || "");
+    const quoted = suggestion.match(/(?:with|Use)\s+'([^']+)'/i) || suggestion.match(/\bUse\s+([A-Za-z0-9_.-]+)\b/i);
+    const candidate = quoted && !isSuggestionFillerWord(quoted[1]) ? quoted[1] : "";
+    if (allowedValues.length) {
+      if (isTypeValueElement(element) && isFallbackSchemaValue(candidate)) return "";
+      if (hasAllowedValue(allowedValues, candidate)) {
+        return allowedValues.find((value) => normalizeCompactValue(value) === normalizeCompactValue(candidate)) || candidate;
+      }
+      const closest = getClosestAllowedSchemaValue(suppliedValue, allowedValues);
+      if (isTypeValueElement(element) && isFallbackSchemaValue(closest)) return "";
+      return closest;
+    }
+    return candidate;
+  }
+
+  function isFallbackSchemaValue(value) {
+    const normalized = normalizeCompactValue(value);
+    return normalized === "unknown" || normalized === "other";
+  }
+
+  function isSuggestionFillerWord(value) {
+    return /^(the|a|an|one|of|valid|matching)$/i.test(String(value || "").trim());
+  }
+
+  function isOwnerValueElement(element) {
+    return normalizeDetailKey(element) === "owner";
+  }
+
+  function getSuggestedOwnerRepairValue(error = null) {
+    const commonOwner = getMostCommonLoadedOwnerValue();
+    if (commonOwner) return commonOwner;
+
+    const nearbyOwner = getNearbyElementValues(error).get("owner");
+    if (nearbyOwner) return nearbyOwner;
+
+    const receiver = [
+      state.fileMeta?.receiver,
+      ...getActiveReceivers(),
+    ].filter(Boolean).join(" ");
+    return inferOwnerValueFromReceiver(receiver);
+  }
+
+  function getMostCommonLoadedOwnerValue() {
+    const counts = new Map();
+    state.features.forEach((feature) => {
+      const owner = getFeatureAttributeValue(feature, "Owner");
+      if (!owner || /^(unknown|other|none|null|n\/a|na)$/i.test(owner)) return;
+      counts.set(owner, (counts.get(owner) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || "";
+  }
+
+  function getFeatureAttributeValue(feature, wantedKey) {
+    const normalizedWanted = normalizeDetailKey(wantedKey);
+    const attributes = feature?.attributes || {};
+    const match = Object.entries(attributes).find(([key, value]) => normalizeDetailKey(key) === normalizedWanted && String(value || "").trim());
+    return match ? String(match[1] || "").trim() : "";
+  }
+
+  function inferOwnerValueFromReceiver(receiver) {
+    const normalized = normalizeAuthorityName(receiver);
+    if (!normalized) return "";
+    if (/unitywater/.test(normalized)) return "UW";
+    if (/urbanutilities|queenslandurbanutilities/.test(normalized)) return "QUU";
+    if (/powerwater/.test(normalized)) return "PWC";
+    if (/council|city|regional|shire|somerset|brisbane|ipswich|lockyer|scenicrim|moretonbay|sunshinecoast|goldcoast|logan|redland|toowoomba|noosa|gympie|bundaberg|frasercoast|gladstone|mackay|rockhampton|whitsunday|burnett/.test(normalized)) {
+      return "Council";
+    }
+    return "";
+  }
+
+  function normalizeValidationErrors(errors = []) {
+    return errors.length ? errors : [{ message: "The XML did not pass schema validation.", loc: null }];
+  }
+
+  function getValidationResultSummary(result, errorCount) {
+    if (result.status === "unsupported") return result.message || "This ADAC schema version is not supported by the viewer yet.";
+    if (result.status === "validator-error") return result.message || "The schema validator could not complete.";
+    if (result.status === "parse-error") return "The XML is not well-formed, so schema validation could not run.";
+    return `${errorCount} schema validation error${errorCount === 1 ? "" : "s"} found.`;
+  }
+
+  function formatValidationErrorLocation(error) {
+    if (error?.loc?.lineNumber) return `Line ${error.loc.lineNumber}`;
+    return "XML";
+  }
+
+  function formatValidationErrorMessage(error) {
+    return formatValidationErrorDetails(error).title;
+  }
+
+  function formatValidationErrorDetails(error) {
+    const message = cleanValidationErrorMessage(error?.message || error?.rawMessage || "Schema validation error.");
+    if (error?.title || error?.detail || error?.suggestion) {
+      return {
+        title: error.title || message,
+        detail: error.detail || "",
+        suggestion: error.suggestion || "Fix the XML structure, then upload the file again.",
+      };
+    }
+
+    const unexpectedMatch = message.match(/^Element '([^']+)': This element is not expected\.(?: Expected is(?: one of)? \( ([^)]+) \)\.)?/i);
+    if (unexpectedMatch) {
+      const element = formatXmlToken(unexpectedMatch[1]);
+      const expected = unexpectedMatch[2] ? formatExpectedXmlTokens(unexpectedMatch[2]) : "";
+      return {
+        title: `Unexpected element: ${element}`,
+        detail: expected ? `Expected: ${expected}` : "",
+        suggestion: expected
+          ? `Rename, move, or replace ${element} with the expected schema element: ${expected}.`
+          : `Remove ${element} or move it to a schema-valid location.`,
+      };
+    }
+
+    const missingMatch = message.match(/^Element '([^']+)': Missing child element\(s\)\. Expected is(?: one of)? \( ([^)]+) \)\.?/i);
+    if (missingMatch) {
+      const parent = formatXmlToken(missingMatch[1]);
+      const expected = formatExpectedXmlTokens(missingMatch[2]);
+      return {
+        title: `Missing required child element under ${parent}`,
+        detail: `Expected: ${expected}`,
+        suggestion: `Add the required child element under ${parent}: ${expected}.`,
+      };
+    }
+
+    const invalidValueMatch = message.match(/^Element '([^']+)': '([^']*)' is not a valid value/i);
+    if (invalidValueMatch) {
+      const element = formatXmlToken(invalidValueMatch[1]);
+      const value = invalidValueMatch[2] || "(blank)";
+      const typeName = getAtomicTypeName(message);
+      const typeDetail = typeName ? `Expected type: ${formatSchemaTypeName(typeName)}` : "";
+      const allowedValues = getAllowedSchemaValuesForError(error, element, typeName);
+      const contextLabel = getSchemaContextLabelForError(error, element);
+      const ambiguousValues = !allowedValues.length && hasAmbiguousSchemaValuesForError(error, element, typeName);
+	      return {
+	        title: `Invalid value for ${element}`,
+	        detail: [
+	          contextLabel ? `Context: ${contextLabel}` : "",
+	          `Value supplied: ${value}`,
+          allowedValues.length
+            ? `Allowed values: ${formatAllowedSchemaValues(allowedValues)}`
+            : (ambiguousValues ? "Allowed values depend on the parent asset type." : typeDetail),
+	        ].filter(Boolean).join(". "),
+	        suggestion: allowedValues.length
+	          ? getAllowedValueCorrectionSuggestion(error, element, value, allowedValues)
+	          : (ambiguousValues ? getAmbiguousSchemaValueSuggestion(error, element) : getValueCorrectionSuggestion(error, element, message)),
+	      };
+	    }
+
+    const facetMatch = message.match(/^Element '([^']+)': \[facet '([^']+)'\] (.+)$/i);
+	    if (facetMatch) {
+	      const element = formatXmlToken(facetMatch[1]);
+	      const facet = formatFacetLabel(facetMatch[2]);
+	      const suppliedValue = extractInvalidFacetValue(facetMatch[3]);
+	      const inlineAllowedValues = extractAllowedSchemaValues(facetMatch[3]);
+	      const allowedValues = inlineAllowedValues.length
+	        ? inlineAllowedValues
+	        : getAllowedSchemaValuesForError(error, element, getAtomicTypeName(message));
+      const contextLabel = getSchemaContextLabelForError(error, element);
+      const ambiguousValues = !allowedValues.length && hasAmbiguousSchemaValuesForError(error, element, getAtomicTypeName(message));
+      const boundarySuggestion = getNumericBoundarySuggestion(element, facetMatch[2], facetMatch[3]);
+      return {
+        title: `Invalid ${facet} for ${element}`,
+        detail: [
+          contextLabel ? `Context: ${contextLabel}` : "",
+          allowedValues.length
+            ? `Allowed values: ${formatAllowedSchemaValues(allowedValues)}`
+            : (ambiguousValues ? "Allowed values depend on the parent asset type." : facetMatch[3]),
+	        ].filter(Boolean).join(". "),
+	        suggestion: allowedValues.length
+	          ? getAllowedValueCorrectionSuggestion(error, element, suppliedValue, allowedValues)
+	          : (ambiguousValues ? getAmbiguousSchemaValueSuggestion(error, element) : (boundarySuggestion || getValueCorrectionSuggestion(error, element, message))),
+	      };
+	    }
+
+    const elementMatch = message.match(/^Element '([^']+)': (.+)$/i);
+    if (elementMatch) {
+      const element = formatXmlToken(elementMatch[1]);
+      return {
+        title: `Issue with ${element}`,
+        detail: elementMatch[2],
+        suggestion: `Check ${element} against the ADAC schema requirements.`,
+      };
+    }
+
+    return {
+      title: message,
+      detail: "",
+      suggestion: "Review this message against the selected ADAC schema.",
+    };
+  }
+
+  function cleanValidationErrorMessage(message) {
+    return String(message || "")
+      .replace(/\{[^}]+\}([A-Za-z0-9_.:-]+)/g, "$1")
+      .replace(/^(?:.*?:\d+:\s*)?element\s+[A-Za-z0-9_.:-]+\s*:\s*Schemas validity error\s*:\s*/i, "")
+      .replace(/^Schemas validity error\s*:\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function formatXmlToken(value) {
+    return String(value || "")
+      .replace(/\{[^}]+\}/g, "")
+      .replace(/^.*:/, "")
+      .trim();
+  }
+
+  function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function formatExpectedXmlTokens(value) {
+    const tokens = String(value || "")
+      .replace(/\{[^}]+\}([A-Za-z0-9_.:-]+)/g, "$1")
+      .replace(/[()]/g, "")
+      .split(/\s*,\s*/)
+      .map(formatXmlToken)
+      .filter(Boolean);
+    if (tokens.length > 8) return `${tokens.slice(0, 8).join(", ")} and ${tokens.length - 8} more`;
+    return tokens.join(", ");
+  }
+
+  function formatFacetLabel(value) {
+    const labels = {
+      enumeration: "listed value",
+      maxexclusive: "maximum value",
+      maxinclusive: "maximum value",
+      minexclusive: "minimum value",
+      mininclusive: "minimum value",
+      pattern: "format",
+      totaldigits: "number",
+      fractiondigits: "decimal precision",
+      length: "length",
+      minlength: "minimum length",
+      maxlength: "maximum length",
+    };
+    const key = normalizeDetailKey(value);
+    return labels[key] || String(value || "value").replace(/[-_]+/g, " ");
+  }
+
+  function getAllowedSchemaValuesForError(error, element, typeName = "") {
+    const lookup = schemaValueLookupCache.get(error?.schemaKey);
+    if (!lookup) return [];
+
+    const explicitTypeValues = getAllowedSchemaValuesForType(lookup, typeName);
+    if (explicitTypeValues.length) return explicitTypeValues;
+
+    const contextCandidates = getSchemaValueCandidatesForErrorContext(lookup, error, element);
+    if (contextCandidates.length === 1) return contextCandidates[0].values;
+    if (contextCandidates.length > 1 && getDistinctSchemaValueSets(contextCandidates).length === 1) return contextCandidates[0].values;
+
+    const valuesByType = getSchemaValueCandidatesForElement(lookup, element);
+
+    if (valuesByType.length === 1) return valuesByType[0].values;
+    if (valuesByType.length > 1 && getDistinctSchemaValueSets(valuesByType).length === 1) return valuesByType[0].values;
+    return [];
+  }
+
+  function getAllowedSchemaValuesForType(lookup, typeName = "") {
+    if (!lookup || !typeName) return [];
+    return lookup.typeValues.get(normalizeSchemaTypeKey(typeName)) || [];
+  }
+
+  function hasAmbiguousSchemaValuesForError(error, element, typeName = "") {
+    const lookup = schemaValueLookupCache.get(error?.schemaKey);
+    if (!lookup || getAllowedSchemaValuesForType(lookup, typeName).length) return false;
+    const contextCandidates = getSchemaValueCandidatesForErrorContext(lookup, error, element);
+    if (contextCandidates.length > 1) return getDistinctSchemaValueSets(contextCandidates).length > 1;
+    if (contextCandidates.length === 1) return false;
+    const valuesByType = getSchemaValueCandidatesForElement(lookup, element);
+    return valuesByType.length > 1 && getDistinctSchemaValueSets(valuesByType).length > 1;
+  }
+
+  function getSchemaValueCandidatesForErrorContext(lookup, error, element) {
+    if (!lookup?.contextElementTypes || !error?.xmlContext?.path?.length) return [];
+    const path = error.xmlContext.path.map(cleanName).filter(Boolean);
+    if (!path.length) return [];
+    const elementKey = normalizeDetailKey(element);
+    const elementIndex = findLastPathIndex(path, elementKey);
+    const parentPath = (elementIndex >= 0 ? path.slice(0, elementIndex) : path)
+      .filter((item) => normalizeDetailKey(item) !== elementKey);
+    const contextKeys = getSchemaContextKeysForPath(parentPath, element);
+
+    for (const contextKey of contextKeys) {
+      const possibleTypes = lookup.contextElementTypes.get(normalizeSchemaPathKey(contextKey));
+      if (!possibleTypes || !possibleTypes.size) continue;
+      const contextParts = contextKey.split("/");
+      const candidates = uniqueSchemaValueCandidates(Array.from(possibleTypes).map((candidateType) => ({
+        context: contextParts.slice(0, -1).join(" > "),
+        type: candidateType,
+        values: getAllowedSchemaValuesForType(lookup, candidateType),
+      })).filter((item) => item.values.length));
+      if (candidates.length) return candidates;
+    }
+
+    return [];
+  }
+
+  function getSchemaContextKeysForPath(parentPath, element) {
+    if (!parentPath.length) return [];
+    const keys = [];
+    const nearestParent = parentPath[parentPath.length - 1];
+
+    for (let index = parentPath.length - 2; index >= 0; index -= 1) {
+      keys.push(`${parentPath[index]}/${nearestParent}/${element}`);
+    }
+
+    for (let start = 0; start < parentPath.length; start += 1) {
+      keys.push([...parentPath.slice(start), element].join("/"));
+    }
+
+    keys.push(`${nearestParent}/${element}`);
+    return uniqueValues(keys.map(normalizeSchemaPathKey).filter(Boolean));
+  }
+
+  function getSchemaValueCandidatesForElement(lookup, element) {
+    const possibleTypes = lookup?.elementTypes.get(normalizeDetailKey(element));
+    if (!possibleTypes || !possibleTypes.size) return [];
+    return uniqueSchemaValueCandidates(Array.from(possibleTypes)
+      .map((candidateType) => ({
+        type: candidateType,
+        values: getAllowedSchemaValuesForType(lookup, candidateType),
+      }))
+      .filter((item) => item.values.length));
+  }
+
+  function uniqueSchemaValueCandidates(candidates = []) {
+    const seen = new Set();
+    return candidates.filter((candidate) => {
+      const key = `${normalizeSchemaTypeKey(candidate.type)}|${candidate.values.join("\u0001")}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function getDistinctSchemaValueSets(valuesByType = []) {
+    return uniqueValues(valuesByType.map((item) => item.values.join("\u0001")));
+  }
+
+  function getSchemaContextLabelForError(error, element) {
+    const path = error?.xmlContext?.path;
+    if (!Array.isArray(path) || !path.length) return "";
+    const elementKey = normalizeDetailKey(element);
+    const lastElementIndex = path.findLastIndex
+      ? path.findLastIndex((item) => normalizeDetailKey(item) === elementKey)
+      : findLastPathIndex(path, elementKey);
+    const contextPath = lastElementIndex >= 0 ? path.slice(0, lastElementIndex + 1) : path;
+    const trimmedPath = contextPath.slice(-4);
+    return trimmedPath.map(formatXmlToken).filter(Boolean).join(" > ");
+  }
+
+  function findLastPathIndex(path, key) {
+    for (let index = path.length - 1; index >= 0; index -= 1) {
+      if (normalizeDetailKey(path[index]) === key) return index;
+    }
+    return -1;
+  }
+
+  function getAmbiguousSchemaValueSuggestion(error, element) {
+    const lookup = schemaValueLookupCache.get(error?.schemaKey);
+    const contextCandidates = getSchemaValueCandidatesForErrorContext(lookup, error, element);
+    const candidates = contextCandidates.length ? contextCandidates : getSchemaValueCandidatesForElement(lookup, element);
+    const labels = candidates
+      .map((candidate) => candidate.context
+        ? `${formatXmlToken(candidate.context)} (${formatSchemaTypeName(candidate.type)})`
+        : formatSchemaTypeName(candidate.type))
+      .filter(Boolean);
+    if (labels.length) {
+      const visibleLabels = labels.slice(0, 6).join(", ");
+      const moreText = labels.length > 6 ? ` and ${labels.length - 6} more` : "";
+      return `${element} has multiple possible schema value sets. Use the values for the correct parent asset: ${visibleLabels}${moreText}.`;
+    }
+    return `${element} is used by multiple ADAC asset types. Check the parent asset and use the ${element} values for that specific asset class.`;
+  }
+
+  function normalizeSchemaTypeKey(typeName) {
+    return normalizeDetailKey(formatXmlToken(typeName));
+  }
+
+  function normalizeSchemaPathKey(value) {
+    return String(value || "")
+      .split("/")
+      .map((part) => normalizeDetailKey(formatXmlToken(part)))
+      .filter(Boolean)
+      .join("/");
+  }
+
+  function uniqueValues(values = []) {
+    return Array.from(new Set(values));
+  }
+
+  function getAtomicTypeName(message) {
+    const match = String(message || "").match(/atomic type '([^']+)'/i);
+    return match ? formatXmlToken(match[1]) : "";
+  }
+
+  function formatSchemaTypeName(typeName) {
+    const normalized = formatXmlToken(typeName);
+    const labels = {
+      positiveInteger: "whole number, 1 or greater",
+      nonNegativeInteger: "whole number, 0 or greater",
+      integer: "whole number",
+      float: "decimal number",
+      double: "decimal number",
+      decimal: "decimal number",
+      Float_Positive_NonZero: "decimal number greater than 0",
+      Float_Positive_Zero: "decimal number 0 or greater",
+      water_service_diameter: "whole-number water service diameter from 20 to 63 mm",
+    };
+    return labels[normalized] || normalized.replace(/_/g, " ");
+  }
+
+  function getValueCorrectionSuggestion(error, element, message = "") {
+    const normalizedElement = normalizeDetailKey(element);
+    const typeName = getAtomicTypeName(message);
+    const normalizedType = normalizeDetailKey(typeName);
+    const nearbyNumericSuggestion = getNearbyNumericCorrectionSuggestion(error, element, message);
+    if (nearbyNumericSuggestion) return nearbyNumericSuggestion;
+
+    const boundarySuggestion = getNumericBoundarySuggestion(element, "", message);
+    if (boundarySuggestion) return boundarySuggestion;
+
+    if (/minlength|minimum length|underruns the allowed minimum length/i.test(message)) {
+      if (normalizedElement === "owner") {
+        const suggestedOwner = getSuggestedOwnerRepairValue(error);
+        return suggestedOwner
+          ? `Owner cannot be blank. Use '${suggestedOwner}' based on the other assets or the Receiver field.`
+          : "Owner cannot be blank. Use the asset owner code expected by the Receiver field, or use Council for council-owned assets.";
+      }
+      return `${element} cannot be blank. Provide at least one character or mark the element nil only if the schema allows it.`;
+    }
+
+    if (normalizedType === "waterservicediameter") {
+      return "Use a whole-number service diameter in millimetres between 20 and 63. Common sizes are 20, 25, 32, 38, 40, 50 and 63.";
+    }
+
+    if (normalizedElement.includes("diametermm") || normalizedElement.endsWith("diameter")) {
+      return "Use a whole-number diameter in millimetres. Values must be 1 or greater, for example 100, 150, 225 or 375.";
+    }
+
+    if (normalizedType === "positiveinteger" || normalizedType.includes("positiveinteger")) {
+      return `Use a whole number for ${element}. Values must be 1 or greater.`;
+    }
+
+    if (normalizedType === "nonnegativeinteger") {
+      return `Use a whole number for ${element}. Values must be 0 or greater.`;
+    }
+
+    if (normalizedType.includes("floatpositivenonzero")) {
+      return `Use a decimal number for ${element}. Values must be greater than 0.`;
+    }
+
+    if (normalizedType.includes("floatpositivezero")) {
+      return `Use a decimal number for ${element}. Values must be 0 or greater.`;
+    }
+
+    if (/level|chainage|length|width|height|depth|area|volume|offset|bearing|slope/i.test(element)) {
+      return `Use a numeric value for ${element} and check the unit shown in the element name.`;
+    }
+
+    return `Update ${element} to a value allowed by the ADAC schema.`;
+  }
+
+  function getNearbyNumericCorrectionSuggestion(error, element, message = "") {
+    const normalizedElement = normalizeDetailKey(element);
+    if (!normalizedElement.includes("diametermm") && !normalizedElement.endsWith("diameter")) return "";
+
+    const nearbyValues = getNearbyElementValues(error);
+    const notes = nearbyValues.get("notes") || "";
+    const candidate = getFirstPositiveIntegerFromText(notes);
+    if (!candidate) return "";
+
+    const text = String(message || "");
+    if (!/positiveInteger|not a valid value|minimum|greater than/i.test(text)) return "";
+    return `Use ${candidate} for ${element}. Nearby Notes say '${notes}', which appears to identify a ${candidate} mm chamber/asset size.`;
+  }
+
+  function getFirstPositiveIntegerFromText(text) {
+    const match = String(text || "").match(/\b([1-9]\d{1,4})\b/);
+    return match ? match[1] : "";
+  }
+
+  function getNumericBoundarySuggestion(element, facetName, message) {
+    const text = String(message || "");
+    const facet = normalizeDetailKey(facetName);
+    const minAllowed = text.match(/minimum value allowed \('([^']+)'\)/i)
+      || text.match(/greater than or equal to '?([0-9.+-]+)'?/i);
+    if (minAllowed) {
+      const inclusive = facet !== "minexclusive" && !/greater than '?[0-9.+-]+'?/i.test(text);
+      return `Use a numeric value for ${element} that is ${inclusive ? "at least" : "greater than"} ${minAllowed[1]}.`;
+    }
+
+    const maxAllowed = text.match(/maximum value allowed \('([^']+)'\)/i)
+      || text.match(/less than or equal to '?([0-9.+-]+)'?/i);
+    if (maxAllowed) {
+      const inclusive = facet !== "maxexclusive" && !/less than '?[0-9.+-]+'?/i.test(text);
+      return `Use a numeric value for ${element} that is ${inclusive ? "no more than" : "less than"} ${maxAllowed[1]}.`;
+    }
+
+    const exclusiveMin = text.match(/greater than '?([0-9.+-]+)'?/i);
+    if (exclusiveMin) return `Use a numeric value for ${element} that is greater than ${exclusiveMin[1]}.`;
+
+    const exclusiveMax = text.match(/less than '?([0-9.+-]+)'?/i);
+    if (exclusiveMax) return `Use a numeric value for ${element} that is less than ${exclusiveMax[1]}.`;
+
+    return "";
+  }
+
+  function extractAllowedSchemaValues(message) {
+    const match = String(message || "").match(/set\s*\{([^}]+)\}/i)
+      || String(message || "").match(/set of values\s*\{([^}]+)\}/i);
+    if (!match) return [];
+    return match[1]
+      .split(/\s*,\s*/)
+      .map((value) => value.replace(/^['"]|['"]$/g, "").trim())
+      .filter(Boolean);
+  }
+
+  function extractInvalidFacetValue(message) {
+    const match = String(message || "").match(/The value '([^']*)'/i);
+    return match ? match[1] : "";
+  }
+
+  function getAllowedValueCorrectionSuggestion(error, element, suppliedValue, allowedValues = []) {
+    const allowedText = formatAllowedSchemaValues(allowedValues);
+    const value = String(suppliedValue || "").trim();
+    const nearbySuggestion = getNearbyValueCorrectionSuggestion(error, element, value, allowedValues);
+    if (nearbySuggestion) return nearbySuggestion;
+
+    if (isTypeValueElement(element)) {
+      const orderedValues = orderRepairAllowedValues(element, allowedValues);
+      const primaryValues = orderedValues.filter((allowed) => !isFallbackSchemaValue(allowed));
+      const primaryText = formatAllowedSchemaValues(primaryValues.length ? primaryValues : orderedValues);
+      if (/^(none|nil|null|n\/a|na)$/i.test(value)) {
+        return `Choose the matching ${element} from the schema values first: ${primaryText}. Use 'Unknown' or 'Other' only if no specific value applies.`;
+      }
+      const closestType = getClosestAllowedSchemaValue(value, primaryValues);
+      if (closestType) {
+        return `Replace ${element} value '${value}' with '${closestType}'. Use 'Unknown' or 'Other' only if no specific value applies.`;
+      }
+      return `Choose the matching ${element} from the valid schema values: ${primaryText}. Use 'Unknown' or 'Other' only as a fallback.`;
+    }
+
+    if (/^(none|nil|null|n\/a|na)$/i.test(value)) {
+      if (hasAllowedValue(allowedValues, "Unknown")) return `Use 'Unknown' when ${element} is not known. Use 'Other' only if the value is known but not listed.`;
+      if (hasAllowedValue(allowedValues, "Other")) return `Use 'Other' if ${element} is not covered by the listed schema values.`;
+    }
+
+    const closest = getClosestAllowedSchemaValue(value, allowedValues);
+    if (closest) {
+      return `Replace ${element} value '${value}' with '${closest}'. Valid values are: ${allowedText}.`;
+    }
+
+    return `Use one of the valid schema values: ${allowedText}.`;
+  }
+
+  function getNearbyValueCorrectionSuggestion(error, element, suppliedValue, allowedValues = []) {
+    const nearbyValues = getNearbyElementValues(error);
+    const normalizedElement = normalizeDetailKey(element);
+    if (normalizedElement.includes("material")) {
+      const relatedMaterials = ["FloorMaterial", "RoofMaterial", "WallMaterial", "LidMaterial"]
+        .filter((name) => normalizeDetailKey(name) !== normalizedElement)
+        .map((name) => ({ name, value: nearbyValues.get(normalizeDetailKey(name)) }))
+        .filter((item) => item.value && hasAllowedValue(allowedValues, item.value));
+      const matchingMaterial = relatedMaterials.find((item) => suppliedValue && normalizeCompactValue(suppliedValue).startsWith(normalizeCompactValue(item.value)));
+      if (matchingMaterial) {
+        return `Replace '${suppliedValue}' with '${matchingMaterial.value}'. Nearby ${formatXmlToken(matchingMaterial.name)} is '${matchingMaterial.value}', and '${matchingMaterial.value}' is the valid ADAC schema material value.`;
+      }
+    }
+    return "";
+  }
+
+  function getNearbyElementValues(error) {
+    const lines = Array.isArray(error?.xmlContext?.nearbyLines) ? error.xmlContext.nearbyLines : [];
+    const values = new Map();
+    lines.forEach((line) => {
+      const match = String(line || "").match(/<([A-Za-z0-9_:-]+)(?:\s[^>]*)?>([^<]*)<\/\1>/);
+      if (!match) return;
+      const name = formatXmlToken(match[1]);
+      const value = String(match[2] || "").trim();
+      if (name && value) values.set(normalizeDetailKey(name), value);
+    });
+    return values;
+  }
+
+  function getClosestAllowedSchemaValue(value, allowedValues = []) {
+    const normalizedValue = normalizeCompactValue(value);
+    if (!normalizedValue) return "";
+    const exact = allowedValues.find((allowed) => normalizeCompactValue(allowed) === normalizedValue);
+    if (exact) return exact;
+    const prefix = allowedValues
+      .filter((allowed) => normalizeCompactValue(allowed).length >= 2)
+      .find((allowed) => normalizedValue.startsWith(normalizeCompactValue(allowed)));
+    if (prefix) return prefix;
+    const contained = allowedValues
+      .filter((allowed) => normalizedValue.length >= 3 && normalizeCompactValue(allowed).length > normalizedValue.length)
+      .find((allowed) => normalizeCompactValue(allowed).includes(normalizedValue));
+    return contained || "";
+  }
+
+  function hasAllowedValue(allowedValues = [], value = "") {
+    const normalizedValue = normalizeCompactValue(value);
+    return allowedValues.some((allowed) => normalizeCompactValue(allowed) === normalizedValue);
+  }
+
+  function normalizeCompactValue(value) {
+    return String(value || "").replace(/[^a-z0-9]+/gi, "").toLowerCase();
+  }
+
+  function formatAllowedSchemaValues(values = []) {
+    if (!values.length) return "";
+    if (values.length > 12) return `${values.slice(0, 12).join(", ")}. Showing first 12 of ${values.length} valid values.`;
+    return values.join(", ");
   }
 
   function renderLayers() {
@@ -4092,6 +5778,10 @@
       return;
     }
     if (!feature) {
+      if (shouldShowValidationPanel()) {
+        els.details.innerHTML = `<span>Fix the schema validation errors before inspecting asset attributes.</span>`;
+        return;
+      }
       els.details.innerHTML = `<span>Select an asset to inspect its XML attributes and geometry summary.</span>`;
       return;
     }
@@ -4311,6 +6001,9 @@
 
   function buildChecks() {
     if (!state.features.length) {
+      if (state.validationErrorResults.length) {
+        return buildSchemaValidationFailureChecks();
+      }
       return [{ tone: "muted", icon: "fa-circle-info", text: "Waiting for an ADAC XML file." }];
     }
 
@@ -4320,6 +6013,27 @@
     const unknownLayers = state.features.filter((feature) => feature.layer === "Other").length;
 
     checks.push({ tone: "good", icon: "fa-check", text: "XML parsed successfully in browser." });
+    if (state.repairPreview?.active) {
+      checks.push({
+        tone: "warn",
+        icon: "fa-triangle-exclamation",
+        text: `Previewing a viewer-repaired copy of ${state.repairPreview.originalFileName || "the uploaded XML"}. The original file was not changed.`,
+      });
+      if (!state.repairPreview.validationPassed && Array.isArray(state.repairPreview.remainingErrors)) {
+        state.repairPreview.remainingErrors.slice(0, 3).forEach((error) => {
+          const details = formatValidationErrorDetails(error);
+          checks.push({
+            tone: "warn",
+            icon: "fa-triangle-exclamation",
+            text: `Step 2 ${formatValidationErrorLocation(error)}: ${details.title}`,
+          });
+        });
+      }
+    }
+    checks.push(getSchemaValidationCheckItem());
+    if (state.validationErrorResults.length) {
+      checks.push(...buildSchemaValidationFailureChecks());
+    }
     checks.push({ tone: "good", icon: "fa-check", text: `${state.features.length} mapped assets found.` });
     checks.push(getLocationCheckItem());
 
@@ -4336,6 +6050,59 @@
       checks.push({ tone: "good", icon: "fa-check", text: "Asset IDs and geometry passed the quick checks." });
     }
 
+    return checks;
+  }
+
+  function getSchemaValidationCheckItem() {
+    if (state.repairPreview?.active) {
+      if (state.repairPreview.validationPassed) {
+        return {
+          tone: "warn",
+          icon: "fa-triangle-exclamation",
+          text: "The repaired preview passed schema validation, but the original uploaded XML still failed.",
+        };
+      }
+      return {
+        tone: "warn",
+        icon: "fa-triangle-exclamation",
+        text: `The repaired preview is parseable but still has ${state.repairPreview.remainingErrorCount || 0} schema warning${(state.repairPreview.remainingErrorCount || 0) === 1 ? "" : "s"}.`,
+      };
+    }
+    const validResults = state.schemaValidationResults.filter((result) => result.valid);
+    if (!validResults.length) {
+      return { tone: "muted", icon: "fa-circle-info", text: "ADAC schema validation has not run for the loaded files." };
+    }
+    const versions = Array.from(new Set(validResults.map((result) => result.schemaVersion || result.schemaLabel).filter(Boolean)));
+    const versionText = versions.length ? ` (${versions.join(", ")})` : "";
+    return {
+      tone: "good",
+      icon: "fa-check",
+      text: `ADAC schema validation passed for ${validResults.length} file${validResults.length === 1 ? "" : "s"}${versionText}.`,
+    };
+  }
+
+  function buildSchemaValidationFailureChecks() {
+    const failedCount = state.validationErrorResults.length;
+    const checks = [{
+      tone: "warn",
+      icon: "fa-triangle-exclamation",
+      text: `${failedCount} uploaded XML file${failedCount === 1 ? "" : "s"} failed validation and were not loaded.`,
+    }];
+    state.validationErrorResults.slice(0, 3).forEach((result) => {
+      const firstError = normalizeValidationErrors(result.errors)[0];
+      checks.push({
+        tone: "warn",
+        icon: "fa-triangle-exclamation",
+        text: `${result.fileName || "Uploaded XML"}: ${formatValidationErrorMessage(firstError)}`,
+      });
+    });
+    if (state.validationErrorResults.length > 3) {
+      checks.push({
+        tone: "muted",
+        icon: "fa-circle-info",
+        text: `${state.validationErrorResults.length - 3} more failed file${state.validationErrorResults.length - 3 === 1 ? "" : "s"} not shown.`,
+      });
+    }
     return checks;
   }
 
@@ -8478,10 +10245,109 @@
     });
   }
 
-  function getParseErrorSummary(parseError) {
+  function getParseErrorDetails(parseError, xmlText = "") {
     const text = String(parseError.textContent || "").replace(/\s+/g, " ").trim();
-    if (!text) return "check that the file is valid XML.";
-    return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+    if (!text) {
+      return {
+        message: "The XML is not well-formed.",
+        title: "XML parse error",
+        detail: "The browser could not parse the uploaded XML.",
+        suggestion: "Check that every opening XML tag has a matching closing tag, then upload the file again.",
+      };
+    }
+    const structuralDetails = getXmlStructureErrorDetails(text, xmlText);
+    if (structuralDetails) return structuralDetails;
+    const message = text.length > 180 ? `${text.slice(0, 177)}...` : text;
+    return {
+      message,
+      title: "XML parse error",
+      detail: message,
+      suggestion: "Fix the malformed XML tag structure, then upload the file again.",
+    };
+  }
+
+  function getParseErrorSummary(parseError, xmlText = "") {
+    return getParseErrorDetails(parseError, xmlText).message;
+  }
+
+  function getXmlStructureErrorDetails(message, xmlText = "") {
+    const mismatch = String(message || "").match(/Opening and ending tag mismatch:\s*([A-Za-z0-9_:-]+)\s+line\s+(\d+)\s+and\s+([A-Za-z0-9_:-]+)/i);
+    if (!mismatch) return null;
+    const openTag = formatXmlToken(mismatch[1]);
+    const openLine = Number(mismatch[2]);
+    const closeTag = formatXmlToken(mismatch[3]);
+    const lines = String(xmlText || "").split(/\r?\n/);
+    const nearbyAsset = findNearbyUnwrappedAsset(lines, openLine, closeTag);
+    if (nearbyAsset) {
+      const firstElementText = nearbyAsset.firstElementValue
+        ? `<${nearbyAsset.firstElement}>${nearbyAsset.firstElementValue}</${nearbyAsset.firstElement}>`
+        : `<${nearbyAsset.firstElement}>`;
+      return {
+        message: `Missing opening <${closeTag}> tag near line ${nearbyAsset.line}.`,
+        title: `Missing opening tag: ${closeTag}`,
+        detail: `Line ${nearbyAsset.line} starts ${nearbyAsset.id ? `asset ${nearbyAsset.id}` : `a new asset`} directly after </${closeTag}>, but it is not wrapped in <${closeTag}>.`,
+        suggestion: `Insert <${closeTag}> on the line immediately before ${firstElementText}. The block should start with <${closeTag}> and end with the existing </${closeTag}>.`,
+        loc: { lineNumber: nearbyAsset.line },
+        repair: {
+          type: "insert-before-line",
+          confidence: "high",
+          lineNumber: nearbyAsset.line,
+          text: `${nearbyAsset.insertIndent || ""}<${closeTag}>`,
+          label: `Insert missing <${closeTag}> before ${firstElementText}.`,
+        },
+      };
+    }
+    return {
+      message: `XML tag mismatch: </${closeTag}> does not match <${openTag}> from line ${openLine}.`,
+      title: `Mismatched closing tag: ${closeTag}`,
+      detail: `The parser found </${closeTag}> while still inside <${openTag}> from line ${openLine}.`,
+      suggestion: `Check for a missing opening <${closeTag}> tag or an extra closing </${closeTag}> near this asset block.`,
+      loc: { lineNumber: openLine },
+    };
+  }
+
+  function findNearbyUnwrappedAsset(lines, containerLine, assetTag) {
+    const start = Math.max(0, Number(containerLine || 1) - 1);
+    for (let index = start; index < Math.min(lines.length, start + 120); index += 1) {
+      const firstElement = String(lines[index] || "").match(/^\s*<([A-Za-z0-9_:-]+)>/);
+      if (!firstElement || formatXmlToken(firstElement[1]) === assetTag) continue;
+      const previousSignificant = findPreviousSignificantXmlLine(lines, index);
+      if (!previousSignificant || !new RegExp(`<\\/${assetTag}>\\s*$`).test(previousSignificant.text)) continue;
+      return {
+        line: index + 1,
+        firstElement: formatXmlToken(firstElement[1]),
+        firstElementValue: getInlineXmlElementValue(lines[index], formatXmlToken(firstElement[1])),
+        id: getInlineXmlElementValue(lines[index], "ADACId") || findNearbyAssetId(lines, index),
+        insertIndent: getParentElementIndent(lines[index]),
+      };
+    }
+    return null;
+  }
+
+  function getParentElementIndent(line) {
+    const indent = String(line || "").match(/^\s*/)?.[0] || "";
+    return indent.length >= 2 ? indent.slice(0, -2) : indent;
+  }
+
+  function findPreviousSignificantXmlLine(lines, index) {
+    for (let current = index - 1; current >= 0; current -= 1) {
+      const text = String(lines[current] || "").trim();
+      if (text) return { line: current + 1, text };
+    }
+    return null;
+  }
+
+  function findNearbyAssetId(lines, index) {
+    for (let current = index; current < Math.min(lines.length, index + 8); current += 1) {
+      const value = getInlineXmlElementValue(lines[current], "ADACId");
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function getInlineXmlElementValue(line, elementName) {
+    const match = String(line || "").match(new RegExp(`<${elementName}(?:\\s[^>]*)?>([^<]*)<\\/${elementName}>`, "i"));
+    return match ? String(match[1] || "").trim() : "";
   }
 
   function inferLayerFromStructure(node) {

@@ -1,0 +1,870 @@
+<?xml version="1.0"?>
+<!-- version 6.0.0 created by Blake Slaven October 2023 (Lion Systems)-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.adac.com.au" targetNamespace="http://www.adac.com.au" elementFormDefault="qualified" attributeFormDefault="unqualified" version="5.0.1">
+	<!-- INCLUDES -->
+	<!-- Enumerated Types -->
+	<xs:include schemaLocation="./ADACEnumeratedTypes.xsd">
+		<xs:annotation>
+			<xs:documentation>Uses ADAC enumerated SimpleType definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- Global Types -->
+	<xs:include schemaLocation="./ADACGlobalTypes.xsd">
+		<xs:annotation>
+			<xs:documentation>Contains ADAC globally referenced type definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- Geometry -->
+	<xs:include schemaLocation="./ADACGeometry.xsd">
+		<xs:annotation>
+			<xs:documentation>Contains ADAC geometry definitions</xs:documentation>
+		</xs:annotation>
+	</xs:include>
+	<!-- **************************************************************************************** -->
+	<!-- Electrical - Contains the specification for all Electrical information                     -->
+	<!-- **************************************************************************************** -->
+	<xs:complexType name="objectModelElectrical">
+		<xs:annotation>
+			<xs:documentation>Data structure constraining information for electrical features</xs:documentation>
+		</xs:annotation>
+		<xs:sequence minOccurs="1" maxOccurs="1">
+			<xs:element name="Switchboards" nillable="false" minOccurs="1" maxOccurs="1">
+				<xs:annotation>
+					<xs:documentation>Element representing the feature class of Electrical Switchboards</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence minOccurs="1" maxOccurs="1">
+						<xs:element name="Switchboard" type="Feature_Electrical_Switchboard" nillable="false" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Represents an electrical switchboard feature</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		  <xs:element name="Pits" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Pits</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Pit" type="Feature_Electrical_Pit" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical pit feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Conduits" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Conduits</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Conduit" type="Feature_Electrical_Conduit" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical conduit feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Cables" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Cables</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Cable" type="Feature_Electrical_Cable" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical cable feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Fittings" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Fittings</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Fitting" type="Feature_Electrical_Fitting" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical fitting feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Lights" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Lights</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Light" type="Feature_Electrical_Light" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical light feature, whether freestanding or fixed to an existing structure</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Poles" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electrical Poles</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Pole" type="Feature_Electrical_Pole" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electrical pole feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="SolarUnits" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Solar Units</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="SolarUnit" type="Feature_Solar_Unit" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents a solar unit feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="EV_ChargeStations" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Electronic Vehicle Charge Stations</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="EV_ChargeStation" type="Feature_EV_Charge_Station" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents an electronic vehicle charge station feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="TrafficSignalLights" nillable="false" minOccurs="1" maxOccurs="1">
+        <xs:annotation>
+          <xs:documentation>Element representing the feature class of Traffic Signal Lights</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="TrafficSignalLight" type="Feature_Traffic_Signal_Light" nillable="false" minOccurs="0" maxOccurs="unbounded">
+              <xs:annotation>
+                <xs:documentation>Represents a traffic signal light feature</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+	</xs:complexType>
+	<!-- **************************************************************************************** -->
+	<!-- Features - Contains the specification for all Electrical Features                         -->
+	<!-- **************************************************************************************** -->
+	<!-- Feature Electrical Switchboards -->
+	<xs:complexType name="Feature_Electrical_Switchboard">
+		<xs:annotation>
+			<xs:documentation>Represents an electrical switchboard feature</xs:documentation>
+		</xs:annotation>
+		<xs:complexContent>
+			<xs:extension base="asset_abstract">
+				<xs:sequence minOccurs="1" maxOccurs="1">
+					<xs:element name="Type" type="electrical_switchboard_type" nillable="false" minOccurs="1" maxOccurs="1">
+						<xs:annotation>
+							<xs:documentation>The type of switchboard</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+          <xs:element name="EnclosureMaterial" type="electrical_switchboard_enclosure_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The material of the switchboard enclosure</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="EnclosureCoating" type="electrical_switchboard_enclosure_coating" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The coating of the switchboard enclosure</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="EnclosureConstruction" type="electrical_switchboard_enclosure_construction" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Enclosure construction for a switchboard</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MountType" type="electrical_switchboard_mount_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The mounting type used to fix the switchboard</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ElectricityTariff" type="electrical_switchboard_electricity_tariff" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The electricity tariff of the switchboard</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="SupplyArrangement" type="electrical_switchboard_supply_arrangement" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Supply phase</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="TypeOfSupply" type="electrical_switchboard_type_of_supply" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of supply to switchboard</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Height_mm" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The height of the enclosure measured in the vertical in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Width_mm" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The width of the enclosure measured horizontally in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Depth_mm" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The depth of the enclosure in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfDoors" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The number of doors on the enclosure</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MeterNumber" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The supply authority electrical meter asset number. When multiple meters are present, meter numbers are to be recorded ie. 123456, 567890</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NationalMeterIdentifier" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Identification number for the connection to the National Electricity Network. NMI number in most States will be an 10 or 11 digit number, such as 44012345678 or two letters followed by digits, such as QB044123456</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PointOfSupply" type="String_32" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Details of Point of Supply</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="IP_Rating" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Refers to the IP (Ingress Protection) of switchboard. The rating is used to describe levels of sealing protection on electrical enclosures against solid objects and moisture.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:group ref="manufacturer_model_details" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Standard element group called in to support manufacturer and model details</xs:documentation>
+            </xs:annotation>
+          </xs:group>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+				</xs:sequence>
+			</xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Pits -->
+  <xs:complexType name="Feature_Electrical_Pit">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical pit feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="elec_comm_pit_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of pit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Use" type="electrical_pit_use" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>What is the pit used for</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Material" type="elec_comm_pit_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The pit material type eg: Plastic, Concrete</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidLoadRating" type="electrical_pit_lid_load_rating" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Access cover and frames load rating as per AS3996</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidMaterial" type="elec_comm_pit_lid_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The lid material type eg: Plastic, Concrete</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LidDesignation" type="electrical_pit_lid_designation" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Label on Lid</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="KeyType" type="elec_comm_pit_key_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Key type used to open lid</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Size" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>Represents the essential dimensions of the pit. Contains a choice of structures that pertain to different configurations.</xs:documentation>
+            </xs:annotation>
+            <xs:complexType>
+              <xs:choice minOccurs="1" maxOccurs="1">
+                <xs:element name="Rectangular" type="rectangular_struct_mm" minOccurs="1" maxOccurs="1" nillable="false">
+                  <xs:annotation>
+                    <xs:documentation>Dimensions of a rectangular pit</xs:documentation>
+                  </xs:annotation>
+                </xs:element>
+                <xs:element name="Circular" type="circular_struct_mm" minOccurs="1" maxOccurs="1" nillable="false">
+                  <xs:annotation>
+                    <xs:documentation>Dimensions of a circular pit</xs:documentation>
+                  </xs:annotation>
+                </xs:element>
+              </xs:choice>
+            </xs:complexType>
+          </xs:element>
+          <xs:element name="Depth_m" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The depth of the pit in metres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="SurfaceLevel_m" type="xs:float" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Surface level of pit, measured at the centre of the pit lid (in metres against the vertical datum).</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Conduits -->
+  <xs:complexType name="Feature_Electrical_Conduit">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical conduit feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Material" type="electrical_conduit_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The conduit material type eg: PVC, Galvanised etc</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Protection" type="elec_comm_conduit_protection" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of conduit protection used eg: Concrete encased, warning tape only</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Placement" type="electrical_conduit_placement" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Describes the placement of the conduit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Colour" type="electrical_conduit_colour" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Colour of conduit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Size_mm" type="electrical_conduit_size" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The size of the conduit in millimetres ie. 16mm-63mm OD, 80mm-150mm ID</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Configuration" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The configuration of the conduits laid in the trench, ie Quantity x Size eg. 2 x 80mm +  1 x 50mm</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfConduits" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Total number of conduits on alignment</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="AverageDepth_mm" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The average depth of the electrical conduit in the trench/run</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_linear_multipath_complex" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Cables -->
+  <xs:complexType name="Feature_Electrical_Cable">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical cable feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="electrical_cable_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The cable type</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Material" type="electrical_cable_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The cable core material type eg: Copper, Aluminium</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Insulation" type="electrical_cable_insulation" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Cable Insulation material</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Placement" type="elec_comm_cable_placement" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Describes the placement of the cable</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Size_mm2" type="electrical_cable_size" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The size of the cable in mm2 ie. 4, 6, 10, 16, 25, 35, 50, 70 etc</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Configuration" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The configuration of the cables in conduit, ie Quantity x Size eg. 2 x 16mm2 +  1 x 6mm2</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfCables" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Total number of cables in conduits on alignment</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_linear_multipath_complex" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Fitting -->
+  <xs:complexType name="Feature_Electrical_Fitting">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical fitting feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Type" type="electrical_fitting_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of electrical fitting eg: Power Outlet, Earth Point etc</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MountType" type="electrical_fitting_mount_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of mount made for the electrical fitting</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PowerSource" type="electrical_fitting_power_source" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Power source supply the fitting</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:group ref="manufacturer_model_details" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Standard element group called in to support manufacturer and model details</xs:documentation>
+            </xs:annotation>
+          </xs:group>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Light -->
+  <xs:complexType name="Feature_Electrical_Light">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical light feature, whether freestanding or fixed to an existing structure</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Function" type="electrical_light_function" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The major function of the light</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Type" type="electrical_light_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The type of luminaire</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Source" type="electrical_light_source" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The light source of the luminaire</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Tarif" type="electrical_light_tarif" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of Public Lighting Tarif used to light the luminaire</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Wattage" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Nominal Wattage value of the luminaire</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OpticsConfiguration" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Optical distribution pattern</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Controller" type="electrical_light_controller" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Base for PE Cell</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Sensor" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Luminaire Sensor type</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MountType" type="electrical_light_mount_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>How the luminaire is installed or supported</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="MountingHeight_m" type="Float_Positive_NonZero" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Mounting Height of Luminaire in metres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfLuminaire" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The number of luminaires</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Shielding" type="xs:boolean" minOccurs="1" maxOccurs="1" nillable="true">
+            <xs:annotation>
+              <xs:documentation>True or false value indicating whether shielding is present</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ShieldingType" type="electrical_light_shielding_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of Shielding</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:group ref="manufacturer_model_details" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Standard element group called in to support manufacturer and model details</xs:documentation>
+            </xs:annotation>
+          </xs:group>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electrical Pole -->
+  <xs:complexType name="Feature_Electrical_Pole">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical pole feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Function" type="electrical_pole_function" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The function of the pole</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Material" type="electrical_pole_material" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Predominant construction material of a pole</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Base" type="electrical_pole_base" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>How pole is supported/affixed to footing</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="HingeType" type="electrical_pole_hinge_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Pole hinged configuration</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Coating" type="electrical_pole_coating" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Pole Coating</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OutreachArmType" type="electrical_pole_outreach_arm_type" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of Outreach</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OutreachShape" type="electrical_pole_outreach_shape" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Shape of the Outreach</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OutreachArmStay" type="xs:boolean" minOccurs="1" maxOccurs="1" nillable="true">
+            <xs:annotation>
+              <xs:documentation>True or false value indicating whether an additional structure to support the outreach is present</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfOutreach" type="electrical_pole_no_of_outreach" minOccurs="1" maxOccurs="1" nillable="true">
+            <xs:annotation>
+              <xs:documentation>Number of Outreaches</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="BasePlatePCD" type="String_32" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The Pitch Circle Diameter (PCD) is the diameter of the circle which passes through the centre of all the base plate studs</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Manufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Manufacturer of pole</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Model number of pole</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Height_m" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The height of the pole</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Width_mm" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The width/diameter of the light pole at 1.5m in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OutreachLength_m" type="Float_Positive_NonZero" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The length of the Outreach in metres (0.1 - 6m)</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="OutreachUplift_m" type="Float_Positive_NonZero" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The uplift height of the Outreach in metres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Solar Unit -->
+  <xs:complexType name="Feature_Solar_Unit">
+    <xs:annotation>
+      <xs:documentation>Represents an electrical pole feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="GridConnected" type="solar_unit_grid_connected" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Is the unit connected to the Electricity Grid</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="InverterCapacity_kW" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The capacity of the Inverter in kW</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="InverterManufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Manufacturer of Inverter</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="InverterModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Model number of Inverter</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfInverters" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Quantity of Inverters in the Unit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PanelCapacity_kW" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The capacity of the Panel in kW</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PanelManufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Manufacturer of Panel</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PanelModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Model number of Panel</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfPanels" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Quantity of Panels in the Unit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="BatteryStorageTotalCapacity_kWh" type="Float_Positive_Zero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Total battery storage capacity.  Record 0 if no Batteries.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="BatteryManufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Manufacturer of Battery (if no Battery is present in unit record as None Present)</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="BatteryModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Model number of Battery (if no Battery is present in unit record as None Present)</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="NoOfBatteries" type="xs:positiveInteger" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Number of Batteries in Unit if present</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Electronic Vehicle Charge Station -->
+  <xs:complexType name="Feature_EV_Charge_Station">
+    <xs:annotation>
+      <xs:documentation>Represents an electronic vehicle charge station feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="ChargeLevel" type="ev_charge_station_charge_level" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The level of charging</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="PlugType" type="ev_charge_station_plug_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Charging Station Plug Type</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ChargingOutput_kW" type="Float_Positive_NonZero" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Charging output in kW</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Manufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Manufacturer of the Charging Station</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Model Number of the Charging Station</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ElectricalSupply" type="String_64" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>What is the Electrical Supply to the Station</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- Feature Traffic Signal Lights -->
+  <xs:complexType name="Feature_Traffic_Signal_Light">
+    <xs:annotation>
+      <xs:documentation>Represents a traffic signal light feature</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="asset_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="LanternFunction" type="traffic_signal_light_lantern_function" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The purpose of the lantern</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LanternType" type="traffic_signal_light_lantern_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of Lantern</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LanternActivation" type="traffic_signal_light_lantern_activation" nillable="true" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Lantern activation type</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LuminaireType" type="traffic_signal_light_luminaire_type" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Type of light for the lantern</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="LanternSize_mm" type="xs:positiveInteger" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>Size of the lantern in millimetres</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Manufacturer" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The Manufacturer of the unit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="ModelNumber" type="String_64" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The standard code, model number or part number for the unit</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" nillable="false" minOccurs="1" maxOccurs="1">
+            <xs:annotation>
+              <xs:documentation>The geometry representing this feature in coordinate space.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+</xs:schema>
