@@ -15,7 +15,8 @@
     assetColumnsPerTable: 5,
   };
 
-  const reportBusinessName = "ADACT";
+  const reportBusinessName = "ADACT SOLUTIONS PTY LTD";
+  const reportRegistrationLine = "ABN 62 700 080 155 | ACN 700 080 155";
   const reportContactEmail = "projects@adact.com.au";
   const reportLogoPath = "img/LOGO-Black-Transparent.png";
   let reportLogoImagePromise = null;
@@ -1477,8 +1478,9 @@
         } else {
           pdfAdactLogoMark(page, reportPage.width - reportPage.marginX - 118, footerY, 14, [0.43, 0.47, 0.52]);
         }
-        pdfText(page, reportBusinessName, reportPage.width - reportPage.marginX - 98, footerY + 6, 7.5, "F2", [0.43, 0.47, 0.52]);
-        pdfText(page, reportContactEmail, reportPage.width - reportPage.marginX - 98, footerY + 15, 7.5, "F1", [0.43, 0.47, 0.52]);
+        pdfText(page, reportBusinessName, reportPage.width - reportPage.marginX - 98, footerY + 5, 6.7, "F2", [0.43, 0.47, 0.52]);
+        pdfText(page, reportRegistrationLine, reportPage.width - reportPage.marginX - 98, footerY + 13, 6.4, "F1", [0.43, 0.47, 0.52]);
+        pdfText(page, reportContactEmail, reportPage.width - reportPage.marginX - 98, footerY + 21, 6.4, "F1", [0.43, 0.47, 0.52]);
       },
 
       drawCover() {
