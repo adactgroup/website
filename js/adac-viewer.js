@@ -83,6 +83,7 @@
     Transport: "#e08b24",
     Surface: "#8a9a3b",
     Cadastre: "#5d6f84",
+    OpenSpace: "#5f785f",
     Telecommunications: "#c53b74",
     Electrical: "#d0a400",
     Enhancements: "#7f8da3",
@@ -117,7 +118,39 @@
     transport_parking: planStyle("transport_parking", "#919191", 43, 0.18, 1.2),
     transport_roadisland: planStyle("transport_roadisland", "#878787", 44, 0.18, 1.2),
     transport_pramramp: planStyle("transport_pramramp", "#5f5f5f", 45, 0.2, 0.95),
+    open_space_area: planStyle("open_space_area", "#6f8a6f", 40, 0.13, 1.2, "rgba(111, 138, 111, 0.16)"),
     open_space_sign: planStyle("open_space_sign", "#555555", 47, 0.2, 0.95),
+    open_space_electrical_conduit: planStyle("open_space_electrical_conduit", "#505050", 47, 0.2, 1.2),
+    open_space_electrical_pit: planStyle("open_space_electrical_pit", "#4b4b4b", 48, 0.18, 0.95),
+    open_space_electrical_light: planStyle("open_space_electrical_light", "#967d37", 48, 0.18, 0.95),
+    open_space_communication_conduit: planStyle("open_space_communication_conduit", "#5f5f5f", 47, 0.2, 1.2),
+    open_space_communication_pit: planStyle("open_space_communication_pit", "#555555", 48, 0.18, 0.95),
+    open_space_irrigation_pipe: planStyle("open_space_irrigation_pipe", "#466946", 47, 0.2, 1.2),
+    open_space_irrigation_fitting: planStyle("open_space_irrigation_fitting", "#465f46", 48, 0.18, 0.95),
+    open_space_landscape_area: planStyle("open_space_landscape_area", "#5f785f", 40, 0.14, 1.2, "rgba(95, 120, 95, 0.18)"),
+    open_space_edging: planStyle("open_space_edging", "#5f785f", 46, 0.16, 1.05),
+    open_space_tree: planStyle("open_space_tree", "#466946", 49, 0.18, 1.15),
+    open_space_activity_area: planStyle("open_space_activity_area", "#78785f", 40, 0.14, 1.2, "rgba(120, 120, 95, 0.18)"),
+    open_space_activity_point: planStyle("open_space_activity_point", "#69694b", 49, 0.18, 0.95),
+    open_space_barbeque: planStyle("open_space_barbeque", "#5f5546", 49, 0.18, 0.95),
+    open_space_table: planStyle("open_space_table", "#5f5546", 49, 0.18, 0.95),
+    open_space_seat: planStyle("open_space_seat", "#555555", 49, 0.18, 0.85),
+    open_space_bicycle_fitting: planStyle("open_space_bicycle_fitting", "#555555", 49, 0.18, 0.9),
+    open_space_barrier_point: planStyle("open_space_barrier_point", "#464646", 49, 0.18, 0.85),
+    open_space_barrier_continuous: planStyle("open_space_barrier_continuous", "#464646", 46, 0.18, 1.2),
+    open_space_waste_collection: planStyle("open_space_waste_collection", "#555546", 49, 0.18, 0.95),
+    open_space_shelter: planStyle("open_space_shelter", "#5f5f5f", 49, 0.18, 1.1),
+    open_space_shelter_polygon: planStyle("open_space_shelter_polygon", "#5f5f5f", 41, 0.14, 1.2, "rgba(95, 95, 95, 0.16)"),
+    open_space_artwork: planStyle("open_space_artwork", "#6a5f78", 49, 0.18, 0.95),
+    open_space_boating_facility: planStyle("open_space_boating_facility", "#4f7780", 40, 0.16, 1.2, "rgba(79, 119, 128, 0.16)"),
+    open_space_retaining_wall: planStyle("open_space_retaining_wall", "#505050", 46, 0.22, 1.2),
+    open_space_building: planStyle("open_space_building", "#646464", 41, 0.16, 1.2, "rgba(100, 100, 100, 0.14)"),
+    open_space_platform: planStyle("open_space_platform", "#6b6b5a", 41, 0.14, 1.2, "rgba(107, 107, 90, 0.16)"),
+    open_space_fauna_point: planStyle("open_space_fauna_point", "#55705a", 49, 0.18, 0.95),
+    open_space_fauna_polyline: planStyle("open_space_fauna_polyline", "#55705a", 46, 0.16, 1.1),
+    open_space_land_stabilisation: planStyle("open_space_land_stabilisation", "#73785f", 40, 0.13, 1.2, "rgba(115, 120, 95, 0.16)"),
+    open_space_prepared_surface: planStyle("open_space_prepared_surface", "#7a7464", 40, 0.13, 1.2, "rgba(122, 116, 100, 0.16)"),
+    open_space_fixture: planStyle("open_space_fixture", "#555555", 49, 0.18, 0.9),
     generic: planStyle("generic", "#5a5a5a", 50, 0.18, 1.2),
   };
   const existingAssetPlanColor = "#8b96a3";
@@ -132,6 +165,10 @@
     "Stormwater",
     "Transport",
     "OpenSpace",
+    "Electrical",
+    "Communication",
+    "Communications",
+    "Telecommunications",
     "Supplementary",
   ];
 
@@ -6425,9 +6462,21 @@
 
   function shouldAvoidLotLabelPlacement(feature) {
     if (isLotLabelFeature(feature)) return false;
+    if (isOpenSpaceRelatedLabelFeature(feature)) return false;
     if (isHouseConnectionLabelFeature(feature)) return !findLinkedLotForConnection(feature);
     if (isWaterMeterLabelFeature(feature)) return !findLinkedLotForMeter(feature);
     return true;
+  }
+
+  function isOpenSpaceRelatedLabelFeature(feature) {
+    const path = normalizePlanAssetPath(feature?.assetPath);
+    const styleKey = feature?.planStyleKey || getPlanStyleKeyForFeature(feature);
+    return path.startsWith("openspace/")
+      || path.startsWith("electrical/")
+      || path.startsWith("communication/")
+      || path.startsWith("communications/")
+      || path.startsWith("telecommunications/")
+      || String(styleKey || "").startsWith("open_space_");
   }
 
   function getLabelLotObstacles(transform) {
@@ -8265,7 +8314,9 @@
   }
 
   function getPlanStyleForFeature(feature) {
-    const key = feature.planStyleKey || getPlanStyleKeyForAssetPath(feature.assetPath);
+    const key = feature.planStyleKey && feature.planStyleKey !== "generic"
+      ? feature.planStyleKey
+      : getPlanStyleKeyForFeature(feature);
     const style = planPreviewStyleDefinitions[key] || planPreviewStyleDefinitions.generic;
     if (!isExistingAsset(feature)) return style;
     return {
@@ -8273,6 +8324,27 @@
       color: existingAssetPlanColor,
       fill: style.fill ? existingAssetPlanFill : style.fill,
     };
+  }
+
+  function getPlanStyleKeyForFeature(feature) {
+    const baseKey = getPlanStyleKeyForAssetPath(feature?.assetPath);
+    const values = feature?.attributes || {};
+    const path = normalizePlanAssetPath(feature?.assetPath);
+    if (path.startsWith("watersupply/pipes/") && valueMatches(values, ["Use"], "Irrigation")) return "open_space_irrigation_pipe";
+    if (
+      path.startsWith("watersupply/fittings/")
+      || path.startsWith("watersupply/valves/")
+      || path.startsWith("watersupply/hydrants/")
+      || path.startsWith("watersupply/meters/")
+      || path.startsWith("watersupply/waterservices/")
+      || path.startsWith("watersupply/servicefittings/")
+    ) {
+      if (valueMatches(values, ["Use"], "Irrigation") || valuesLookLikeSprinkler(values)) return "open_space_irrigation_fitting";
+    }
+    if (path.startsWith("openspace/electricalconduits/") && componentNotesContain(values, "Communications Conduit")) return "open_space_communication_conduit";
+    if (path.startsWith("openspace/electricalfittings/") && componentNotesContain(values, "Communications Pit")) return "open_space_communication_pit";
+    if (path.startsWith("openspace/electricalfittings/") && valueMatches(values, ["Type"], "Light")) return "open_space_electrical_light";
+    return baseKey;
   }
 
   function isExistingAsset(feature) {
@@ -8333,7 +8405,39 @@
     if (normalized.startsWith("transport/parkingareas/")) return "transport_parking";
     if (normalized.startsWith("transport/roadislands/")) return "transport_roadisland";
     if (normalized.startsWith("transport/pramramps/")) return "transport_pramramp";
+    if (normalized.startsWith("openspace/openspaceareas/")) return "open_space_area";
     if (normalized.startsWith("openspace/signs/")) return "open_space_sign";
+    if (normalized.startsWith("openspace/electricalconduits/")) return "open_space_electrical_conduit";
+    if (normalized.startsWith("openspace/electricalfittings/")) return "open_space_electrical_pit";
+    if (normalized.startsWith("electrical/conduits/")) return "open_space_electrical_conduit";
+    if (normalized.startsWith("electrical/pits/")) return "open_space_electrical_pit";
+    if (normalized.startsWith("electrical/lights/")) return "open_space_electrical_light";
+    if (normalized.startsWith("communication/conduits/") || normalized.startsWith("communications/conduits/") || normalized.startsWith("telecommunications/conduits/")) return "open_space_communication_conduit";
+    if (normalized.startsWith("communication/pits/") || normalized.startsWith("communications/pits/") || normalized.startsWith("telecommunications/pits/")) return "open_space_communication_pit";
+    if (normalized.startsWith("openspace/landscapeareas/")) return "open_space_landscape_area";
+    if (normalized.startsWith("openspace/activitylandscapeedging/")) return "open_space_edging";
+    if (normalized.startsWith("openspace/trees/")) return "open_space_tree";
+    if (normalized.startsWith("openspace/activityareas/")) return "open_space_activity_area";
+    if (normalized.startsWith("openspace/activitypoints/")) return "open_space_activity_point";
+    if (normalized.startsWith("openspace/barbeques/")) return "open_space_barbeque";
+    if (normalized.startsWith("openspace/tables/")) return "open_space_table";
+    if (normalized.startsWith("openspace/seats/")) return "open_space_seat";
+    if (normalized.startsWith("openspace/bicyclefittings/")) return "open_space_bicycle_fitting";
+    if (normalized.startsWith("openspace/barrierspoint/")) return "open_space_barrier_point";
+    if (normalized.startsWith("openspace/barrierscontinuous/")) return "open_space_barrier_continuous";
+    if (normalized.startsWith("openspace/wastecollectionpoints/")) return "open_space_waste_collection";
+    if (normalized.startsWith("openspace/shelters/shelterpolygon")) return "open_space_shelter_polygon";
+    if (normalized.startsWith("openspace/shelters/")) return "open_space_shelter";
+    if (normalized.startsWith("openspace/artworks/")) return "open_space_artwork";
+    if (normalized.startsWith("openspace/boatingfacilities/")) return "open_space_boating_facility";
+    if (normalized.startsWith("openspace/retainingwalls/")) return "open_space_retaining_wall";
+    if (normalized.startsWith("openspace/buildings/")) return "open_space_building";
+    if (normalized.startsWith("openspace/platforms/")) return "open_space_platform";
+    if (normalized.startsWith("openspace/faunainfrastructure/faunapoint")) return "open_space_fauna_point";
+    if (normalized.startsWith("openspace/faunainfrastructure/faunapolyline")) return "open_space_fauna_polyline";
+    if (normalized.startsWith("openspace/landstabilisation/")) return "open_space_land_stabilisation";
+    if (normalized.startsWith("openspace/preparedsurfaces/")) return "open_space_prepared_surface";
+    if (normalized.startsWith("openspace/generalfixtures/")) return "open_space_fixture";
     return "generic";
   }
 
@@ -8546,6 +8650,14 @@
     if (style.key === "water_pipe") return getWaterPipePreviewDash(values);
     if (style.key === "stormwater_pipe") return stormwaterPipePreviewDash;
     if (style.key === "stormwater_surface_drain") return stormwaterSurfaceDrainPreviewDash;
+    if (style.key === "open_space_electrical_conduit") return [8, 3, 1.5, 3];
+    if (style.key === "open_space_communication_conduit") return [4, 2];
+    if (style.key === "open_space_irrigation_pipe") return [5, 2, 1.2, 2];
+    if (style.key === "open_space_edging") return [3, 1.5];
+    if (style.key === "open_space_barrier_continuous") return [3.5, 1.8];
+    if (style.key === "open_space_retaining_wall") return [7, 2];
+    if (style.key === "open_space_fauna_polyline") return [2, 2];
+    if (style.key === "open_space_land_stabilisation") return [6, 2, 1.2, 2];
     return [];
   }
 
@@ -8555,6 +8667,14 @@
     if (style.key === "water_pipe") return getWaterPipePreviewDash(props);
     if (style.key === "stormwater_pipe") return stormwaterPipePreviewDash;
     if (style.key === "stormwater_surface_drain") return stormwaterSurfaceDrainPreviewDash;
+    if (style.key === "open_space_electrical_conduit") return [8, 3, 1.5, 3];
+    if (style.key === "open_space_communication_conduit") return [4, 2];
+    if (style.key === "open_space_irrigation_pipe") return [5, 2, 1.2, 2];
+    if (style.key === "open_space_edging") return [3, 1.5];
+    if (style.key === "open_space_barrier_continuous") return [3.5, 1.8];
+    if (style.key === "open_space_retaining_wall") return [7, 2];
+    if (style.key === "open_space_fauna_polyline") return [2, 2];
+    if (style.key === "open_space_land_stabilisation") return [6, 2, 1.2, 2];
     if (overlay.mode === "parcel") return [];
     return [];
   }
@@ -8671,6 +8791,38 @@
     } else if (style.key === "open_space_sign") {
       drawSymbolPolygon([[point.x, point.y - radius], [point.x + radius, point.y], [point.x, point.y + radius], [point.x - radius, point.y]], false);
       drawSymbolLine(point.x, point.y + radius, point.x, point.y + radius * 1.75);
+    } else if (style.key === "open_space_tree") {
+      drawOpenSpaceTreeSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_activity_point") {
+      drawOpenSpaceActivityPointSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_barbeque") {
+      drawOpenSpaceBarbequeSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_table") {
+      drawOpenSpaceTableSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_seat") {
+      drawOpenSpaceSeatSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_bicycle_fitting") {
+      drawOpenSpaceBicycleFittingSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_barrier_point") {
+      drawOpenSpaceBarrierPointSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_waste_collection") {
+      drawOpenSpaceWasteSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_shelter") {
+      drawOpenSpaceShelterSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_artwork") {
+      drawOpenSpaceArtworkSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_fauna_point") {
+      drawOpenSpaceFaunaPointSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_electrical_pit") {
+      drawOpenSpaceUtilityPitSymbol(point, radius, radiusY, "E");
+    } else if (style.key === "open_space_communication_pit") {
+      drawOpenSpaceUtilityPitSymbol(point, radius, radiusY, "C");
+    } else if (style.key === "open_space_electrical_light") {
+      drawOpenSpaceLightSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_irrigation_fitting") {
+      drawOpenSpaceIrrigationFittingSymbol(point, radius, radiusY);
+    } else if (style.key === "open_space_fixture") {
+      drawOpenSpaceFixtureSymbol(point, radius, radiusY);
     } else if (style.key === "survey_mark") {
       ctx.beginPath();
       ctx.arc(point.x, point.y, radius * 0.65, 0, Math.PI * 2);
@@ -8753,6 +8905,140 @@
     drawSymbolPolyline([[point.x - radius, point.y + radiusY * 0.15], [point.x, point.y + radiusY * 1.15], [point.x + radius, point.y + radiusY * 0.15]]);
   }
 
+  function drawOpenSpaceTreeSymbol(point, radius, radiusY) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius * 0.42, 0, Math.PI * 2);
+    ctx.stroke();
+    drawSymbolLine(point.x - radius, point.y, point.x + radius, point.y);
+    drawSymbolLine(point.x, point.y - radiusY, point.x, point.y + radiusY);
+  }
+
+  function drawOpenSpaceActivityPointSymbol(point, radius, radiusY) {
+    drawSymbolPolygon([
+      [point.x, point.y - radiusY],
+      [point.x + radius * 0.95, point.y + radiusY * 0.34],
+      [point.x - radius * 0.95, point.y + radiusY * 0.34],
+    ], false);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y + radiusY * 0.05, Math.max(2, radius * 0.22), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawOpenSpaceBarbequeSymbol(point, radius, radiusY) {
+    drawSymbolRect(point.x - radius * 0.92, point.y - radiusY * 0.62, radius * 1.84, radiusY * 1.24);
+    for (const offset of [-0.42, 0, 0.42]) {
+      drawSymbolLine(point.x - radius * 0.62, point.y + radiusY * offset, point.x + radius * 0.62, point.y + radiusY * offset);
+    }
+    drawSymbolLine(point.x - radius * 0.55, point.y + radiusY * 0.62, point.x - radius * 0.55, point.y + radiusY);
+    drawSymbolLine(point.x + radius * 0.55, point.y + radiusY * 0.62, point.x + radius * 0.55, point.y + radiusY);
+  }
+
+  function drawOpenSpaceTableSymbol(point, radius, radiusY) {
+    drawSymbolRect(point.x - radius, point.y - radiusY * 0.55, radius * 2, radiusY * 1.1);
+    drawSymbolLine(point.x - radius * 0.65, point.y - radiusY * 0.55, point.x + radius * 0.65, point.y + radiusY * 0.55);
+    drawSymbolLine(point.x + radius * 0.65, point.y - radiusY * 0.55, point.x - radius * 0.65, point.y + radiusY * 0.55);
+  }
+
+  function drawOpenSpaceSeatSymbol(point, radius, radiusY) {
+    drawSymbolLine(point.x - radius, point.y - radiusY * 0.25, point.x + radius, point.y - radiusY * 0.25);
+    drawSymbolLine(point.x - radius, point.y + radiusY * 0.28, point.x + radius, point.y + radiusY * 0.28);
+    drawSymbolLine(point.x - radius * 0.72, point.y + radiusY * 0.28, point.x - radius * 0.72, point.y + radiusY);
+    drawSymbolLine(point.x + radius * 0.72, point.y + radiusY * 0.28, point.x + radius * 0.72, point.y + radiusY);
+  }
+
+  function drawOpenSpaceBicycleFittingSymbol(point, radius, radiusY) {
+    ctx.beginPath();
+    ctx.arc(point.x - radius * 0.48, point.y + radiusY * 0.42, radius * 0.34, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(point.x + radius * 0.48, point.y + radiusY * 0.42, radius * 0.34, 0, Math.PI * 2);
+    ctx.stroke();
+    drawSymbolLine(point.x - radius * 0.48, point.y + radiusY * 0.42, point.x, point.y - radiusY * 0.35);
+    drawSymbolLine(point.x, point.y - radiusY * 0.35, point.x + radius * 0.48, point.y + radiusY * 0.42);
+    drawSymbolLine(point.x - radius * 0.15, point.y + radiusY * 0.05, point.x + radius * 0.35, point.y + radiusY * 0.05);
+    drawSymbolLine(point.x, point.y - radiusY * 0.35, point.x + radius * 0.26, point.y - radiusY * 0.82);
+  }
+
+  function drawOpenSpaceBarrierPointSymbol(point, radius, radiusY) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius * 0.72, 0, Math.PI * 2);
+    ctx.stroke();
+    drawSymbolLine(point.x, point.y - radiusY, point.x, point.y + radiusY);
+  }
+
+  function drawOpenSpaceWasteSymbol(point, radius, radiusY) {
+    drawSymbolRect(point.x - radius * 0.72, point.y - radiusY * 0.55, radius * 1.44, radiusY * 1.35);
+    drawSymbolLine(point.x - radius * 0.95, point.y - radiusY * 0.7, point.x + radius * 0.95, point.y - radiusY * 0.7);
+    drawSymbolLine(point.x - radius * 0.35, point.y - radiusY * 0.95, point.x + radius * 0.35, point.y - radiusY * 0.95);
+  }
+
+  function drawOpenSpaceShelterSymbol(point, radius, radiusY) {
+    drawSymbolPolygon([[point.x - radius, point.y - radiusY * 0.2], [point.x, point.y - radiusY], [point.x + radius, point.y - radiusY * 0.2]], false);
+    drawSymbolLine(point.x - radius * 0.72, point.y - radiusY * 0.2, point.x - radius * 0.72, point.y + radiusY);
+    drawSymbolLine(point.x + radius * 0.72, point.y - radiusY * 0.2, point.x + radius * 0.72, point.y + radiusY);
+    drawSymbolLine(point.x - radius, point.y + radiusY, point.x + radius, point.y + radiusY);
+  }
+
+  function drawOpenSpaceArtworkSymbol(point, radius, radiusY) {
+    drawSymbolPolygon([[point.x, point.y - radiusY], [point.x + radius, point.y], [point.x, point.y + radiusY], [point.x - radius, point.y]], false);
+    drawSymbolLine(point.x - radius * 0.55, point.y - radiusY * 0.55, point.x + radius * 0.55, point.y + radiusY * 0.55);
+    drawSymbolLine(point.x + radius * 0.55, point.y - radiusY * 0.55, point.x - radius * 0.55, point.y + radiusY * 0.55);
+  }
+
+  function drawOpenSpaceFaunaPointSymbol(point, radius, radiusY) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius * 0.86, 0, Math.PI * 2);
+    ctx.stroke();
+    drawSymbolPolygon([
+      [point.x - radius * 0.55, point.y + radiusY * 0.12],
+      [point.x, point.y - radiusY * 0.52],
+      [point.x + radius * 0.55, point.y + radiusY * 0.12],
+      [point.x + radius * 0.35, point.y + radiusY * 0.55],
+      [point.x - radius * 0.35, point.y + radiusY * 0.55],
+    ], false);
+  }
+
+  function drawOpenSpaceUtilityPitSymbol(point, radius, radiusY, label) {
+    drawSymbolRect(point.x - radius, point.y - radiusY, radius * 2, radiusY * 2);
+    drawSymbolText(label, point.x, point.y, Math.max(7, radius * 1.15));
+  }
+
+  function drawOpenSpaceLightSymbol(point, radius, radiusY) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let index = 0; index < 8; index += 1) {
+      const angle = index * Math.PI / 4;
+      drawSymbolLine(
+        point.x + Math.cos(angle) * radius * 0.72,
+        point.y + Math.sin(angle) * radiusY * 0.72,
+        point.x + Math.cos(angle) * radius * 1.28,
+        point.y + Math.sin(angle) * radiusY * 1.28,
+      );
+    }
+  }
+
+  function drawOpenSpaceIrrigationFittingSymbol(point, radius, radiusY) {
+    drawSymbolPolygon([[point.x, point.y - radiusY], [point.x + radius, point.y], [point.x, point.y + radiusY], [point.x - radius, point.y]], false);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, Math.max(2, radius * 0.28), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function drawOpenSpaceFixtureSymbol(point, radius, radiusY) {
+    drawSymbolPolygon([
+      [point.x, point.y - radiusY],
+      [point.x + radius * 0.86, point.y - radiusY * 0.5],
+      [point.x + radius * 0.86, point.y + radiusY * 0.5],
+      [point.x, point.y + radiusY],
+      [point.x - radius * 0.86, point.y + radiusY * 0.5],
+      [point.x - radius * 0.86, point.y - radiusY * 0.5],
+    ], false);
+  }
+
   function drawSymbolLine(x1, y1, x2, y2) {
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -8794,6 +9080,16 @@
     ctx.beginPath();
     ctx.rect(x, y, width, height);
     ctx.stroke();
+  }
+
+  function drawSymbolText(text, x, y, size) {
+    ctx.save();
+    ctx.font = `700 ${size}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillText(text, x, y + size * 0.04);
+    ctx.restore();
   }
 
   function getWaterPipePreviewDash(values) {
@@ -8950,6 +9246,39 @@
     return "";
   }
 
+  function getObjectByName(values, name) {
+    if (!values) return null;
+    const target = cleanName(name).toLowerCase();
+    const match = Object.entries(values).find(([key]) => cleanName(key).toLowerCase() === target);
+    const value = match ? match[1] : null;
+    if (Array.isArray(value)) return value.find((item) => item && typeof item === "object" && !Array.isArray(item)) || null;
+    return value && typeof value === "object" ? value : null;
+  }
+
+  function valueMatches(values, names, expected) {
+    const target = String(expected || "").trim().toLowerCase();
+    if (!target) return false;
+    return names.some((name) => String(getValueByNames(values, [name]) || "").trim().toLowerCase() === target);
+  }
+
+  function componentNotesContain(values, needle) {
+    const target = String(needle || "").trim().toLowerCase();
+    if (!target) return false;
+    const componentInfo = getObjectByName(values, "ComponentInfo");
+    return [
+      getValueByNames(values, ["Notes", "ComponentInfo_Notes"]),
+      componentInfo ? getValueByNames(componentInfo, ["Notes"]) : "",
+    ].some((text) => String(text || "").toLowerCase().includes(target));
+  }
+
+  function valuesLookLikeSprinkler(values) {
+    const text = [
+      getValueByNames(values, ["ADACId", "Use", "Type", "Name", "Notes", "ComponentInfo_Notes"]),
+      componentNotesContain(values, "Sprinkler") ? "sprinkler" : "",
+    ].join(" ").toLowerCase();
+    return /\b(irrigation|sprinkler|spray|rotor|drip|bubbler)\b/.test(text);
+  }
+
   function normalToken(value) {
     return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
   }
@@ -9057,10 +9386,115 @@
   }
 
   function getSimpleFeatureLabel(feature) {
+    const specialistLabel = getSpecialistSimpleFeatureLabel(feature);
+    if (specialistLabel) return specialistLabel;
     return formatReportValue(feature?.id)
       || planLabelValue(getPlanLabelValues(feature), ["ADACId"])
       || formatReportValue(feature?.type)
       || "Asset";
+  }
+
+  function getSpecialistSimpleFeatureLabel(feature) {
+    if (!feature) return "";
+    const id = formatReportValue(feature.id) || planLabelValue(getPlanLabelValues(feature), ["ADACId"]);
+    if (id) return id;
+    const path = normalizePlanAssetPath(feature.assetPath);
+    if (path.startsWith("openspace/")) return getOpenSpaceSimpleFeatureLabel(feature);
+    if (path.startsWith("electrical/")) return getElectricalSimpleFeatureLabel(feature);
+    if (path.startsWith("communication/") || path.startsWith("communications/") || path.startsWith("telecommunications/")) return getCommunicationSimpleFeatureLabel(feature);
+    const styleKey = getPlanStyleKeyForFeature(feature);
+    if (String(styleKey || "").startsWith("open_space_")) return getOpenSpaceStyleSimpleFeatureLabel(styleKey, feature);
+    return "";
+  }
+
+  function getOpenSpaceSimpleFeatureLabel(feature) {
+    const values = getPlanLabelValues(feature);
+    const path = normalizePlanAssetPath(feature.assetPath);
+    if (path.startsWith("openspace/openspaceareas/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "OPEN SPACE";
+    if (path.startsWith("openspace/signs/")) return planLabelValue(values, ["SignText", "Type"]) || "SIGN";
+    if (path.startsWith("openspace/trees/")) return planLabelValue(values, ["CommonName", "BotanicalName", "Species", "Type"]) || "TREE";
+    if (path.startsWith("openspace/electricalconduits/")) return getOpenSpaceStyleSimpleFeatureLabel(getPlanStyleKeyForFeature(feature), feature);
+    if (path.startsWith("openspace/electricalfittings/")) return getOpenSpaceStyleSimpleFeatureLabel(getPlanStyleKeyForFeature(feature), feature);
+    if (path.startsWith("openspace/landscapeareas/")) return planLabelValue(values, ["Type", "Use", "SurfaceTreatment"]) || "LANDSCAPE";
+    if (path.startsWith("openspace/activitylandscapeedging/")) return planLabelValue(values, ["Type", "Material"]) || "EDGING";
+    if (path.startsWith("openspace/activityareas/")) return planLabelValue(values, ["Type", "Use"]) || "ACTIVITY";
+    if (path.startsWith("openspace/activitypoints/")) return planLabelValue(values, ["Type", "Use"]) || "ACTIVITY POINT";
+    if (path.startsWith("openspace/barbeques/")) return planLabelValue(values, ["Type", "Material"]) || "BBQ";
+    if (path.startsWith("openspace/tables/")) return planLabelValue(values, ["Type", "Material"]) || "TABLE";
+    if (path.startsWith("openspace/seats/")) return planLabelValue(values, ["Type", "Material"]) || "SEAT";
+    if (path.startsWith("openspace/bicyclefittings/")) return planLabelValue(values, ["Type", "Use"]) || "BIKE FITTING";
+    if (path.startsWith("openspace/barrierspoint/")) return planLabelValue(values, ["Type", "Use"]) || "BOLLARD";
+    if (path.startsWith("openspace/barrierscontinuous/")) return planLabelValue(values, ["Type", "Use"]) || "BARRIER";
+    if (path.startsWith("openspace/wastecollectionpoints/")) return planLabelValue(values, ["Type", "Use"]) || "BIN";
+    if (path.startsWith("openspace/shelters/shelterpolygon")) return planLabelValue(values, ["Type", "Use"]) || "SHELTER";
+    if (path.startsWith("openspace/shelters/")) return planLabelValue(values, ["Type", "Use"]) || "SHELTER";
+    if (path.startsWith("openspace/artworks/")) return planLabelValue(values, ["Type", "Name", "Material"]) || "ARTWORK";
+    if (path.startsWith("openspace/boatingfacilities/")) return planLabelValue(values, ["Type", "Use"]) || "BOATING";
+    if (path.startsWith("openspace/retainingwalls/")) return planLabelValue(values, ["Type", "WallMaterial", "Material"]) || "RETAINING WALL";
+    if (path.startsWith("openspace/buildings/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "BUILDING";
+    if (path.startsWith("openspace/platforms/")) return planLabelValue(values, ["Type", "Use", "Material"]) || "PLATFORM";
+    if (path.startsWith("openspace/faunainfrastructure/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "FAUNA";
+    if (path.startsWith("openspace/landstabilisation/")) return planLabelValue(values, ["Type", "Treatment", "Material"]) || "LAND STABILISATION";
+    if (path.startsWith("openspace/preparedsurfaces/")) return planLabelValue(values, ["Type", "Use", "SurfaceTreatment", "Material"]) || "PREPARED SURFACE";
+    if (path.startsWith("openspace/generalfixtures/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "FIXTURE";
+    return getOpenSpaceStyleSimpleFeatureLabel(getPlanStyleKeyForFeature(feature), feature);
+  }
+
+  function getOpenSpaceStyleSimpleFeatureLabel(styleKey, feature) {
+    const values = getPlanLabelValues(feature);
+    const mapping = {
+      open_space_area: "OPEN SPACE",
+      open_space_sign: "SIGN",
+      open_space_electrical_conduit: "ELEC CONDUIT",
+      open_space_electrical_pit: "ELEC PIT",
+      open_space_electrical_light: "LIGHT",
+      open_space_communication_conduit: "COMM CONDUIT",
+      open_space_communication_pit: "COMM PIT",
+      open_space_irrigation_pipe: "IRRIGATION",
+      open_space_irrigation_fitting: "IRR FITTING",
+      open_space_landscape_area: "LANDSCAPE",
+      open_space_edging: "EDGING",
+      open_space_tree: "TREE",
+      open_space_activity_area: "ACTIVITY",
+      open_space_activity_point: "ACTIVITY POINT",
+      open_space_barbeque: "BBQ",
+      open_space_table: "TABLE",
+      open_space_seat: "SEAT",
+      open_space_bicycle_fitting: "BIKE FITTING",
+      open_space_barrier_point: "BOLLARD",
+      open_space_barrier_continuous: "BARRIER",
+      open_space_waste_collection: "BIN",
+      open_space_shelter: "SHELTER",
+      open_space_shelter_polygon: "SHELTER",
+      open_space_artwork: "ARTWORK",
+      open_space_boating_facility: "BOATING",
+      open_space_retaining_wall: "RETAINING WALL",
+      open_space_building: "BUILDING",
+      open_space_platform: "PLATFORM",
+      open_space_fauna_point: "FAUNA",
+      open_space_fauna_polyline: "FAUNA",
+      open_space_land_stabilisation: "LAND STABILISATION",
+      open_space_prepared_surface: "PREPARED SURFACE",
+      open_space_fixture: "FIXTURE",
+    };
+    return planLabelValue(values, ["Type", "Use", "Name"]) || mapping[styleKey] || "OPEN SPACE";
+  }
+
+  function getElectricalSimpleFeatureLabel(feature) {
+    const values = getPlanLabelValues(feature);
+    const path = normalizePlanAssetPath(feature.assetPath);
+    if (path.startsWith("electrical/lights/")) return planLabelValue(values, ["Type", "Use"]) || "LIGHT";
+    if (path.startsWith("electrical/conduits/")) return planLabelValue(values, ["Type", "Use"]) || "ELEC CONDUIT";
+    if (path.startsWith("electrical/pits/")) return planLabelValue(values, ["Type", "Use"]) || "ELEC PIT";
+    return planLabelValue(values, ["Type", "Use", "Name"]) || "ELECTRICAL";
+  }
+
+  function getCommunicationSimpleFeatureLabel(feature) {
+    const values = getPlanLabelValues(feature);
+    const path = normalizePlanAssetPath(feature.assetPath);
+    if (path.startsWith("communication/conduits/") || path.startsWith("communications/conduits/") || path.startsWith("telecommunications/conduits/")) return planLabelValue(values, ["Type", "Use"]) || "COMM CONDUIT";
+    if (path.startsWith("communication/pits/") || path.startsWith("communications/pits/") || path.startsWith("telecommunications/pits/")) return planLabelValue(values, ["Type", "Use"]) || "COMM PIT";
+    return planLabelValue(values, ["Type", "Use", "Name"]) || "COMMUNICATION";
   }
 
   function normalizeLabelToken(value) {
@@ -9131,7 +9565,33 @@
     if (planPathStarts(feature, "transport/roadislands/")) return planRoadIslandLabel(values);
     if (planPathStarts(feature, "transport/pramramps/")) return planPramRampLabel(values);
     if (planPathStarts(feature, "transport/roadedges/")) return "";
-    if (planPathStarts(feature, "openspace/signs/")) return planLabelValue(values, ["SignText"]);
+    if (planPathStarts(feature, "openspace/openspaceareas/")) return planOpenSpaceGenericLabel(values, "Open Space Area");
+    if (planPathStarts(feature, "openspace/signs/")) return planLabelValue(values, ["SignText", "Type"]) || "Sign";
+    if (planPathStarts(feature, "openspace/trees/")) return planTreeLabel(values);
+    if (planPathStarts(feature, "openspace/barrierscontinuous/")) return planOpenSpaceBarrierContinuousLabel(values);
+    if (planPathStarts(feature, "openspace/bicyclefittings/")) return planLabelValue(values, ["Type"]) || "Bicycle Fitting";
+    if (planPathStarts(feature, "openspace/activityareas/")) return planLabelValue(values, ["Type", "Use"]) || "Activity Area";
+    if (planPathStarts(feature, "openspace/activitylandscapeedging/")) return planLabelValue(values, ["Type", "Material"]) || "Edging";
+    if (planPathStarts(feature, "openspace/activitypoints/")) return planLabelValue(values, ["Type", "Use"]) || "Activity Point";
+    if (planPathStarts(feature, "openspace/barbeques/")) return planLabelValue(values, ["Type", "Material"]) || "Barbeque";
+    if (planPathStarts(feature, "openspace/tables/")) return planLabelValue(values, ["Type", "Material"]) || "Table";
+    if (planPathStarts(feature, "openspace/landscapeareas/")) return planLabelValue(values, ["Type", "Use", "SurfaceTreatment"]) || "Landscape Area";
+    if (planPathStarts(feature, "openspace/seats/")) return planLabelValue(values, ["Type", "Material"]) || "Seat";
+    if (planPathStarts(feature, "openspace/barrierspoint/")) return planLabelValue(values, ["Type", "Use"]) || "Bollard";
+    if (planPathStarts(feature, "openspace/wastecollectionpoints/")) return planLabelValue(values, ["Type", "Use"]) || "Bin";
+    if (planPathStarts(feature, "openspace/shelters/shelterpolygon")) return planLabelValue(values, ["Type", "Use"]) || "Shelter";
+    if (planPathStarts(feature, "openspace/shelters/")) return planLabelValue(values, ["Type", "Use"]) || "Shelter";
+    if (planPathStarts(feature, "openspace/artworks/")) return planLabelValue(values, ["Type", "Name", "Material"]) || "Artwork";
+    if (planPathStarts(feature, "openspace/boatingfacilities/")) return planLabelValue(values, ["Type", "Use"]) || "Boating Facility";
+    if (planPathStarts(feature, "openspace/retainingwalls/")) return planLabelValue(values, ["Type", "WallMaterial", "Material"]) || "Retaining Wall";
+    if (planPathStarts(feature, "openspace/buildings/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "Building";
+    if (planPathStarts(feature, "openspace/platforms/")) return planLabelValue(values, ["Type", "Use", "Material"]) || "Platform";
+    if (planPathStarts(feature, "openspace/faunainfrastructure/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "Fauna Infrastructure";
+    if (planPathStarts(feature, "openspace/landstabilisation/")) return planLabelValue(values, ["Type", "Treatment", "Material"]) || "Land Stabilisation";
+    if (planPathStarts(feature, "openspace/preparedsurfaces/")) return planLabelValue(values, ["Type", "Use", "SurfaceTreatment", "Material"]) || "Prepared Surface";
+    if (planPathStarts(feature, "openspace/generalfixtures/")) return planLabelValue(values, ["Type", "Use", "Name"]) || "Fixture";
+    if (planPathStarts(feature, "openspace/electricalconduits/")) return planLabelValue(values, ["Type", "Use"]) || "Electrical Conduit";
+    if (planPathStarts(feature, "openspace/electricalfittings/")) return planLabelValue(values, ["Type", "Use"]) || "Electrical Fitting";
     return null;
   }
 
@@ -9472,6 +9932,24 @@
     return "";
   }
 
+  function planOpenSpaceGenericLabel(values, fallback) {
+    return planLabelValue(values, ["Type", "Use", "Name", "Material", "SurfaceTreatment", "Treatment"]) || fallback;
+  }
+
+  function planTreeLabel(values) {
+    const genus = planLabelValue(values, ["Genus"]);
+    const species = planLabelValue(values, ["Species"]);
+    if (genus && species) return `${genus.slice(0, 3).toUpperCase()} ${species.slice(0, 3).toLowerCase()}`;
+    if (genus) return genus.slice(0, 3).toUpperCase();
+    if (species) return species.slice(0, 3).toUpperCase();
+    return "Tree";
+  }
+
+  function planOpenSpaceBarrierContinuousLabel(values) {
+    const barrierType = planLabelValue(values, ["Type"]).toUpperCase();
+    return barrierType.includes("GATE") ? "Gate" : (planLabelValue(values, ["Type", "Use"]) || "Barrier");
+  }
+
   function planSurfaceContourLabel(feature, values) {
     for (const key of ["RL_m", "Elevation_m", "Elevation", "Level_m", "Level", "ContourLevel_m", "ContourLevel", "Contour", "Z"]) {
       const text = planFormatOptionalMeasure(planLabelValue(values, [key]), 2);
@@ -9759,7 +10237,7 @@
   function getCanvasLabelMetrics(lines, scaleMultiplier = 1) {
     const labelLines = (Array.isArray(lines) ? lines : [lines]).map((line) => truncateCanvasLabel(line, 52)).filter(Boolean);
     const multiplier = Number.isFinite(Number(scaleMultiplier)) && Number(scaleMultiplier) > 0 ? Number(scaleMultiplier) : 1;
-    const scale = getMapLabelScale() * multiplier;
+    const scale = getMapLabelScale() * multiplier * getLabelModeScaleMultiplier();
     const primarySize = 2.55 * scale;
     const secondarySize = 2.25 * scale;
     const padding = 1.5 * scale;
@@ -9873,7 +10351,11 @@
   function getMapLabelScale() {
     const zoom = getMapAnnotationScale();
     if (zoom <= 4) return zoom;
-    return 4 + Math.pow(zoom - 4, 0.62) * 1.35;
+    return Math.min(5.2, 4 + Math.pow(zoom - 4, 0.45) * 0.55);
+  }
+
+  function getLabelModeScaleMultiplier() {
+    return state.labelMode === "simple" ? 0.72 : 1;
   }
 
   function drawInScreenSpace(draw) {
@@ -10361,6 +10843,7 @@
     if (hasAnyTag(context, ["WaterSupply", "PotableWater", "RecycledWater", "Water"])) return "Water";
     if (hasAnyTag(context, ["Stormwater", "Drainage"])) return "Stormwater";
     if (hasAnyTag(context, ["Transport"])) return "Transport";
+    if (hasAnyTag(context, ["OpenSpace", "Open Space"])) return "OpenSpace";
     if (hasAnyTag(context, ["Surface"])) return "Surface";
     if (hasAnyTag(context, ["Cadastre", "Cadastral"])) return "Cadastre";
     if (hasAnyTag(context, ["Telecommunications", "Communication", "Communications"])) return "Telecommunications";
@@ -10370,6 +10853,7 @@
 
     if (/maintenancehole|pipenonpressure|pipesnonpressure/.test(text)) return "Sewer";
     if (/stormwater|subsoildrain|pit|culvert|headwall|outlet|inlet/.test(text)) return "Stormwater";
+    if (/openspace|open\s*space|openspacearea|activityarea|activitypoint|activitylandscapeedging|landscapearea|edging|barbeque|table|seat|bicyclefitting|barrier|bollard|wastecollection|shelter|shelterpolygon|artwork|boatingfacility|retainingwall|tree|building|platform|faunapoint|faunapolyline|faunainfrastructure|landstabilisation|preparedsurface|fixture/.test(text)) return "OpenSpace";
     if (/hydrant|valve|pipepressure|pipespressure|fitting|connection|meter/.test(text)) return "Water";
     if (/pavement|roadedge|kerb|pathway|footpath|driveway|vehiclecrossing|linemarking|roadsign|signs?|traffic|island/.test(text)) return "Transport";
     if (/spotheight|contour|breakline|profileline/.test(text)) return "Surface";
