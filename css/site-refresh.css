@@ -1999,8 +1999,8 @@ h3,
 }
 
 .viewer-status__dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     flex: 0 0 auto;
     border-radius: 999px;
     background: #13a66b;
@@ -2008,6 +2008,19 @@ h3,
 
 .viewer-status--error .viewer-status__dot {
     background: #d95b50;
+}
+
+.viewer-status--loading .viewer-status__dot {
+    border: 2px solid #d5e4f2;
+    border-top-color: #1768bd;
+    background: transparent;
+    animation: viewer-loading-spin 700ms linear infinite;
+}
+
+@keyframes viewer-loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .viewer-status-checks {
@@ -2242,6 +2255,32 @@ h3,
 .viewer-dropzone.is-dragging {
     border-color: var(--mockup-blue);
     background: #eef6ff;
+}
+
+.viewer-upload-control {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.viewer-upload-control__hint {
+    color: #64758a;
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.viewer-upload-control.is-dragging .viewer-button {
+    border-color: #4b8fd8;
+    background: #1768bd;
+    box-shadow: 0 0 0 4px rgba(75, 143, 216, 0.18);
+}
+
+.viewer-upload-control.is-dragging .viewer-upload-control__hint {
+    color: #1768bd;
 }
 
 .viewer-layer-list,
@@ -2774,6 +2813,64 @@ h3,
 .viewer-canvas-wrap {
     position: relative;
     min-height: 0;
+}
+
+.viewer-map-dropzone {
+    position: absolute;
+    inset: 14px;
+    z-index: 20;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 9px;
+    padding: 28px;
+    border: 2px dashed #4b8fd8;
+    border-radius: 8px;
+    background: rgba(242, 248, 255, 0.96);
+    color: var(--mockup-ink);
+    text-align: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.viewer-map-dropzone.is-dragging {
+    opacity: 1;
+    visibility: visible;
+}
+
+.viewer-map-dropzone.is-loading {
+    border-style: solid;
+    background: rgba(246, 250, 255, 0.97);
+    opacity: 1;
+    visibility: visible;
+}
+
+.viewer-map-dropzone.is-loading .viewer-map-dropzone__icon {
+    background: #e3effc;
+}
+
+.viewer-map-dropzone__icon {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    border-radius: 50%;
+    background: #dcecff;
+    color: #1768bd;
+    font-size: 1.25rem;
+}
+
+.viewer-map-dropzone strong {
+    font-size: 1rem;
+}
+
+.viewer-map-dropzone > span:last-child {
+    max-width: 420px;
+    color: #53657a;
+    font-size: 0.82rem;
+    line-height: 1.5;
 }
 
 .viewer-map-layer-panel,

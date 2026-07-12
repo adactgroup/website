@@ -1116,6 +1116,11 @@
     schemaValidationPanel: root.querySelector("[data-role='schema-validation-panel']"),
     repairPreviewBanner: root.querySelector("[data-role='repair-preview-banner']"),
     dropzone: root.querySelector("[data-role='dropzone']"),
+    dropzoneIcon: root.querySelector("[data-role='dropzone-icon']"),
+    dropzoneTitle: root.querySelector("[data-role='dropzone-title']"),
+    dropzoneMessage: root.querySelector("[data-role='dropzone-message']"),
+    dropTarget: root,
+    uploadDropTarget: root.querySelector("[data-role='upload-drop-target']"),
     suggestionWidget: document.querySelector("[data-role='suggestion-widget']"),
     suggestionPanel: document.querySelector("[data-role='suggestion-panel']"),
     suggestionForm: document.getElementById("suggestion-form"),
@@ -1160,27 +1165,57 @@
     if (els.termsModal) {
       els.termsModal.addEventListener("click", handleClick);
     }
-    if (els.dropzone) {
-      ["dragenter", "dragover"].forEach((eventName) => {
-        els.dropzone.addEventListener(eventName, (event) => {
-          event.preventDefault();
-          els.dropzone.classList.add("is-dragging");
-        });
+    if (els.dropzone && els.dropTarget) {
+      let dragDepth = 0;
+      const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+      const showDropzone = () => {
+        els.dropzone.classList.add("is-dragging");
+        els.dropzone.setAttribute("aria-hidden", "false");
+        els.uploadDropTarget?.classList.add("is-dragging");
+      };
+      const hideDropzone = () => {
+        dragDepth = 0;
+        els.dropzone.classList.remove("is-dragging");
+        els.dropzone.setAttribute("aria-hidden", "true");
+        els.uploadDropTarget?.classList.remove("is-dragging");
+      };
+
+      els.dropTarget.addEventListener("dragenter", (event) => {
+        if (!isFileDrag(event)) return;
+        event.preventDefault();
+        dragDepth += 1;
+        showDropzone();
       });
 
-      ["dragleave", "drop"].forEach((eventName) => {
-        els.dropzone.addEventListener(eventName, (event) => {
-          event.preventDefault();
-          els.dropzone.classList.remove("is-dragging");
-        });
+      els.dropTarget.addEventListener("dragover", (event) => {
+        if (!isFileDrag(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        showDropzone();
       });
 
-      els.dropzone.addEventListener("drop", (event) => {
-        const files = Array.from(event.dataTransfer.files || []).filter((file) => {
+      els.dropTarget.addEventListener("dragleave", (event) => {
+        if (!isFileDrag(event)) return;
+        event.preventDefault();
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (!dragDepth) hideDropzone();
+      });
+
+      els.dropTarget.addEventListener("drop", (event) => {
+        if (!isFileDrag(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        hideDropzone();
+        const droppedFiles = Array.from(event.dataTransfer.files || []);
+        const files = droppedFiles.filter((file) => {
           const name = String(file.name || "").toLowerCase();
           return name.endsWith(".xml") || /xml/.test(file.type || "");
         });
-        if (files.length) readXmlFiles(files);
+        if (!files.length) {
+          setStatus("Drop one or more ADAC XML files to load them into the viewer.", true);
+          return;
+        }
+        readXmlFiles(files);
       });
     }
 
@@ -2652,6 +2687,9 @@
   }
 
   function readXmlFiles(files) {
+    const fileCount = files.length;
+    const fileLabel = fileCount === 1 ? files[0].name : `${fileCount} XML files`;
+    setStatus(`Reading ${fileLabel}...`, false, true);
     Promise.all(files.map(readFileAsText))
       .then((items) => loadXmlFiles(items, { replace: false }))
       .catch(() => setStatus("Could not read one of those files.", true));
@@ -2687,7 +2725,7 @@
     state.validationErrorResults = [];
     renderRepairPreviewBanner();
     renderValidationPanel();
-    setStatus(`Validating ${files.length} XML file${files.length === 1 ? "" : "s"} against the ADAC schema...`, false);
+    setStatus(`Validating ${files.length} XML file${files.length === 1 ? "" : "s"} against the ADAC schema...`, false, true);
 
     for (const { xmlText, fileName } of files) {
       const parser = new DOMParser();
@@ -10715,9 +10753,34 @@
     return inside;
   }
 
-  function setStatus(message, isError) {
+  function setStatus(message, isError, isLoading = false) {
     els.statusText.textContent = message;
-    root.querySelector(".viewer-status").classList.toggle("viewer-status--error", Boolean(isError));
+    const statusElement = root.querySelector(".viewer-status");
+    statusElement.classList.toggle("viewer-status--error", Boolean(isError));
+    statusElement.classList.toggle("viewer-status--loading", Boolean(isLoading));
+    statusElement.setAttribute("aria-busy", String(Boolean(isLoading)));
+    root.setAttribute("aria-busy", String(Boolean(isLoading)));
+    setViewerLoadingState(Boolean(isLoading), message);
+  }
+
+  function setViewerLoadingState(isLoading, message = "") {
+    if (!els.dropzone) return;
+    els.dropzone.classList.toggle("is-loading", isLoading);
+
+    if (isLoading) {
+      els.dropzone.setAttribute("aria-hidden", "false");
+      if (els.dropzoneIcon) els.dropzoneIcon.className = "fa-solid fa-spinner fa-spin";
+      if (els.dropzoneTitle) els.dropzoneTitle.textContent = "Loading ADAC XML";
+      if (els.dropzoneMessage) els.dropzoneMessage.textContent = message || "Reading and validating the uploaded XML files...";
+      return;
+    }
+
+    if (els.dropzoneIcon) els.dropzoneIcon.className = "fa-solid fa-file-arrow-up";
+    if (els.dropzoneTitle) els.dropzoneTitle.textContent = "Drop ADAC XML here";
+    if (els.dropzoneMessage) els.dropzoneMessage.textContent = "Drop one or more XML files to load them into the viewer.";
+    if (!els.dropzone.classList.contains("is-dragging")) {
+      els.dropzone.setAttribute("aria-hidden", "true");
+    }
   }
 
   function centerViewerInViewport() {

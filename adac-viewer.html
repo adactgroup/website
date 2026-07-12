@@ -125,7 +125,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260711a" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260713c" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -168,11 +168,14 @@
             </p>
           </div>
           <div class="adac-viewer__actions" aria-label="ADAC viewer actions">
-            <label class="viewer-button viewer-button--primary" for="adac-file-input">
-              <i class="fa-solid fa-upload" aria-hidden="true"></i>
-              <span>Upload XMLs</span>
-            </label>
-            <input type="file" id="adac-file-input" class="adac-viewer__file-input" accept=".xml,text/xml,application/xml" multiple />
+            <span class="viewer-upload-control" data-role="upload-drop-target">
+              <label class="viewer-button viewer-button--primary" for="adac-file-input">
+                <i class="fa-solid fa-upload" aria-hidden="true"></i>
+                <span>Upload XMLs</span>
+              </label>
+              <span class="viewer-upload-control__hint">or drag &amp; drop XMLs</span>
+              <input type="file" id="adac-file-input" class="adac-viewer__file-input" accept=".xml,text/xml,application/xml" multiple />
+            </span>
             <span class="viewer-report-export">
               <button class="viewer-button" type="button" data-action="export-report-pdf" data-role="export-report-pdf" aria-haspopup="dialog" aria-expanded="false" hidden>
                 <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
@@ -204,7 +207,7 @@
           </div>
         </div>
 
-        <div class="viewer-status" role="status" aria-live="polite">
+        <div class="viewer-status" role="status" aria-live="polite" aria-busy="false">
           <span class="viewer-status__dot"></span>
           <span class="viewer-status__message" data-role="status-text">Load a file or sample to begin.</span>
           <details class="viewer-status-checks">
@@ -375,6 +378,13 @@
                 </div>
               </aside>
               <canvas id="adac-map-canvas" width="1100" height="680" aria-label="ADAC asset map"></canvas>
+              <div class="viewer-map-dropzone" data-role="dropzone" aria-hidden="true">
+                <span class="viewer-map-dropzone__icon" aria-hidden="true">
+                  <i class="fa-solid fa-file-arrow-up" data-role="dropzone-icon"></i>
+                </span>
+                <strong data-role="dropzone-title">Drop ADAC XML here</strong>
+                <span data-role="dropzone-message">Drop one or more XML files to load them into the viewer.</span>
+              </div>
               <div class="viewer-measure-readout" data-role="measurement-readout" hidden>
                 <span data-role="measurement-mode">Measurement</span>
                 <strong data-role="measurement-value">0 m</strong>
@@ -509,7 +519,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260711g"></script>
+  <script src="js/adac-viewer.js?v=20260713c"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
 </body>
 
