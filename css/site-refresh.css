@@ -3917,6 +3917,104 @@ h3,
     overflow-wrap: anywhere;
 }
 
+.viewer-project-details {
+    margin: 0 0 14px;
+    border-top: 1px solid var(--mockup-line);
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-project-details__summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    min-height: 42px;
+    padding: 7px 2px;
+    color: var(--mockup-ink);
+    cursor: pointer;
+    list-style: none;
+}
+
+.viewer-project-details__summary::-webkit-details-marker {
+    display: none;
+}
+
+.viewer-details__header .viewer-project-details__summary span {
+    display: inline;
+    margin: 0;
+    color: #65758a;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.viewer-project-details__summary strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--mockup-ink);
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.viewer-project-details__summary i {
+    color: #7b899b;
+    font-size: 0.62rem;
+    transition: transform 160ms ease;
+}
+
+.viewer-project-details[open] > .viewer-project-details__summary i {
+    transform: rotate(90deg);
+}
+
+.viewer-project-details__grid {
+    display: grid;
+    gap: 0;
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #f8fbfe;
+}
+
+.viewer-project-details__grid > div {
+    display: grid;
+    grid-template-columns: minmax(96px, 0.46fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    min-width: 0;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(218, 228, 238, 0.76);
+}
+
+.viewer-project-details__grid > div:last-child {
+    border-bottom: 0;
+}
+
+.viewer-project-details__grid dt,
+.viewer-project-details__grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.viewer-project-details__grid dt {
+    color: #65758a;
+    font-size: 0.64rem;
+    font-weight: 800;
+    line-height: 1.25;
+    text-transform: uppercase;
+}
+
+.viewer-project-details__grid dd {
+    color: var(--mockup-ink);
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
 .viewer-details__title-row {
     display: flex;
     align-items: flex-start;

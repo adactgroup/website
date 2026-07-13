@@ -1070,6 +1070,7 @@
     suggestedOverlaysApplied: false,
     fileName: "",
     showAllDetails: false,
+    projectDetailsOpen: false,
     filters: {
       layer: "all",
       type: "all",
@@ -1153,6 +1154,9 @@
     }
     if (els.labelLayerList) {
       els.labelLayerList.addEventListener("toggle", handleLabelDetailsToggle, true);
+    }
+    if (els.details) {
+      els.details.addEventListener("toggle", handleProjectDetailsToggle, true);
     }
     root.addEventListener("click", handleClick);
     root.addEventListener("change", handleChange);
@@ -1318,6 +1322,12 @@
       state.showAllDetails = allDetailsToggle.checked;
       renderDetails();
     }
+  }
+
+  function handleProjectDetailsToggle(event) {
+    const projectDetails = event.target.closest?.("[data-role='project-details']");
+    if (!projectDetails) return;
+    state.projectDetailsOpen = projectDetails.open;
   }
 
   function runAction(action) {
@@ -3479,6 +3489,7 @@
     state.repairPreview = null;
     state.assetKinds = new Set();
     state.fileName = "";
+    state.projectDetailsOpen = false;
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     setMeasurementMode("off");
@@ -5874,6 +5885,7 @@
     els.details.innerHTML = `
       <div class="viewer-details__header">
         <span>${escapeHtml(feature.layer)}</span>
+        ${renderProjectDetails(feature)}
         <div class="viewer-details__title-row">
           <h2>${escapeHtml(getFeatureDetailsTitle(feature))}</h2>
           ${renderAllDetailsToggle()}
@@ -5894,6 +5906,52 @@
         <input type="checkbox" data-role="all-details-toggle" ${state.showAllDetails ? "checked" : ""} />
         <span>Show all</span>
       </label>
+    `;
+  }
+
+  function renderProjectDetails(feature) {
+    const bundle = state.reportBundles.find((item) => item.fileId === feature.sourceFileId)
+      || state.reportBundles.find((item) => item.fileName === feature.sourceFile)
+      || state.reportBundles[0];
+    if (!bundle) return "";
+
+    const metadata = bundle.metadata || {};
+    const coordinateSystem = metadata.coordinateSystem || {};
+    const entries = [
+      ["Project name", metadata.name],
+      ["Description", metadata.description],
+      ["Receiver", metadata.receiver],
+      ["Owner", metadata.owner],
+      ["Works approval ID", metadata.worksApprovalId],
+      ["Drawing number", metadata.drawingNumber],
+      ["Drawing revision", metadata.drawingRevision],
+      ["Project status", metadata.projectStatus],
+      ["Construction date", metadata.constructionDate],
+      ["ADAC schema", schemaLabel(bundle.schemaVersion)],
+      ["Horizontal coordinate system", coordinateSystem.horizontalCoordinateSystem],
+      ["Horizontal datum", coordinateSystem.horizontalDatum],
+      ["Vertical datum", coordinateSystem.verticalDatum],
+      ["Source file", bundle.fileName],
+    ].filter(([, value]) => String(value || "").trim());
+
+    if (!entries.length) return "";
+    const projectName = metadata.name || stripFileExtension(bundle.fileName) || "Project details";
+    const rows = entries.map(([label, value]) => `
+      <div>
+        <dt>${escapeHtml(label)}</dt>
+        <dd>${escapeHtml(value)}</dd>
+      </div>
+    `).join("");
+
+    return `
+      <details class="viewer-project-details" data-role="project-details" ${state.projectDetailsOpen ? "open" : ""}>
+        <summary class="viewer-project-details__summary">
+          <span>Project details</span>
+          <strong>${escapeHtml(projectName)}</strong>
+          <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+        </summary>
+        <dl class="viewer-project-details__grid">${rows}</dl>
+      </details>
     `;
   }
 
