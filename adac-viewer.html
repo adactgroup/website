@@ -125,7 +125,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260713d" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260713e" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -175,6 +175,30 @@
               </label>
               <span class="viewer-upload-control__hint">or drag &amp; drop XMLs</span>
               <input type="file" id="adac-file-input" class="adac-viewer__file-input" accept=".xml,text/xml,application/xml" multiple />
+            </span>
+            <span class="viewer-report-export viewer-sample-loader">
+              <button class="viewer-button" type="button" data-action="toggle-sample-menu" data-role="sample-menu-button" aria-haspopup="dialog" aria-expanded="false">
+                <i class="fa-solid fa-flask-vial" aria-hidden="true"></i>
+                <span>Open sample</span>
+              </button>
+              <span class="viewer-report-menu viewer-sample-menu" data-role="sample-menu" role="dialog" aria-label="ADAC sample files" hidden>
+                <span class="viewer-report-menu__panel">
+                  <span class="viewer-report-menu__header">
+                    <span>Choose a sample</span>
+                    <button type="button" class="viewer-report-menu__close" data-action="close-sample-menu" aria-label="Close sample files">
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                  <button class="viewer-report-menu__option" type="button" data-action="load-sample-v501">
+                    <strong>ADAC 5.0.1 sample</strong>
+                    <small>Preview the version 5 schema example</small>
+                  </button>
+                  <button class="viewer-report-menu__option" type="button" data-action="load-sample-v600">
+                    <strong>ADAC 6.0.0 sample</strong>
+                    <small>Preview the version 6 schema example</small>
+                  </button>
+                </span>
+              </span>
             </span>
             <span class="viewer-report-export">
               <button class="viewer-button" type="button" data-action="export-report-pdf" data-role="export-report-pdf" aria-haspopup="dialog" aria-expanded="false" hidden>
@@ -519,7 +543,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260713d"></script>
+  <script src="js/adac-viewer.js?v=20260713e"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
 </body>
 

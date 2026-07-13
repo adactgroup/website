@@ -76,6 +76,19 @@
     },
   };
 
+  const sampleXmlConfigs = {
+    v501: {
+      label: "ADAC 5.0.1 sample",
+      url: "samples/sample-adac-v5.0.1.xml",
+      fileName: "Sample ADAC V5.0.1.xml",
+    },
+    v600: {
+      label: "ADAC 6.0.0 sample",
+      url: "samples/sample-adac-v6.0.0.xml",
+      fileName: "Sample ADAC V6.0.0.xml",
+    },
+  };
+
   const layerPalette = {
     Water: "#1268c4",
     Sewer: "#6f42c1",
@@ -1087,6 +1100,8 @@
     fileName: root.querySelector("[data-role='file-name']"),
     exportReportButton: root.querySelector("[data-role='export-report-pdf']"),
     reportExportMenu: root.querySelector("[data-role='report-export-menu']"),
+    sampleMenuButton: root.querySelector("[data-role='sample-menu-button']"),
+    sampleMenu: root.querySelector("[data-role='sample-menu']"),
     labelButton: root.querySelector("[data-role='label-button']"),
     labelMenu: root.querySelector("[data-role='label-menu']"),
     labelLayerPanel: root.querySelector("[data-role='label-layer-panel']"),
@@ -1255,6 +1270,9 @@
     if (isReportExportMenuOpen() && !event.target.closest("[data-role='report-export-menu']") && !event.target.closest("[data-role='export-report-pdf']")) {
       closeReportExportMenu();
     }
+    if (isSampleMenuOpen() && !event.target.closest("[data-role='sample-menu']") && !event.target.closest("[data-role='sample-menu-button']")) {
+      closeSampleMenu();
+    }
     if (isLabelMenuOpen() && !event.target.closest("[data-role='label-menu']") && !event.target.closest("[data-role='label-button']")) {
       closeLabelMenu();
     }
@@ -1343,6 +1361,14 @@
       exportSeparateAdacReportPdfs();
     } else if (action === "close-report-export-menu") {
       closeReportExportMenu();
+    } else if (action === "toggle-sample-menu") {
+      toggleSampleMenu();
+    } else if (action === "close-sample-menu") {
+      closeSampleMenu();
+    } else if (action === "load-sample-v501") {
+      loadSampleXml("v501");
+    } else if (action === "load-sample-v600") {
+      loadSampleXml("v600");
     } else if (action === "toggle-label-menu") {
       toggleLabelMenu();
     } else if (action === "set-label-simple") {
@@ -1393,6 +1419,7 @@
 
   function closeTransientUi(except = "") {
     if (except !== "report") closeReportExportMenu();
+    if (except !== "sample") closeSampleMenu();
     if (except !== "label") closeLabelMenu();
     if (except !== "measurement") closeMeasurementMenu();
     if (except !== "terms") closeTermsModal();
@@ -1467,6 +1494,48 @@
 
   function isReportExportMenuOpen() {
     return Boolean(els.reportExportMenu && !els.reportExportMenu.hidden);
+  }
+
+  function toggleSampleMenu() {
+    if (isSampleMenuOpen()) {
+      closeSampleMenu();
+    } else {
+      openSampleMenu();
+    }
+  }
+
+  function openSampleMenu() {
+    if (!els.sampleMenu) return;
+    closeTransientUi("sample");
+    els.sampleMenu.hidden = false;
+    els.sampleMenuButton?.setAttribute("aria-expanded", "true");
+  }
+
+  function closeSampleMenu() {
+    if (!els.sampleMenu) return;
+    els.sampleMenu.hidden = true;
+    els.sampleMenuButton?.setAttribute("aria-expanded", "false");
+  }
+
+  function isSampleMenuOpen() {
+    return Boolean(els.sampleMenu && !els.sampleMenu.hidden);
+  }
+
+  async function loadSampleXml(sampleKey) {
+    const sample = sampleXmlConfigs[sampleKey];
+    if (!sample) return;
+    closeSampleMenu();
+    setStatus(`Loading ${sample.label}...`, false, true);
+
+    try {
+      const response = await fetch(sample.url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const xmlText = await response.text();
+      await loadXmlFiles([{ xmlText, fileName: sample.fileName }], { replace: true });
+    } catch (error) {
+      console.error(`Could not load ${sample.label}:`, error);
+      setStatus(`The ${sample.label} could not be loaded.`, true);
+    }
   }
 
   async function exportSeparateAdacReportPdfs() {
@@ -11086,6 +11155,7 @@
   }
 
   function getFirstValue(node, names) {
+    if (!node) return "";
     for (const name of names) {
       const attr = findAttribute(node, [name]);
       if (attr) return attr;

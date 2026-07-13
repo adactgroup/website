@@ -1898,6 +1898,11 @@ h3,
     width: min(300px, calc(100vw - 32px));
 }
 
+.viewer-sample-menu {
+    right: auto;
+    left: 0;
+}
+
 .viewer-report-menu[hidden] {
     display: none;
 }
