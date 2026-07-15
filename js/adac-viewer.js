@@ -1022,6 +1022,8 @@
     filteredFeatures: [],
     layers: new Map(),
     selectedId: null,
+    selectedIds: new Set(),
+    multiSelectMode: false,
     selectedOverlayFeature: null,
     mapMode: "grid",
     coordinateZone: 56,
@@ -1054,6 +1056,7 @@
     },
     fileMetas: [],
     loadedFiles: [],
+    documents: new Map(),
     reportBundles: [],
     schemaValidationResults: [],
     validationErrorResults: [],
@@ -1084,6 +1087,15 @@
     fileName: "",
     showAllDetails: false,
     projectDetailsOpen: false,
+    geometryEditorOpen: false,
+    editMode: false,
+    editorBusy: false,
+    editorFeedback: null,
+    editorRevision: 0,
+    editorInputTimer: null,
+    deleteConfirmation: null,
+    bulkHistoryPast: [],
+    bulkHistoryFuture: [],
     filters: {
       layer: "all",
       type: "all",
@@ -1175,6 +1187,7 @@
     }
     root.addEventListener("click", handleClick);
     root.addEventListener("change", handleChange);
+    root.addEventListener("input", handleEditorInput);
     if (els.termsButton) {
       els.termsButton.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1282,7 +1295,7 @@
 
     const assetButton = event.target.closest("[data-feature-id]");
     if (assetButton) {
-      selectFeature(assetButton.dataset.featureId);
+      selectFeature(assetButton.dataset.featureId, { additive: isAdditiveSelectionEvent(event) });
       return;
     }
 
@@ -1339,10 +1352,64 @@
     if (allDetailsToggle) {
       state.showAllDetails = allDetailsToggle.checked;
       renderDetails();
+      return;
+    }
+    const geometryField = event.target.closest("[data-editor-geometry]");
+    if (geometryField) {
+      if (state.editorInputTimer) {
+        window.clearTimeout(state.editorInputTimer);
+        state.editorInputTimer = null;
+      }
+      commitGeometryCoordinateControl(geometryField);
+      return;
+    }
+    const editorNilToggle = event.target.closest("[data-editor-nil]");
+    if (editorNilToggle) {
+      handleEditorNilToggle(editorNilToggle);
+      return;
+    }
+    const bulkNilToggle = event.target.closest("[data-bulk-editor-nil]");
+    if (bulkNilToggle) {
+      handleBulkEditorNilToggle(bulkNilToggle);
+      return;
+    }
+    const bulkEditorField = event.target.closest("[data-bulk-editor-field]");
+    if (bulkEditorField) {
+      if (state.editorInputTimer) {
+        window.clearTimeout(state.editorInputTimer);
+        state.editorInputTimer = null;
+      }
+      commitBulkEditorFieldControl(bulkEditorField);
+      return;
+    }
+    const editorField = event.target.closest("[data-editor-field]");
+    if (editorField) {
+      if (state.editorInputTimer) {
+        window.clearTimeout(state.editorInputTimer);
+        state.editorInputTimer = null;
+      }
+      commitEditorFieldControl(editorField);
     }
   }
 
+  function handleEditorInput(event) {
+    const editorField = event.target.closest?.("input[data-editor-field], input[data-editor-geometry], input[data-bulk-editor-field]");
+    if (!editorField || editorField.type === "checkbox") return;
+    if (state.editorInputTimer) window.clearTimeout(state.editorInputTimer);
+    state.editorInputTimer = window.setTimeout(() => {
+      state.editorInputTimer = null;
+      if (editorField.matches("[data-editor-geometry]")) commitGeometryCoordinateControl(editorField);
+      else if (editorField.matches("[data-bulk-editor-field]")) commitBulkEditorFieldControl(editorField);
+      else commitEditorFieldControl(editorField);
+    }, 450);
+  }
+
   function handleProjectDetailsToggle(event) {
+    const geometryEditor = event.target.closest?.("[data-role='geometry-editor']");
+    if (geometryEditor) {
+      state.geometryEditorOpen = geometryEditor.open;
+      return;
+    }
     const projectDetails = event.target.closest?.("[data-role='project-details']");
     if (!projectDetails) return;
     state.projectDetailsOpen = projectDetails.open;
@@ -1351,6 +1418,8 @@
   function runAction(action) {
     if (action === "fit") {
       fitMap();
+    } else if (action === "toggle-multi-select") {
+      toggleMultiSelectMode();
     } else if (action === "export-report-pdf") {
       handleReportExportRequest();
     } else if (action === "export-combined-report-pdf") {
@@ -1403,6 +1472,32 @@
       previewSelectedValidationFixes();
     } else if (action === "continue-repaired-preview") {
       continueRepairedPreview();
+    } else if (action === "toggle-attribute-editing") {
+      toggleAttributeEditing();
+    } else if (action === "undo-xml-edit") {
+      undoXmlEdit();
+    } else if (action === "redo-xml-edit") {
+      redoXmlEdit();
+    } else if (action === "undo-bulk-xml-edit") {
+      undoBulkXmlEdit();
+    } else if (action === "redo-bulk-xml-edit") {
+      redoBulkXmlEdit();
+    } else if (action === "duplicate-selected-asset") {
+      duplicateSelectedAsset();
+    } else if (action === "request-delete-selected-assets") {
+      requestDeleteSelectedAssets();
+    } else if (action === "confirm-delete-selected-assets") {
+      deleteSelectedAssets();
+    } else if (action === "cancel-delete-selected-assets") {
+      cancelDeleteSelectedAssets();
+    } else if (action === "reset-xml-edits") {
+      resetXmlEdits();
+    } else if (action === "download-edited-xml") {
+      downloadEditedXml();
+    } else if (action === "recalculate-related-xml-fields") {
+      recalculateRelatedXmlFields();
+    } else if (action === "flip-gravity-asset-direction") {
+      flipGravityAssetDirection();
     } else if (action === "toggle-suggestions") {
       toggleSuggestions();
     } else if (action === "close-suggestions") {
@@ -1411,6 +1506,18 @@
   }
 
   function handleWindowKeydown(event) {
+    const editorField = event.target.closest?.("input[data-editor-field], input[data-editor-geometry], input[data-bulk-editor-field]");
+    if (event.key === "Enter" && editorField) {
+      event.preventDefault();
+      if (state.editorInputTimer) {
+        window.clearTimeout(state.editorInputTimer);
+        state.editorInputTimer = null;
+      }
+      if (editorField.matches("[data-editor-geometry]")) commitGeometryCoordinateControl(editorField);
+      else if (editorField.matches("[data-bulk-editor-field]")) commitBulkEditorFieldControl(editorField);
+      else commitEditorFieldControl(editorField);
+      return;
+    }
     if (event.key === "Escape") {
       closeTransientUi();
       if (isMeasurementActive()) finishMeasurement();
@@ -2650,16 +2757,17 @@
       }
       const labelHit = findLabelAtCanvasPoint(canvasPoint);
       if (labelHit) {
-        selectFeature(labelHit.featureUid);
+        selectFeature(labelHit.featureUid, { additive: isAdditiveSelectionEvent(event) });
         return;
       }
       const feature = findFeatureAtCanvasPoint(canvasPoint);
       if (feature) {
-        selectFeature(feature.uid);
+        selectFeature(feature.uid, { additive: isAdditiveSelectionEvent(event) });
         return;
       }
       const overlayHit = findOverlayFeatureAtCanvasPoint(canvasPoint);
       if (overlayHit) selectOverlayFeature(overlayHit);
+      else clearFeatureSelection();
     }
   }
 
@@ -2819,9 +2927,10 @@
         validationErrors.push({ ...schemaValidation, xmlText });
         continue;
       }
-      const features = extractFeatures(doc);
+      const features = extractFeatures(doc, { schemaKey: schemaValidation.schemaKey });
       parsedFiles.push({
         fileName,
+        xmlText,
         doc,
         features,
         fileMeta: extractFileMeta(doc),
@@ -2887,14 +2996,36 @@
     parsedFiles.forEach((item, fileIndex) => {
       const fileId = `file-${startingFileCount + fileIndex + 1}`;
       const sourceIndex = startingFileCount + fileIndex + 1;
+      const workingXmlText = String(item.xmlText || serializeXmlDocument(item.doc));
+      const baselineXmlText = workingXmlText;
+      const originalXmlText = String(item.originalXmlText || workingXmlText);
       const fileFeatures = item.features.map((feature, featureIndex) => ({
         ...feature,
-        uid: `${fileId}:${featureIndex}:${feature.id}`,
+        uid: buildFeatureUid(fileId, feature, featureIndex),
         sourceFileId: fileId,
         sourceFile: item.fileName,
         sourceIndex,
       }));
 
+      state.documents.set(fileId, {
+        id: fileId,
+        name: item.fileName,
+        originalXmlText,
+        baselineXmlText,
+        workingXmlText,
+        baselineDocument: parseXmlDocument(baselineXmlText),
+        workingDocument: item.doc,
+        schemaKey: item.schemaValidation?.schemaKey || "",
+        schemaVersion: item.schemaValidation?.schemaVersion || "",
+        validation: item.schemaValidation,
+        historyPast: [],
+        historyFuture: [],
+        baselineFeatures: fileFeatures.map((feature) => ({ ...feature })),
+        changedFields: new Map(),
+        addedAssetCount: 0,
+        deletedAssetCount: 0,
+        dirty: false,
+      });
       state.loadedFiles.push({
         id: fileId,
         name: item.fileName,
@@ -2922,6 +3053,7 @@
     state.fileName = getLoadedFileLabel();
     state.assetKinds = getAssetKindsForFeatures(state.features);
     state.selectedId = state.features[0] ? state.features[0].uid : null;
+    state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
     state.coordinateZone = inferCoordinateZoneFromDoc(parsedFiles[0].doc) || inferCoordinateZoneFromFeatures(state.features) || 56;
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
@@ -2934,6 +3066,69 @@
     renderFilterOptions();
     updateFilteredFeatures();
     runReceiverLocationCheck();
+  }
+
+  function parseXmlDocument(xmlText) {
+    const doc = new DOMParser().parseFromString(String(xmlText || ""), "application/xml");
+    return doc.querySelector("parsererror") ? null : doc;
+  }
+
+  function serializeXmlDocument(doc) {
+    return doc ? new XMLSerializer().serializeToString(doc) : "";
+  }
+
+  function buildFeatureUid(fileId, feature, fallbackIndex = 0) {
+    return `${fileId}:${feature.xmlLocator || `${fallbackIndex}:${feature.id}`}`;
+  }
+
+  function reconcileFeatureUids(fileId, features, previousFeatures = []) {
+    const unmatched = new Set(previousFeatures);
+    const matches = new Array(features.length).fill(null);
+    const usedUids = new Set();
+    const assignUniqueMatch = (featureIndex, candidates) => {
+      if (matches[featureIndex] || candidates.length !== 1) return;
+      matches[featureIndex] = candidates[0];
+      unmatched.delete(candidates[0]);
+    };
+
+    features.forEach((feature, index) => {
+      const geometryKey = getFeatureGeometryIdentity(feature);
+      assignUniqueMatch(index, Array.from(unmatched).filter((candidate) => (
+        candidate.id === feature.id
+        && candidate.assetPath === feature.assetPath
+        && getFeatureGeometryIdentity(candidate) === geometryKey
+      )));
+    });
+    features.forEach((feature, index) => {
+      assignUniqueMatch(index, Array.from(unmatched).filter((candidate) => (
+        candidate.id === feature.id && candidate.assetPath === feature.assetPath
+      )));
+    });
+    features.forEach((feature, index) => {
+      assignUniqueMatch(index, Array.from(unmatched).filter((candidate) => candidate.xmlLocator === feature.xmlLocator));
+    });
+
+    const reservedUids = new Set(matches.filter(Boolean).map((feature) => feature.uid));
+    return features.map((feature, index) => {
+      const matched = matches[index];
+      if (matched) {
+        usedUids.add(matched.uid);
+        return { ...feature, uid: matched.uid };
+      }
+      const baseUid = matched?.uid || buildFeatureUid(fileId, feature, index);
+      let uid = baseUid;
+      let suffix = 2;
+      while (usedUids.has(uid) || reservedUids.has(uid)) {
+        uid = `${baseUid}:${suffix}`;
+        suffix += 1;
+      }
+      usedUids.add(uid);
+      return { ...feature, uid };
+    });
+  }
+
+  function getFeatureGeometryIdentity(feature) {
+    return (feature?.points || []).map((point) => `${round(point.x)},${round(point.y)},${round(point.z)}`).join("|");
   }
 
   async function previewSuggestedXmlRepairs() {
@@ -2965,7 +3160,7 @@
     }
 
     const schemaValidation = await validateAdacSchema(repairedXmlText, repairedFileName, doc);
-    const features = extractFeatures(doc);
+    const features = extractFeatures(doc, { schemaKey: schemaValidation.schemaKey });
     const reportBundle = extractReportBundle(doc, repairedFileName);
     if (!features.length && !reportBundle.assets.length) {
       state.repairPreview = {
@@ -2985,6 +3180,7 @@
       active: true,
       status: "active",
       originalFileName: repairPlan.fileName,
+      originalXmlText: repairPlan.xmlText,
       repairedFileName,
       repairedXmlText,
       patches: repairPlan.patches,
@@ -2996,6 +3192,8 @@
 
     applyParsedFilesToState([{
       fileName: repairedFileName,
+      xmlText: repairedXmlText,
+      originalXmlText: repairPlan.xmlText,
       doc,
       features,
       fileMeta: extractFileMeta(doc),
@@ -3149,6 +3347,7 @@
       );
       await previewPatchedXmlText({
         originalFileName: preview.originalFileName || "uploaded.xml",
+        originalXmlText: preview.originalXmlText || "",
         repairedXmlText,
         patches: [
           ...(preview.patches || []),
@@ -3169,6 +3368,7 @@
     const repairedXmlText = applySelectedValidationFixes(result.xmlText, result, selectedForResult);
     await previewPatchedXmlText({
       originalFileName: result.fileName || "uploaded.xml",
+      originalXmlText: result.xmlText,
       repairedXmlText,
       patches: selectedForResult.map((selection) => ({
         label: `Set <${selection.element}> to '${selection.value}'.`,
@@ -3224,7 +3424,7 @@
       .replace(/>/g, "&gt;");
   }
 
-  async function previewPatchedXmlText({ originalFileName, repairedXmlText, patches = [], statusPrefix = "Previewing viewer-repaired XML." }) {
+  async function previewPatchedXmlText({ originalFileName, originalXmlText = "", repairedXmlText, patches = [], statusPrefix = "Previewing viewer-repaired XML." }) {
     const repairedFileName = buildRepairedXmlFileName(originalFileName);
     const parser = new DOMParser();
     const doc = parser.parseFromString(repairedXmlText, "application/xml");
@@ -3236,7 +3436,7 @@
     }
 
     const schemaValidation = await validateAdacSchema(repairedXmlText, repairedFileName, doc);
-    const features = extractFeatures(doc);
+    const features = extractFeatures(doc, { schemaKey: schemaValidation.schemaKey });
     const reportBundle = extractReportBundle(doc, repairedFileName);
     if (!features.length && !reportBundle.assets.length) {
       setStatus("The selected fixes produced XML, but no ADAC assets were found to preview.", true);
@@ -3248,6 +3448,7 @@
       active: true,
       status: "active",
       originalFileName,
+      originalXmlText,
       repairedFileName,
       repairedXmlText,
       patches,
@@ -3259,6 +3460,8 @@
 
     applyParsedFilesToState([{
       fileName: repairedFileName,
+      xmlText: repairedXmlText,
+      originalXmlText: originalXmlText || repairedXmlText,
       doc,
       features,
       fileMeta: extractFileMeta(doc),
@@ -3374,8 +3577,11 @@
   function buildSchemaValueLookup(files) {
     const parser = new DOMParser();
     const typeValues = new Map();
+    const typeRules = new Map();
     const elementTypes = new Map();
+    const elementRules = new Map();
     const contextElementTypes = new Map();
+    const contextElementRules = new Map();
     const complexTypeAssetNames = new Map();
 
     files.forEach((file) => {
@@ -3390,19 +3596,23 @@
       Array.from(doc.getElementsByTagNameNS("*", "simpleType")).forEach((simpleType) => {
         const typeName = simpleType.getAttribute("name");
         if (!typeName) return;
-        const values = Array.from(simpleType.getElementsByTagNameNS("*", "enumeration"))
-          .map((item) => item.getAttribute("value"))
-          .filter(Boolean);
+        const typeRule = parseSchemaSimpleTypeRule(simpleType, typeName);
+        const values = typeRule.values || [];
+        typeRules.set(normalizeSchemaTypeKey(typeName), typeRule);
         if (values.length) typeValues.set(normalizeSchemaTypeKey(typeName), values);
       });
 
       Array.from(doc.getElementsByTagNameNS("*", "element")).forEach((element) => {
         const elementName = element.getAttribute("name");
         const typeName = element.getAttribute("type");
-        if (!elementName || !typeName) return;
+        if (!elementName) return;
         const key = normalizeDetailKey(elementName);
-        if (!elementTypes.has(key)) elementTypes.set(key, new Set());
-        elementTypes.get(key).add(formatXmlToken(typeName));
+        const elementRule = parseSchemaElementRule(element);
+        addSchemaElementRule(elementRules, key, elementRule);
+        if (typeName) {
+          if (!elementTypes.has(key)) elementTypes.set(key, new Set());
+          elementTypes.get(key).add(formatXmlToken(typeName));
+        }
       });
 
       Array.from(doc.getElementsByTagNameNS("*", "complexType")).forEach((complexType) => {
@@ -3416,11 +3626,21 @@
         Array.from(complexType.getElementsByTagNameNS("*", "element")).forEach((element) => {
           const elementName = element.getAttribute("name");
           const typeName = element.getAttribute("type");
-          if (!elementName || !typeName) return;
+          if (!elementName) return;
+          const elementRule = parseSchemaElementRule(element);
+          const relativePath = getSchemaElementRelativePath(element, complexType);
           contextNames.forEach((contextName) => {
-            addSchemaContextType(contextElementTypes, `${contextName}/${elementName}`, typeName);
+            const contextPath = `${contextName}/${relativePath || elementName}`;
+            if (typeName) addSchemaContextType(contextElementTypes, contextPath, typeName);
+            addSchemaElementRule(contextElementRules, contextPath, elementRule);
+            if (relativePath && relativePath !== elementName) {
+              if (typeName) addSchemaContextType(contextElementTypes, `${contextName}/${elementName}`, typeName);
+              addSchemaElementRule(contextElementRules, `${contextName}/${elementName}`, elementRule);
+            }
             getSchemaDomainNamesForComplexType(complexTypeName).forEach((domainName) => {
-              addSchemaContextType(contextElementTypes, `${domainName}/${contextName}/${elementName}`, typeName);
+              const domainPath = `${domainName}/${contextPath}`;
+              if (typeName) addSchemaContextType(contextElementTypes, domainPath, typeName);
+              addSchemaElementRule(contextElementRules, domainPath, elementRule);
             });
           });
         });
@@ -3429,9 +3649,78 @@
 
     return {
       typeValues,
+      typeRules,
       elementTypes,
+      elementRules,
       contextElementTypes,
+      contextElementRules,
     };
+  }
+
+  function parseSchemaSimpleTypeRule(simpleType, typeName = "") {
+    const restriction = Array.from(simpleType.children || [])
+      .find((child) => cleanName(child.tagName).toLowerCase() === "restriction");
+    if (!restriction) return { name: typeName, base: "xs:string", values: [], facets: {} };
+    const values = Array.from(restriction.children || [])
+      .filter((child) => cleanName(child.tagName).toLowerCase() === "enumeration")
+      .map((item) => item.getAttribute("value"))
+      .filter((value) => value !== null);
+    const facetNames = new Set([
+      "mininclusive", "maxinclusive", "minexclusive", "maxexclusive",
+      "minlength", "maxlength", "length", "pattern", "totaldigits", "fractiondigits",
+    ]);
+    const facets = {};
+    Array.from(restriction.children || []).forEach((child) => {
+      const name = cleanName(child.tagName).toLowerCase();
+      if (!facetNames.has(name)) return;
+      facets[name] = child.getAttribute("value") || "";
+    });
+    return {
+      name: typeName,
+      base: formatXmlToken(restriction.getAttribute("base") || "xs:string"),
+      values,
+      facets,
+    };
+  }
+
+  function parseSchemaElementRule(element) {
+    const inlineSimpleType = Array.from(element.children || [])
+      .find((child) => cleanName(child.tagName).toLowerCase() === "simpletype");
+    return {
+      name: element.getAttribute("name") || "",
+      type: formatXmlToken(element.getAttribute("type") || ""),
+      nillable: String(element.getAttribute("nillable") || "false").toLowerCase() === "true",
+      minOccurs: element.getAttribute("minOccurs") || "1",
+      maxOccurs: element.getAttribute("maxOccurs") || "1",
+      defaultValue: element.getAttribute("default"),
+      fixedValue: element.getAttribute("fixed"),
+      inlineTypeRule: inlineSimpleType ? parseSchemaSimpleTypeRule(inlineSimpleType, "") : null,
+    };
+  }
+
+  function getSchemaElementRelativePath(element, complexType) {
+    const names = [element.getAttribute("name") || ""];
+    let current = element.parentElement;
+    while (current && current !== complexType) {
+      if (cleanName(current.tagName).toLowerCase() === "element" && current.getAttribute("name")) {
+        names.unshift(current.getAttribute("name"));
+      }
+      current = current.parentElement;
+    }
+    return names.filter(Boolean).join("/");
+  }
+
+  function addSchemaElementRule(map, key, rule) {
+    const normalizedKey = key.includes("/") ? normalizeSchemaPathKey(key) : normalizeDetailKey(key);
+    if (!normalizedKey || !rule?.name) return;
+    if (!map.has(normalizedKey)) map.set(normalizedKey, []);
+    const rules = map.get(normalizedKey);
+    const signature = schemaElementRuleSignature(rule);
+    if (!rules.some((item) => schemaElementRuleSignature(item) === signature)) rules.push(rule);
+  }
+
+  function schemaElementRuleSignature(rule) {
+    return [rule.name, rule.type, rule.nillable, rule.minOccurs, rule.maxOccurs, rule.defaultValue, rule.fixedValue].join("|");
   }
 
   function addSchemaContextType(map, key, typeName) {
@@ -3439,6 +3728,105 @@
     if (!normalizedKey || !typeName) return;
     if (!map.has(normalizedKey)) map.set(normalizedKey, new Set());
     map.get(normalizedKey).add(formatXmlToken(typeName));
+  }
+
+  function resolveSchemaFieldRule(schemaKey, locator) {
+    const lookup = schemaValueLookupCache.get(schemaKey);
+    const path = parseXmlElementLocator(locator).map((part) => part.name);
+    if (!lookup || !path.length) return null;
+    const elementName = path[path.length - 1];
+    const contextKeys = getSchemaContextKeysForPath(path.slice(0, -1), elementName);
+    let candidates = [];
+    for (const contextKey of contextKeys) {
+      const rules = lookup.contextElementRules?.get(normalizeSchemaPathKey(contextKey)) || [];
+      if (rules.length) {
+        candidates = rules;
+        break;
+      }
+    }
+    if (!candidates.length) candidates = lookup.elementRules?.get(normalizeDetailKey(elementName)) || [];
+    const distinctCandidates = uniqueSchemaElementRules(candidates);
+    if (!distinctCandidates.length) return null;
+    const chosen = distinctCandidates.length === 1
+      ? distinctCandidates[0]
+      : chooseSchemaElementRuleForContext(distinctCandidates, lookup, contextKeys);
+    if (!chosen) return null;
+    const typeRule = chosen.inlineTypeRule || resolveSchemaSimpleTypeRule(lookup, chosen.type);
+    return {
+      ...chosen,
+      typeRule,
+      values: typeRule?.values || [],
+      primitive: getSchemaPrimitiveType(typeRule, chosen.type),
+      facets: typeRule?.facets || {},
+    };
+  }
+
+  function uniqueSchemaElementRules(rules = []) {
+    const seen = new Set();
+    return rules.filter((rule) => {
+      const signature = schemaElementRuleSignature(rule);
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
+  }
+
+  function chooseSchemaElementRuleForContext(candidates, lookup, contextKeys) {
+    for (const contextKey of contextKeys) {
+      const possibleTypes = lookup.contextElementTypes?.get(normalizeSchemaPathKey(contextKey));
+      if (!possibleTypes || possibleTypes.size !== 1) continue;
+      const typeName = normalizeSchemaTypeKey(Array.from(possibleTypes)[0]);
+      const matches = candidates.filter((candidate) => normalizeSchemaTypeKey(candidate.type) === typeName);
+      if (matches.length === 1) return matches[0];
+    }
+    const signatures = uniqueValues(candidates.map((candidate) => [
+      normalizeSchemaTypeKey(candidate.type),
+      candidate.nillable,
+      candidate.fixedValue,
+    ].join("|")));
+    return signatures.length === 1 ? candidates[0] : null;
+  }
+
+  function resolveSchemaSimpleTypeRule(lookup, typeName, seen = new Set()) {
+    const normalizedType = normalizeSchemaTypeKey(typeName);
+    if (!normalizedType || seen.has(normalizedType)) return null;
+    const ownRule = lookup?.typeRules?.get(normalizedType);
+    if (!ownRule) return getBuiltInSchemaTypeRule(typeName);
+    seen.add(normalizedType);
+    const baseRule = resolveSchemaSimpleTypeRule(lookup, ownRule.base, seen) || getBuiltInSchemaTypeRule(ownRule.base);
+    return {
+      ...(baseRule || {}),
+      ...ownRule,
+      values: ownRule.values?.length ? ownRule.values : (baseRule?.values || []),
+      facets: { ...(baseRule?.facets || {}), ...(ownRule.facets || {}) },
+    };
+  }
+
+  function getBuiltInSchemaTypeRule(typeName) {
+    const primitive = normalizeSchemaTypeKey(typeName);
+    const rules = {
+      string: { primitive: "string", facets: {}, values: [] },
+      normalizedstring: { primitive: "string", facets: {}, values: [] },
+      token: { primitive: "string", facets: {}, values: [] },
+      boolean: { primitive: "boolean", facets: {}, values: ["true", "false"] },
+      date: { primitive: "date", facets: {}, values: [] },
+      datetime: { primitive: "datetime", facets: {}, values: [] },
+      decimal: { primitive: "decimal", facets: {}, values: [] },
+      float: { primitive: "decimal", facets: {}, values: [] },
+      double: { primitive: "decimal", facets: {}, values: [] },
+      integer: { primitive: "integer", facets: {}, values: [] },
+      nonnegativeinteger: { primitive: "integer", facets: { mininclusive: "0" }, values: [] },
+      positiveinteger: { primitive: "integer", facets: { mininclusive: "1" }, values: [] },
+      nonpositiveinteger: { primitive: "integer", facets: { maxinclusive: "0" }, values: [] },
+      negativeinteger: { primitive: "integer", facets: { maxinclusive: "-1" }, values: [] },
+    };
+    const rule = rules[primitive];
+    return rule ? { name: formatXmlToken(typeName), base: "", ...rule } : null;
+  }
+
+  function getSchemaPrimitiveType(typeRule, typeName) {
+    if (typeRule?.primitive) return typeRule.primitive;
+    return getBuiltInSchemaTypeRule(typeName)?.primitive || "string";
   }
 
   function getSchemaDomainNamesForComplexType(complexTypeName) {
@@ -3548,10 +3936,13 @@
     state.filteredFeatures = [];
     state.layers = new Map();
     state.selectedId = null;
+    state.selectedIds = new Set();
+    state.multiSelectMode = false;
     state.selectedOverlayFeature = null;
     state.fileMeta = { receiver: "", receiverField: "" };
     state.fileMetas = [];
     state.loadedFiles = [];
+    state.documents = new Map();
     state.reportBundles = [];
     state.schemaValidationResults = [];
     state.validationErrorResults = [];
@@ -3559,6 +3950,16 @@
     state.assetKinds = new Set();
     state.fileName = "";
     state.projectDetailsOpen = false;
+    state.geometryEditorOpen = false;
+    state.editMode = false;
+    state.editorBusy = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
+    state.editorRevision += 1;
+    state.bulkHistoryPast = [];
+    state.bulkHistoryFuture = [];
+    if (state.editorInputTimer) window.clearTimeout(state.editorInputTimer);
+    state.editorInputTimer = null;
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     setMeasurementMode("off");
@@ -3595,7 +3996,98 @@
     return `${state.loadedFiles.length} XML files`;
   }
 
-  function extractFeatures(doc) {
+  function getXmlElementLocator(element) {
+    const parts = [];
+    let current = element;
+    while (current && current.nodeType === 1) {
+      const name = cleanName(current.tagName);
+      const siblings = current.parentElement
+        ? elementChildren(current.parentElement).filter((sibling) => cleanName(sibling.tagName) === name)
+        : [current];
+      parts.unshift({ name, index: Math.max(1, siblings.indexOf(current) + 1) });
+      current = current.parentElement;
+    }
+    return `/${parts.map((part) => `${part.name}[${part.index}]`).join("/")}`;
+  }
+
+  function parseXmlElementLocator(locator) {
+    return String(locator || "")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => {
+        const match = part.match(/^(.*)\[(\d+)\]$/);
+        return match ? { name: match[1], index: Number(match[2]) } : { name: part, index: 1 };
+      })
+      .filter((part) => part.name);
+  }
+
+  function findXmlElementByLocator(doc, locator) {
+    const parts = parseXmlElementLocator(locator);
+    if (!doc?.documentElement || !parts.length) return null;
+    let current = doc.documentElement;
+    if (cleanName(current.tagName) !== parts[0].name || parts[0].index !== 1) return null;
+    for (let index = 1; index < parts.length; index += 1) {
+      const part = parts[index];
+      const matches = elementChildren(current).filter((child) => cleanName(child.tagName) === part.name);
+      current = matches[part.index - 1] || null;
+      if (!current) return null;
+    }
+    return current;
+  }
+
+  function collectEditableFields(assetNode, schemaKey) {
+    return Array.from(assetNode.querySelectorAll("*"))
+      .filter((element) => !elementChildren(element).length)
+      .filter((element) => !isElementInsideGeometry(element, assetNode))
+      .map((element) => {
+        const locator = getXmlElementLocator(element);
+        const rule = resolveSchemaFieldRule(schemaKey, locator) || getEditorLevelFallbackRule(element);
+        const parent = element.parentElement && element.parentElement !== assetNode
+          ? cleanName(element.parentElement.tagName)
+          : "";
+        return {
+          locator,
+          name: cleanName(element.tagName),
+          parent,
+          value: String(element.textContent || "").trim(),
+          nil: isNilledReportElement(element),
+          rule,
+        };
+      });
+  }
+
+  function getEditorLevelFallbackRule(element) {
+    const key = normalizeDetailKey(cleanName(element?.tagName));
+    const levelKeys = new Set([
+      "surfacelevelm",
+      "invertlevelm",
+      "ussurfacelevelm",
+      "dssurfacelevelm",
+      "usinvertlevelm",
+      "dsinvertlevelm",
+    ]);
+    if (!levelKeys.has(key) || isNilledReportElement(element)) return null;
+    return {
+      name: cleanName(element.tagName),
+      base: "xs:float",
+      primitive: "decimal",
+      facets: {},
+      values: [],
+      nillable: false,
+      fixedValue: null,
+    };
+  }
+
+  function isElementInsideGeometry(element, assetNode) {
+    let current = element.parentElement;
+    while (current && current !== assetNode) {
+      if (cleanName(current.tagName).toLowerCase() === "geometry") return true;
+      current = current.parentElement;
+    }
+    return false;
+  }
+
+  function extractFeatures(doc, options = {}) {
     const elements = Array.from(doc.querySelectorAll("*"));
     const candidates = [];
     const seen = new Set();
@@ -3615,8 +4107,10 @@
       const type = getFirstValue(node, ["Type", "AssetType", "Class", "Subtype", "FeatureType", "Name"]) || cleanName(node.tagName);
       const layer = inferLayerFromStructure(node);
       const assetPath = getAssetPathFromStructure(node);
+      const xmlLocator = getXmlElementLocator(node);
       const attributes = collectAttributes(node);
       const fullAttributes = collectAttributes(node, { includeAll: true });
+      const editableFields = collectEditableFields(node, options.schemaKey || "");
       const labelValues = collectLabelValues(node);
       const status = getAssetStatus(node) || "Unknown";
       const planStyleKey = getPlanStyleKeyForAssetPath(assetPath);
@@ -3631,6 +4125,7 @@
         type: String(type).trim(),
         assetTag: cleanName(node.tagName),
         assetPath,
+        xmlLocator,
         planStyleKey,
         layer,
         status,
@@ -3638,6 +4133,7 @@
         points,
         attributes,
         fullAttributes,
+        editableFields,
         labelValues,
         depth: getDepth(node),
         descendantCount,
@@ -3864,7 +4360,8 @@
     const byGeometry = new Map();
 
     candidates.forEach((feature) => {
-      const key = feature.points.map((point) => `${round(point.x)},${round(point.y)}`).join("|");
+      const geometryKey = feature.points.map((point) => `${round(point.x)},${round(point.y)}`).join("|");
+      const key = `${feature.id}|${geometryKey}`;
       const existing = byGeometry.get(key);
       if (!existing || scoreFeature(feature) > scoreFeature(existing)) {
         byGeometry.set(key, feature);
@@ -4498,21 +4995,96 @@
     drawMap();
   }
 
-  function selectFeature(featureUid) {
-    state.selectedId = featureUid;
+  function isAdditiveSelectionEvent(event) {
+    return Boolean(state.multiSelectMode || event?.shiftKey || event?.metaKey || event?.ctrlKey);
+  }
+
+  function getSelectedFeatures() {
+    const selectedIds = state.selectedIds instanceof Set ? state.selectedIds : new Set();
+    return state.features.filter((feature) => selectedIds.has(feature.uid));
+  }
+
+  function isFeatureSelected(feature) {
+    return Boolean(feature && state.selectedIds instanceof Set && state.selectedIds.has(feature.uid));
+  }
+
+  function selectFeature(featureUid, options = {}) {
+    const additive = Boolean(options.additive);
+    const nextSelectedIds = new Set(state.selectedIds || []);
+    if (additive) {
+      if (nextSelectedIds.has(featureUid) && nextSelectedIds.size > 1) nextSelectedIds.delete(featureUid);
+      else nextSelectedIds.add(featureUid);
+    } else {
+      nextSelectedIds.clear();
+      nextSelectedIds.add(featureUid);
+    }
+    const nextPrimary = nextSelectedIds.has(featureUid)
+      ? featureUid
+      : Array.from(nextSelectedIds).pop() || null;
+    if (state.selectedId !== nextPrimary || state.selectedIds.size !== nextSelectedIds.size) {
+      state.editorFeedback = null;
+      state.geometryEditorOpen = false;
+      state.deleteConfirmation = null;
+    }
+    state.selectedIds = nextSelectedIds;
+    state.selectedId = nextPrimary;
     state.selectedOverlayFeature = null;
+    state.drawOrderCache = null;
     renderDetails();
     drawMap();
   }
 
+  function clearFeatureSelection() {
+    state.selectedId = null;
+    state.selectedIds = new Set();
+    state.selectedOverlayFeature = null;
+    state.editMode = false;
+    state.geometryEditorOpen = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
+    state.drawOrderCache = null;
+    renderDetails();
+    drawMap();
+  }
+
+  function toggleMultiSelectMode() {
+    state.multiSelectMode = !state.multiSelectMode;
+    if (!state.multiSelectMode && state.selectedIds.size > 1) {
+      state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
+      state.editMode = false;
+      state.editorFeedback = null;
+      state.deleteConfirmation = null;
+    }
+    updateMultiSelectButton();
+    renderDetails();
+    drawMap();
+    setStatus(state.multiSelectMode
+      ? "Multi-select is on. Click assets to add or remove them from the selection."
+      : "Multi-select is off. Click an asset to select it.", false);
+  }
+
+  function updateMultiSelectButton() {
+    const button = root.querySelector("[data-role='multi-select-button']");
+    if (!button) return;
+    button.classList.toggle("is-active", state.multiSelectMode);
+    button.setAttribute("aria-pressed", String(state.multiSelectMode));
+    button.title = state.multiSelectMode ? "Finish selecting multiple assets" : "Select multiple assets";
+  }
+
   function selectOverlayFeature(selection) {
     state.selectedId = null;
+    state.selectedIds = new Set();
     state.selectedOverlayFeature = selection;
+    state.editMode = false;
+    state.geometryEditorOpen = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
     renderDetails();
     drawMap();
   }
 
   function renderAll() {
+    updateMultiSelectButton();
     renderMetrics();
     renderLayers();
     renderLabelLayers();
@@ -5930,6 +6502,11 @@
 
   function renderDetails() {
     const feature = state.features.find((item) => item.uid === state.selectedId);
+    const selectedFeatures = getSelectedFeatures();
+    if (selectedFeatures.length > 1) {
+      renderMultiAssetDetails(selectedFeatures);
+      return;
+    }
     if (!feature && state.selectedOverlayFeature) {
       renderOverlayDetails(state.selectedOverlayFeature);
       return;
@@ -5943,10 +6520,18 @@
       return;
     }
 
-    const detailAttributes = state.showAllDetails ? (feature.fullAttributes || feature.attributes) : feature.attributes;
-    const detailEntries = getDetailAttributeEntries(detailAttributes, { includeAll: state.showAllDetails });
-    const compactLevels = extractCompactLevelEntries(detailEntries);
-    const rows = renderDetailEntriesWithLevels(compactLevels.entries, compactLevels.html);
+    const documentRecord = state.documents.get(feature.sourceFileId);
+    const canEdit = Boolean(documentRecord?.validation?.valid);
+    if (state.editMode && !canEdit) state.editMode = false;
+    let rows = "";
+    if (state.editMode) {
+      rows = renderEditableAttributeRows(feature, documentRecord);
+    } else {
+      const detailAttributes = state.showAllDetails ? (feature.fullAttributes || feature.attributes) : feature.attributes;
+      const detailEntries = getDetailAttributeEntries(detailAttributes, { includeAll: state.showAllDetails });
+      const compactLevels = extractCompactLevelEntries(detailEntries);
+      rows = renderDetailEntriesWithLevels(compactLevels.entries, compactLevels.html);
+    }
     const sourceFileRow = state.loadedFiles.length > 1
       ? `<div><dt>Source file</dt><dd>${escapeHtml(feature.sourceFile || state.fileName || "Loaded XML")}</dd></div>`
       : "";
@@ -5957,15 +6542,281 @@
         ${renderProjectDetails(feature)}
         <div class="viewer-details__title-row">
           <h2>${escapeHtml(getFeatureDetailsTitle(feature))}</h2>
-          ${renderAllDetailsToggle()}
+          <div class="viewer-details__title-actions">
+            ${renderAttributeEditToggle(canEdit)}
+            ${renderAllDetailsToggle()}
+          </div>
         </div>
       </div>
+      ${state.editMode ? renderXmlEditorToolbar(documentRecord) : ""}
+      ${state.editMode ? renderDeleteConfirmation(selectedFeatures) : ""}
+      ${renderXmlEditorFeedback(feature)}
       <dl class="viewer-details__grid">
-        <div><dt>Status</dt><dd>${escapeHtml(feature.status)}</dd></div>
+        ${state.editMode ? "" : `<div><dt>Status</dt><dd>${escapeHtml(feature.status)}</dd></div>`}
         ${sourceFileRow}
         ${rows}
-        ${renderGeometryDetails(feature)}
+        ${state.editMode ? renderEditableGeometryDetails(feature, documentRecord) : renderGeometryDetails(feature)}
       </dl>
+    `;
+  }
+
+  function renderMultiAssetDetails(features) {
+    const primaryFeature = features.find((feature) => feature.uid === state.selectedId) || features[features.length - 1];
+    const groups = buildBulkFieldGroups(features);
+    const commonLayer = getCommonSelectionValue(features.map((feature) => feature.layer));
+    const commonAssetType = getCommonSelectionValue(features.map((feature) => feature.assetTag || feature.type));
+    const sourceFiles = uniqueValues(features.map((feature) => feature.sourceFile || "Loaded XML"));
+    const recordsAreValid = features.every((feature) => state.documents.get(feature.sourceFileId)?.validation?.valid);
+    const canEdit = recordsAreValid;
+    if (state.editMode && !canEdit) state.editMode = false;
+    const rows = state.editMode
+      ? renderBulkEditableRows(groups)
+      : renderBulkSummaryRows(groups);
+
+    els.details.innerHTML = `
+      <div class="viewer-details__header viewer-details__header--multi">
+        <span>${escapeHtml(commonLayer === null ? "Multiple layers" : commonLayer)}</span>
+        <div class="viewer-details__title-row">
+          <h2>${features.length} assets selected</h2>
+          <div class="viewer-details__title-actions">
+            ${renderAttributeEditToggle(canEdit)}
+            ${renderAllDetailsToggle()}
+          </div>
+        </div>
+        <p class="viewer-details__selection-help">Click another asset while multi-select is on, or use Shift or Command/Ctrl click, to update this selection.</p>
+      </div>
+      ${state.editMode ? renderBulkXmlEditorToolbar(features) : ""}
+      ${state.editMode ? renderDeleteConfirmation(features) : ""}
+      ${renderXmlEditorFeedback(primaryFeature)}
+      <dl class="viewer-details__grid viewer-details__grid--multi">
+        <div><dt>Asset type</dt><dd class="${commonAssetType === null ? "is-varied" : ""}">${escapeHtml(commonAssetType === null ? "Varied" : commonAssetType)}</dd></div>
+        ${state.loadedFiles.length > 1
+          ? (sourceFiles.length > 1
+            ? `<div><dt>Source file</dt><dd class="is-varied">Varied <small>${sourceFiles.length} XML files</small></dd></div>`
+            : `<div><dt>Source file</dt><dd>${escapeHtml(sourceFiles[0] || "Loaded XML")}</dd></div>`)
+          : ""}
+        ${rows}
+        ${renderBulkGeometrySummary(features)}
+      </dl>
+    `;
+  }
+
+  function getCommonSelectionValue(values) {
+    const normalized = values.map((value) => String(value ?? "").trim());
+    return normalized.every((value) => value === normalized[0]) ? normalized[0] : null;
+  }
+
+  function getRelativeEditableFieldKey(feature, field) {
+    const assetParts = parseXmlElementLocator(feature.xmlLocator);
+    const fieldParts = parseXmlElementLocator(field.locator);
+    const relative = fieldParts.slice(assetParts.length);
+    return relative.map((part) => `${normalizeDetailKey(part.name)}:${part.index}`).join("/");
+  }
+
+  function buildBulkFieldGroups(features) {
+    const groups = new Map();
+    features.forEach((feature, featureIndex) => {
+      getVisibleEditableFields(feature).forEach((field) => {
+        const key = getRelativeEditableFieldKey(feature, field);
+        if (!key) return;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            name: field.name,
+            parent: field.parent,
+            entries: [],
+            featureCount: features.length,
+            order: groups.size,
+          });
+        }
+        groups.get(key).entries.push({ feature, field, featureIndex });
+      });
+    });
+    return Array.from(groups.values()).map((group) => {
+      const values = group.entries.map(({ field }) => `${field.nil ? "nil" : "value"}:${field.nil ? "" : field.value}`);
+      return {
+        ...group,
+        allPresent: group.entries.length === features.length,
+        same: group.entries.length === features.length && values.every((value) => value === values[0]),
+      };
+    });
+  }
+
+  function renderBulkSummaryRows(groups) {
+    if (!groups.length) return `<div><dt>Attributes</dt><dd>No scalar attributes were found across this selection.</dd></div>`;
+    return groups.map((group) => {
+      const field = group.entries[0]?.field;
+      const context = field?.parent && normalizeDetailKey(field.parent) !== normalizeDetailKey(field.name)
+        ? `<small>${escapeHtml(formatDetailLabel(field.parent))}</small>`
+        : "";
+      const value = group.same ? formatBulkFieldValue(field) : "Varied";
+      const availability = group.allPresent ? "" : `<small>Not present on every selected asset</small>`;
+      return `
+        <div>
+          <dt>${escapeHtml(formatDetailLabel(group.name))}${context}</dt>
+          <dd class="${group.same ? "" : "is-varied"}">${escapeHtml(value)}${availability}</dd>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function formatBulkFieldValue(field) {
+    if (!field) return "-";
+    if (field.nil) return "Null";
+    return formatDetailValue(field.value);
+  }
+
+  function renderBulkEditableRows(groups) {
+    if (!groups.length) return `<div><dt>Attributes</dt><dd>No editable scalar attributes were found across this selection.</dd></div>`;
+    return groups.map((group) => {
+      const field = group.entries[0]?.field;
+      const compatibility = getBulkFieldCompatibility(group);
+      const context = field?.parent && normalizeDetailKey(field.parent) !== normalizeDetailKey(field.name)
+        ? `<small>${escapeHtml(formatDetailLabel(field.parent))}</small>`
+        : "";
+      return `
+        <div class="viewer-details__editable-row viewer-details__editable-row--bulk">
+          <dt>${escapeHtml(formatDetailLabel(group.name))}${context}<small>Applies to ${group.entries.length} of ${group.featureCount} selected assets</small></dt>
+          <dd>${compatibility.eligible
+            ? renderBulkFieldControl(group, compatibility.rule)
+            : `<span class="viewer-editor-readonly ${group.same ? "" : "is-varied"}">${escapeHtml(group.same ? formatBulkFieldValue(field) : "Varied")}<small>${escapeHtml(compatibility.reason)}</small></span>`}
+          </dd>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function getBulkFieldCompatibility(group) {
+    if (!group.allPresent) return { eligible: false, reason: "This field is not present on every selected asset." };
+    if (isBulkIdentityField(group.name)) return { eligible: false, reason: "Asset identifiers and serial numbers must remain unique and can only be edited one asset at a time." };
+    const rules = group.entries.map(({ field }) => field.rule);
+    if (rules.some((rule) => !rule)) return { eligible: false, reason: "A schema rule is unavailable for one or more selected assets." };
+    if (rules.some((rule) => rule.fixedValue !== null)) return { eligible: false, reason: "This field is fixed by one or more selected schemas." };
+    const primitives = uniqueValues(rules.map((rule) => rule.primitive || "string"));
+    if (primitives.length !== 1) return { eligible: false, reason: "The selected schemas use different value types for this field." };
+
+    const enumSets = rules.map((rule) => new Set(rule.values || []));
+    const hasEnums = enumSets.map((values) => values.size > 0);
+    if (hasEnums.some(Boolean) && !hasEnums.every(Boolean)) {
+      return { eligible: false, reason: "The selected schemas do not share the same kind of value list." };
+    }
+    let values = [];
+    if (hasEnums.every(Boolean)) {
+      values = Array.from(enumSets[0]).filter((value) => enumSets.slice(1).every((set) => set.has(value)));
+      if (!values.length) return { eligible: false, reason: "There are no schema values valid for every selected asset." };
+    }
+
+    const patterns = uniqueValues(rules.map((rule) => rule.facets?.pattern || "").filter(Boolean));
+    if (patterns.length > 1) return { eligible: false, reason: "The selected schemas use incompatible text patterns for this field." };
+    const facets = mergeBulkSchemaFacets(rules.map((rule) => rule.facets || {}));
+    if (!facets) return { eligible: false, reason: "The selected schemas use incompatible limits for this field." };
+    return {
+      eligible: true,
+      reason: "",
+      rule: {
+        ...rules[0],
+        primitive: primitives[0],
+        values: orderEditorSchemaValues(values),
+        facets,
+        nillable: rules.every((rule) => rule.nillable),
+      },
+    };
+  }
+
+  function isBulkIdentityField(name) {
+    return new Set([
+      "adacid",
+      "assetid",
+      "featureid",
+      "pitnumber",
+      "lotno",
+      "serialnumber",
+      "meterserialnumber",
+    ]).has(normalizeDetailKey(name));
+  }
+
+  function mergeBulkSchemaFacets(facetsList) {
+    const result = {};
+    const numericValues = (keys) => facetsList.flatMap((facets) => keys.map((key) => facets[key])).filter((value) => value !== undefined && value !== "").map(Number).filter(Number.isFinite);
+    const minValues = numericValues(["mininclusive", "minexclusive"]);
+    const maxValues = numericValues(["maxinclusive", "maxexclusive"]);
+    const minLengths = numericValues(["minlength", "length"]);
+    const maxLengths = numericValues(["maxlength", "length"]);
+    if (minValues.length) result.mininclusive = String(Math.max(...minValues));
+    if (maxValues.length) result.maxinclusive = String(Math.min(...maxValues));
+    if (minLengths.length) result.minlength = String(Math.max(...minLengths));
+    if (maxLengths.length) result.maxlength = String(Math.min(...maxLengths));
+    if (Number(result.mininclusive) > Number(result.maxinclusive)) return null;
+    if (Number(result.minlength) > Number(result.maxlength)) return null;
+    const patterns = uniqueValues(facetsList.map((facets) => facets.pattern || "").filter(Boolean));
+    if (patterns.length === 1) result.pattern = patterns[0];
+    return result;
+  }
+
+  function renderBulkFieldControl(group, rule) {
+    const firstField = group.entries[0].field;
+    const disabled = state.editorBusy ? "disabled" : "";
+    const required = rule.nillable ? "" : "required";
+    const common = `data-bulk-editor-field="${escapeHtml(group.key)}" ${required} ${disabled}`;
+    const allNil = group.same && firstField.nil;
+    const commonValue = group.same && !firstField.nil ? firstField.value : "";
+    if (rule.values.length) {
+      const options = [
+        ...(!group.same ? [`<option value="__ADAC_VARIED__" selected>Varied - choose a value</option>`] : []),
+        ...(rule.nillable ? [`<option value="__ADAC_NIL__" ${allNil ? "selected" : ""}>Make null</option>`] : []),
+        ...rule.values.map((value) => `<option value="${escapeHtml(value)}" ${commonValue === String(value) ? "selected" : ""}>${escapeHtml(value)}</option>`),
+      ].join("");
+      return `<select ${common} aria-label="${escapeHtml(formatDetailLabel(group.name))}">${options}</select>`;
+    }
+    const primitive = rule.primitive || "string";
+    const facets = rule.facets || {};
+    const placeholder = group.same ? "" : "Varied";
+    let input = "";
+    if (primitive === "integer" || primitive === "decimal") {
+      const min = getSchemaInputBoundary(facets, "min", primitive);
+      const max = getSchemaInputBoundary(facets, "max", primitive);
+      input = `<input type="number" value="${escapeHtml(commonValue)}" placeholder="${placeholder}" step="${primitive === "integer" ? "1" : "any"}" ${min !== "" ? `min="${escapeHtml(min)}"` : ""} ${max !== "" ? `max="${escapeHtml(max)}"` : ""} ${common} ${allNil ? "disabled" : ""} aria-label="${escapeHtml(formatDetailLabel(group.name))}" />`;
+    } else if (primitive === "date") {
+      input = `<input type="date" value="${escapeHtml(commonValue)}" ${common} ${allNil ? "disabled" : ""} aria-label="${escapeHtml(formatDetailLabel(group.name))}" />`;
+    } else if (primitive === "datetime") {
+      input = `<input type="datetime-local" value="${escapeHtml(commonValue.replace(/Z$/i, ""))}" ${common} ${allNil ? "disabled" : ""} aria-label="${escapeHtml(formatDetailLabel(group.name))}" />`;
+    } else {
+      const maxLength = facets.maxlength || "";
+      const minLength = facets.minlength || "";
+      input = `<input type="text" value="${escapeHtml(commonValue)}" placeholder="${placeholder}" ${minLength ? `minlength="${escapeHtml(minLength)}"` : ""} ${maxLength ? `maxlength="${escapeHtml(maxLength)}"` : ""} ${facets.pattern ? `pattern="${escapeHtml(facets.pattern)}"` : ""} ${common} ${allNil ? "disabled" : ""} aria-label="${escapeHtml(formatDetailLabel(group.name))}" />`;
+    }
+    if (!rule.nillable) return input;
+    return `<div class="viewer-editor-nullable">${input}<label><input type="checkbox" data-bulk-editor-nil="${escapeHtml(group.key)}" ${allNil ? "checked" : ""} ${disabled} /><span>Make null</span></label></div>`;
+  }
+
+  function renderBulkGeometrySummary(features) {
+    const counts = new Map();
+    features.forEach((feature) => counts.set(feature.geometryKind || "Unknown", (counts.get(feature.geometryKind || "Unknown") || 0) + 1));
+    const value = Array.from(counts.entries()).map(([kind, count]) => `${count} ${kind.toLowerCase()}${count === 1 ? "" : "s"}`).join(", ");
+    return `<div><dt>Geometry</dt><dd>${escapeHtml(value)}<small>Bulk geometry editing is not available.</small></dd></div>`;
+  }
+
+  function renderBulkXmlEditorToolbar(features) {
+    const fileCount = uniqueValues(features.map((feature) => feature.sourceFileId)).length;
+    return `
+      <section class="viewer-xml-editor viewer-xml-editor--bulk" aria-label="Bulk XML attribute editor">
+        <div class="viewer-xml-editor__status">
+          <i class="fa-solid ${state.editorBusy ? "fa-spinner fa-spin" : "fa-object-group"}" aria-hidden="true"></i>
+          <span>${state.editorBusy ? "Validating the selected changes..." : `Editing ${features.length} assets across ${fileCount} XML file${fileCount === 1 ? "" : "s"}`}</span>
+        </div>
+        <p>A value is applied only after every affected working XML passes its own ADAC schema. Original uploads remain unchanged.</p>
+        <div class="viewer-xml-editor__actions">
+          <button type="button" data-action="undo-bulk-xml-edit" ${canApplyBulkHistoryTransaction(state.bulkHistoryPast.at(-1), "undo") && !state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Undo bulk edit</span>
+          </button>
+          <button type="button" data-action="redo-bulk-xml-edit" ${canApplyBulkHistoryTransaction(state.bulkHistoryFuture.at(-1), "redo") && !state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Redo bulk edit</span>
+          </button>
+          <button type="button" class="viewer-xml-editor__delete" data-action="request-delete-selected-assets" ${state.editorBusy ? "disabled" : ""}>
+            <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete selected</span>
+          </button>
+        </div>
+      </section>
     `;
   }
 
@@ -5976,6 +6827,2113 @@
         <span>Show all</span>
       </label>
     `;
+  }
+
+  function renderAttributeEditToggle(canEdit) {
+    if (!canEdit) return "";
+    return `
+      <button type="button" class="viewer-details-edit-toggle${state.editMode ? " is-active" : ""}" data-action="toggle-attribute-editing" aria-pressed="${state.editMode ? "true" : "false"}">
+        <i class="fa-solid ${state.editMode ? "fa-eye" : "fa-pen"}" aria-hidden="true"></i>
+        <span>${state.editMode ? "View" : "Edit"}</span>
+      </button>
+    `;
+  }
+
+  function renderXmlEditorToolbar(record) {
+    if (!record) return "";
+    const changeCount = record.changedFields?.size || 0;
+    const addedCount = record.addedAssetCount || 0;
+    const deletedCount = record.deletedAssetCount || 0;
+    const changeSummary = [
+      changeCount ? `${changeCount} changed field${changeCount === 1 ? "" : "s"}` : "",
+      addedCount ? `${addedCount} added asset${addedCount === 1 ? "" : "s"}` : "",
+      deletedCount ? `${deletedCount} deleted asset${deletedCount === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(" and ");
+    const statusText = state.editorBusy
+      ? "Checking edit against schema..."
+      : changeSummary
+        ? `${changeSummary} in this working copy`
+        : "Working copy matches the loaded XML";
+    return `
+      <section class="viewer-xml-editor" aria-label="XML attribute editor">
+        <div class="viewer-xml-editor__status">
+          <i class="fa-solid ${state.editorBusy ? "fa-spinner fa-spin" : changeSummary ? "fa-pen-to-square" : "fa-shield-check"}" aria-hidden="true"></i>
+          <span>${escapeHtml(statusText)}</span>
+        </div>
+        <p>Changes update automatically after schema validation. The original XML remains unchanged.</p>
+        <div class="viewer-xml-editor__actions">
+          <button type="button" data-action="undo-xml-edit" title="Undo last XML edit" ${record.historyPast.length && !state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Undo</span>
+          </button>
+          <button type="button" data-action="redo-xml-edit" title="Redo XML edit" ${record.historyFuture.length && !state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Redo</span>
+          </button>
+          <button type="button" data-action="reset-xml-edits" title="Reset this working copy" ${record.dirty && !state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i><span>Reset</span>
+          </button>
+          <button type="button" class="viewer-xml-editor__download" data-action="download-edited-xml" title="Download edited XML" ${!state.editorBusy ? "" : "disabled"}>
+            <i class="fa-solid fa-download" aria-hidden="true"></i><span>Download XML</span>
+          </button>
+          <button type="button" class="viewer-xml-editor__duplicate" data-action="duplicate-selected-asset" title="Duplicate this asset in the working XML" ${state.editorBusy ? "disabled" : ""}>
+            <i class="fa-solid fa-copy" aria-hidden="true"></i><span>Duplicate asset</span>
+          </button>
+          <button type="button" class="viewer-xml-editor__delete" data-action="request-delete-selected-assets" title="Delete this asset from the working XML" ${state.editorBusy ? "disabled" : ""}>
+            <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete asset</span>
+          </button>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderXmlEditorFeedback(feature) {
+    const feedback = state.editorFeedback;
+    if (!feedback || (!feedback.bulk && feedback.fileId !== feature.sourceFileId)) return "";
+    const icon = feedback.tone === "error"
+      ? "fa-circle-exclamation"
+      : feedback.tone === "warning"
+        ? "fa-triangle-exclamation"
+        : "fa-circle-check";
+    return `
+      <div class="viewer-xml-editor__feedback viewer-xml-editor__feedback--${escapeHtml(feedback.tone || "info")}" role="status">
+        <i class="fa-solid ${icon}" aria-hidden="true"></i>
+        <span class="viewer-xml-editor__feedback-content">
+          <span>${escapeHtml(feedback.message)}</span>
+          ${feedback.recalculation ? `
+            <button type="button" data-action="recalculate-related-xml-fields" ${state.editorBusy ? "disabled" : ""}>
+              <i class="fa-solid fa-calculator" aria-hidden="true"></i>
+              <span>Recalculate ${escapeHtml(formatList(feedback.recalculation.labels))}</span>
+            </button>
+          ` : ""}
+          ${feedback.directionFlip?.supported ? `
+            <button type="button" class="viewer-xml-editor__feedback-action--flip" data-action="flip-gravity-asset-direction" ${state.editorBusy ? "disabled" : ""}>
+              <i class="fa-solid fa-right-left" aria-hidden="true"></i>
+              <span>Flip asset direction</span>
+            </button>
+          ` : ""}
+        </span>
+      </div>
+    `;
+  }
+
+  function renderDeleteConfirmation(features) {
+    const confirmation = state.deleteConfirmation;
+    if (!confirmation?.selectedIds?.length) return "";
+    const currentIds = new Set(features.map((feature) => feature.uid));
+    if (!confirmation.selectedIds.every((uid) => currentIds.has(uid))) return "";
+    const count = confirmation.selectedIds.length;
+    const fileCount = uniqueValues(features.filter((feature) => confirmation.selectedIds.includes(feature.uid)).map((feature) => feature.sourceFileId)).length;
+    return `
+      <section class="viewer-delete-confirmation" role="alert" aria-label="Confirm asset deletion">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <div>
+          <strong>Delete ${count === 1 ? "this asset" : `${count} selected assets`}?</strong>
+          <p>${count === 1 ? "It" : "They"} will be removed from the working XML ${fileCount === 1 ? "copy" : "copies"}. Original uploads remain unchanged, and the deletion can be undone.</p>
+          <div class="viewer-delete-confirmation__actions">
+            <button type="button" data-action="cancel-delete-selected-assets">Cancel</button>
+            <button type="button" class="is-danger" data-action="confirm-delete-selected-assets">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+              <span>Confirm delete</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderEditableAttributeRows(feature, record) {
+    const fields = getVisibleEditableFields(feature);
+    if (!fields.length) return `<div><dt>Attributes</dt><dd>No editable scalar attributes were found for this asset.</dd></div>`;
+    return fields.map((field) => renderEditableAttributeRow(field, record)).join("");
+  }
+
+  function getVisibleEditableFields(feature) {
+    const fields = Array.isArray(feature.editableFields) ? feature.editableFields : [];
+    if (state.showAllDetails) return fields;
+    return fields.filter((field) => {
+      const normalized = normalizeDetailKey(field.name);
+      if (normalized === "rotation") return false;
+      if (normalizeDetailKey(field.parent) === "componentinfo") {
+        return ["status", "owner", "notes"].includes(normalized);
+      }
+      return true;
+    });
+  }
+
+  function renderEditableAttributeRow(field, record) {
+    const label = formatDetailLabel(field.name);
+    const context = field.parent && normalizeDetailKey(field.parent) !== normalizeDetailKey(field.name)
+      ? `<small>${escapeHtml(formatDetailLabel(field.parent))}</small>`
+      : "";
+    const change = record?.changedFields?.get(field.locator);
+    const changed = Boolean(change);
+    const original = changed
+      ? `<span class="viewer-details__original-value">Original: ${escapeHtml(formatEditorOriginalValue(change))}</span>`
+      : "";
+    return `
+      <div class="viewer-details__editable-row${changed ? " is-edited" : ""}">
+        <dt>${escapeHtml(label)}${context}${changed ? `<span class="viewer-details__edited-mark">Edited</span>${original}` : ""}</dt>
+        <dd>${renderEditableFieldControl(field)}</dd>
+      </div>
+    `;
+  }
+
+  function formatEditorOriginalValue(change) {
+    return formatEditorSnapshotValue(change?.baselineValue, change?.baselineNil);
+  }
+
+  function formatEditorSnapshotValue(value, nil) {
+    if (nil) return "Null";
+    const text = String(value ?? "").trim();
+    return text || "(blank)";
+  }
+
+  function renderEditableFieldControl(field) {
+    const rule = field.rule;
+    if (!rule || rule.fixedValue !== null) {
+      const fixedText = rule && rule.fixedValue !== null ? `Fixed by schema: ${rule.fixedValue}` : "Schema rule unavailable";
+      return `<span class="viewer-editor-readonly">${escapeHtml(field.nil ? "Not supplied" : formatDetailValue(field.value))}<small>${escapeHtml(fixedText)}</small></span>`;
+    }
+    const values = orderEditorSchemaValues(rule.values || []);
+    const disabled = state.editorBusy ? "disabled" : "";
+    const required = rule.nillable ? "" : "required";
+    const common = `data-editor-field="${escapeHtml(field.locator)}" data-editor-feature="${escapeHtml(state.selectedId || "")}" ${required} ${disabled}`;
+    if (values.length) {
+      const options = [
+        ...(rule.nillable ? [`<option value="__ADAC_NIL__" ${field.nil ? "selected" : ""}>Make null</option>`] : []),
+        ...values.map((value) => `<option value="${escapeHtml(value)}" ${!field.nil && String(value) === field.value ? "selected" : ""}>${escapeHtml(value)}</option>`),
+      ].join("");
+      return `<select ${common} aria-label="${escapeHtml(formatDetailLabel(field.name))}">${options}</select>`;
+    }
+    const input = renderEditableScalarInput(field, rule, common);
+    if (!rule.nillable) return input;
+    return `
+      <div class="viewer-editor-nullable">
+        ${input}
+        <label>
+          <input type="checkbox" data-editor-nil="${escapeHtml(field.locator)}" data-editor-feature="${escapeHtml(state.selectedId || "")}" ${field.nil ? "checked" : ""} ${disabled} />
+          <span>Make null</span>
+        </label>
+      </div>
+    `;
+  }
+
+  function renderEditableScalarInput(field, rule, common) {
+    const primitive = rule.primitive || "string";
+    const facets = rule.facets || {};
+    const nilDisabled = field.nil ? "disabled" : "";
+    const value = field.nil ? "" : field.value;
+    if (primitive === "integer" || primitive === "decimal") {
+      const min = getSchemaInputBoundary(facets, "min", primitive);
+      const max = getSchemaInputBoundary(facets, "max", primitive);
+      return `<input type="number" value="${escapeHtml(value)}" step="${primitive === "integer" ? "1" : "any"}" ${min !== "" ? `min="${escapeHtml(min)}"` : ""} ${max !== "" ? `max="${escapeHtml(max)}"` : ""} ${common} ${nilDisabled} />`;
+    }
+    if (primitive === "date") return `<input type="date" value="${escapeHtml(value)}" ${common} ${nilDisabled} />`;
+    if (primitive === "datetime") return `<input type="datetime-local" value="${escapeHtml(value.replace(/Z$/i, ""))}" ${common} ${nilDisabled} />`;
+    const maxLength = facets.maxlength || facets.length || "";
+    const minLength = facets.minlength || facets.length || "";
+    const required = !rule.nillable && Number(minLength) > 0 ? "required" : "";
+    return `<input type="text" value="${escapeHtml(value)}" ${minLength ? `minlength="${escapeHtml(minLength)}"` : ""} ${maxLength ? `maxlength="${escapeHtml(maxLength)}"` : ""} ${required} ${common} ${nilDisabled} />`;
+  }
+
+  function getSchemaInputBoundary(facets, edge, primitive) {
+    const inclusive = facets[`${edge}inclusive`];
+    if (inclusive !== undefined) return inclusive;
+    const exclusive = facets[`${edge}exclusive`];
+    if (exclusive === undefined) return "";
+    const numeric = Number(exclusive);
+    if (!Number.isFinite(numeric)) return "";
+    if (primitive === "integer") return String(numeric + (edge === "min" ? 1 : -1));
+    return exclusive;
+  }
+
+  function orderEditorSchemaValues(values) {
+    const fallbackOrder = new Map([["unknown", 1], ["other", 2]]);
+    return values
+      .map((value, index) => ({ value, index, fallback: fallbackOrder.get(String(value).toLowerCase()) || 0 }))
+      .sort((a, b) => a.fallback - b.fallback || a.index - b.index)
+      .map((item) => item.value);
+  }
+
+  function toggleAttributeEditing() {
+    const selectedFeatures = getSelectedFeatures();
+    if (selectedFeatures.length > 1) {
+      const recordsAreValid = selectedFeatures.every((feature) => state.documents.get(feature.sourceFileId)?.validation?.valid);
+      if (!recordsAreValid) {
+        setStatus("Bulk editing and deletion require schema-valid working XMLs for every selected asset.", true);
+        return;
+      }
+      state.editMode = !state.editMode;
+      state.geometryEditorOpen = false;
+      state.editorFeedback = null;
+      state.deleteConfirmation = null;
+      renderDetails();
+      return;
+    }
+    const feature = state.features.find((item) => item.uid === state.selectedId);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    if (!record?.validation?.valid) {
+      setStatus("Attribute editing is available after the working XML passes schema validation.", true);
+      return;
+    }
+    state.editMode = !state.editMode;
+    if (!state.editMode) state.geometryEditorOpen = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
+    renderDetails();
+  }
+
+  function handleEditorNilToggle(toggle) {
+    const wrapper = toggle.closest(".viewer-editor-nullable");
+    const control = wrapper?.querySelector("[data-editor-field]");
+    if (!control) return;
+    if (!toggle.checked) {
+      control.disabled = false;
+      control.focus();
+      return;
+    }
+    commitXmlFieldEdit({
+      featureUid: toggle.dataset.editorFeature,
+      locator: toggle.dataset.editorNil,
+      value: "",
+      nil: true,
+      control: toggle,
+    });
+  }
+
+  function commitEditorFieldControl(control) {
+    const feature = state.features.find((item) => item.uid === control.dataset.editorFeature) || state.features.find((item) => item.uid === state.selectedId);
+    const field = feature?.editableFields?.find((item) => item.locator === control.dataset.editorField);
+    const nil = control.value === "__ADAC_NIL__" || Boolean(field?.rule?.nillable && !String(control.value || "").trim());
+    const controlError = nil ? "" : getEditorControlValidationMessage(control);
+    if (controlError) {
+      state.editorFeedback = {
+        fileId: feature?.sourceFileId || "",
+        tone: "error",
+        message: `${controlError} The previous valid value has been kept.`,
+      };
+      renderDetails();
+      return;
+    }
+    commitXmlFieldEdit({
+      featureUid: control.dataset.editorFeature,
+      locator: control.dataset.editorField,
+      value: nil ? "" : control.value,
+      nil,
+      control,
+    });
+  }
+
+  function handleBulkEditorNilToggle(toggle) {
+    const wrapper = toggle.closest(".viewer-editor-nullable");
+    const control = wrapper?.querySelector("[data-bulk-editor-field]");
+    if (!control) return;
+    if (!toggle.checked) {
+      control.disabled = false;
+      control.focus();
+      return;
+    }
+    commitBulkXmlFieldEdit({
+      fieldKey: toggle.dataset.bulkEditorNil,
+      value: "",
+      nil: true,
+      control: toggle,
+    });
+  }
+
+  function commitBulkEditorFieldControl(control) {
+    if (control.value === "__ADAC_VARIED__") return;
+    const features = getSelectedFeatures();
+    const group = buildBulkFieldGroups(features).find((item) => item.key === control.dataset.bulkEditorField);
+    const compatibility = group ? getBulkFieldCompatibility(group) : null;
+    if (!group || !compatibility?.eligible) {
+      state.editorFeedback = { bulk: true, tone: "error", message: "That field is no longer compatible across the current selection." };
+      renderDetails();
+      return;
+    }
+    const nil = control.value === "__ADAC_NIL__" || Boolean(compatibility.rule.nillable && !String(control.value || "").trim());
+    const controlError = nil ? "" : getEditorControlValidationMessage(control);
+    if (controlError) {
+      state.editorFeedback = { bulk: true, tone: "error", message: `${controlError} No selected assets were changed.` };
+      renderDetails();
+      return;
+    }
+    commitBulkXmlFieldEdit({
+      fieldKey: group.key,
+      value: nil ? "" : control.value,
+      nil,
+      control,
+    });
+  }
+
+  async function commitBulkXmlFieldEdit({ fieldKey, value, nil, control }) {
+    if (state.editorBusy) return;
+    const features = getSelectedFeatures();
+    if (features.length < 2) return;
+    const group = buildBulkFieldGroups(features).find((item) => item.key === fieldKey);
+    const compatibility = group ? getBulkFieldCompatibility(group) : null;
+    if (!group || !compatibility?.eligible) return;
+
+    const candidateRecords = new Map();
+    let targetCount = 0;
+    group.entries.forEach(({ feature, field }) => {
+      const record = state.documents.get(feature.sourceFileId);
+      if (!record?.workingXmlText || !record.validation?.valid) return;
+      if (!candidateRecords.has(record.id)) {
+        candidateRecords.set(record.id, {
+          record,
+          doc: parseXmlDocument(record.workingXmlText),
+          beforeXmlText: record.workingXmlText,
+          selectedLocator: feature.xmlLocator,
+        });
+      }
+      const candidate = candidateRecords.get(record.id);
+      const target = findXmlElementByLocator(candidate.doc, field.locator);
+      if (!target) return;
+      setXmlEditorElementValue(target, value, nil);
+      targetCount += 1;
+    });
+    if (!candidateRecords.size || targetCount !== group.entries.length || Array.from(candidateRecords.values()).some((candidate) => !candidate.doc)) {
+      state.editorFeedback = { bulk: true, tone: "error", message: "One or more selected XML fields could not be located. No selected assets were changed." };
+      renderDetails();
+      return;
+    }
+
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      bulk: true,
+      tone: "info",
+      message: `Checking ${formatDetailLabel(group.name)} for ${features.length} selected assets against ${candidateRecords.size} ADAC schema${candidateRecords.size === 1 ? "" : "s"}...`,
+    };
+    if (control) control.disabled = true;
+    renderDetails();
+
+    const candidates = Array.from(candidateRecords.values()).map((candidate) => ({
+      ...candidate,
+      afterXmlText: serializeXmlDocument(candidate.doc),
+    }));
+    const validations = await Promise.all(candidates.map((candidate) => (
+      validateAdacSchema(candidate.afterXmlText, candidate.record.name, candidate.doc)
+    )));
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    const invalidIndex = validations.findIndex((validation) => !validation.valid);
+    if (invalidIndex >= 0) {
+      const candidate = candidates[invalidIndex];
+      const firstError = normalizeValidationErrors(validations[invalidIndex].errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        bulk: true,
+        tone: "error",
+        message: `${candidate.record.name}: ${details.title}. ${details.suggestion || details.detail || "No selected assets were changed."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    const transaction = {
+      label: formatDetailLabel(group.name),
+      assetCount: group.entries.length,
+      selectedIds: Array.from(state.selectedIds),
+      documents: candidates.map((candidate, index) => ({
+        fileId: candidate.record.id,
+        beforeXmlText: candidate.beforeXmlText,
+        afterXmlText: candidate.afterXmlText,
+        selectedLocator: candidate.selectedLocator,
+        validation: validations[index],
+      })),
+    };
+    transaction.documents.forEach((documentChange) => {
+      const record = state.documents.get(documentChange.fileId);
+      pushXmlHistory(record, documentChange.beforeXmlText);
+      record.historyFuture = [];
+    });
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    transaction.documents.forEach((documentChange, index) => {
+      const candidate = candidates[index];
+      applyValidatedWorkingDocument(candidate.record, documentChange.afterXmlText, candidate.doc, validations[index], documentChange.selectedLocator);
+    });
+    state.editorFeedback = {
+      bulk: true,
+      tone: "success",
+      message: `${transaction.label} updated for ${transaction.assetCount} assets. Every affected working XML remains schema-valid.`,
+    };
+    renderDetails();
+    setStatus(`${transaction.label} updated for ${transaction.assetCount} selected assets. Original uploads were not changed.`, false);
+  }
+
+  function setXmlEditorElementValue(target, value, nil) {
+    if (nil) {
+      target.textContent = "";
+      target.setAttributeNS("http://www.w3.org/2001/XMLSchema-instance", "xsi:nil", "true");
+      return;
+    }
+    removeXmlNilAttribute(target);
+    target.textContent = String(value ?? "");
+  }
+
+  async function duplicateSelectedAsset() {
+    if (state.editorBusy || getSelectedFeatures().length !== 1) return;
+    const context = getSelectedEditorContext();
+    if (!context?.record?.workingXmlText || !context.record.validation?.valid) {
+      setStatus("Assets can only be duplicated from a schema-valid working XML copy.", true);
+      return;
+    }
+
+    const candidateDoc = parseXmlDocument(context.record.workingXmlText);
+    const sourceNode = candidateDoc ? findXmlElementByLocator(candidateDoc, context.feature.xmlLocator) : null;
+    const sourceIdField = (context.feature.editableFields || []).find((field) => normalizeDetailKey(field.name) === "adacid");
+    const clone = sourceNode?.cloneNode(true);
+    const cloneIdElement = clone ? findAssetIdentityElement(clone, "adacid") : null;
+    if (!sourceNode?.parentNode || !clone || !cloneIdElement || !sourceIdField || isNilledReportElement(cloneIdElement)) {
+      state.editorFeedback = {
+        fileId: context.record.id,
+        tone: "error",
+        message: "This asset cannot be duplicated safely because a usable ADAC ID field was not found.",
+      };
+      renderDetails();
+      return;
+    }
+
+    const originalId = String(cloneIdElement.textContent || "").trim();
+    const duplicateId = buildDuplicateAssetId(context.record.id, originalId, sourceIdField.rule);
+    if (!duplicateId) {
+      state.editorFeedback = {
+        fileId: context.record.id,
+        tone: "error",
+        message: "A unique schema-compatible ADAC ID could not be generated for this asset.",
+      };
+      renderDetails();
+      return;
+    }
+    updateDuplicatedAssetIdentityValues(clone, originalId, duplicateId);
+    sourceNode.parentNode.insertBefore(clone, sourceNode.nextSibling);
+    const cloneLocator = getXmlElementLocator(clone);
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      fileId: context.record.id,
+      tone: "info",
+      message: `Checking duplicate ${duplicateId} against the ADAC schema...`,
+    };
+    renderDetails();
+
+    const validation = await validateAdacSchema(candidateXmlText, context.record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        fileId: context.record.id,
+        tone: "error",
+        message: `The asset was not duplicated. ${details.title}. ${details.suggestion || details.detail || "The working XML was not changed."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    const transaction = {
+      kind: "duplicate",
+      label: "asset duplication",
+      assetCount: 1,
+      selectedIds: [],
+      documents: [{
+        fileId: context.record.id,
+        beforeXmlText: context.record.workingXmlText,
+        afterXmlText: candidateXmlText,
+        selectedLocator: cloneLocator,
+        validation,
+      }],
+    };
+    pushXmlHistory(context.record, context.record.workingXmlText);
+    context.record.historyFuture = [];
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    applyValidatedWorkingDocument(context.record, candidateXmlText, candidateDoc, validation, cloneLocator);
+    const duplicatedFeature = state.features.find((feature) => (
+      feature.sourceFileId === context.record.id
+      && feature.assetPath === context.feature.assetPath
+      && feature.id === duplicateId
+    ));
+    if (duplicatedFeature) {
+      transaction.selectedIds = [duplicatedFeature.uid];
+      state.selectedId = duplicatedFeature.uid;
+      state.selectedIds = new Set([duplicatedFeature.uid]);
+    }
+    const message = `Duplicated ${originalId} as ${duplicateId} in the working XML copy. The geometry is unchanged and currently overlaps the source asset.`;
+    state.editorFeedback = { fileId: context.record.id, tone: "warning", message: `${message} Use Undo to remove the duplicate.` };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function findAssetIdentityElement(assetNode, normalizedName) {
+    return Array.from(assetNode?.querySelectorAll?.("*") || []).find((element) => (
+      !elementChildren(element).length
+      && !isElementInsideGeometry(element, assetNode)
+      && normalizeDetailKey(cleanName(element.tagName)) === normalizedName
+    )) || null;
+  }
+
+  function buildDuplicateAssetId(fileId, originalId, rule) {
+    const existingIds = new Set(state.features
+      .filter((feature) => feature.sourceFileId === fileId)
+      .map((feature) => String(feature.id || "").trim().toLowerCase())
+      .filter(Boolean));
+    const maxLengthValue = Number(rule?.facets?.maxlength || rule?.facets?.length || 64);
+    const maxLength = Number.isFinite(maxLengthValue) && maxLengthValue > 0 ? maxLengthValue : 64;
+    const base = String(originalId || "ASSET").trim() || "ASSET";
+    for (let index = 1; index <= 999; index += 1) {
+      const suffix = index === 1 ? "-COPY" : `-COPY-${index}`;
+      if (suffix.length >= maxLength) continue;
+      const candidate = `${base.slice(0, maxLength - suffix.length)}${suffix}`;
+      if (!existingIds.has(candidate.toLowerCase())) return candidate;
+    }
+    return "";
+  }
+
+  function updateDuplicatedAssetIdentityValues(assetNode, originalId, duplicateId) {
+    const mirroredKeys = new Set(["adacid", "assetid", "featureid", "pitnumber"]);
+    Array.from(assetNode.querySelectorAll("*")).forEach((element) => {
+      if (elementChildren(element).length || isElementInsideGeometry(element, assetNode)) return;
+      if (!mirroredKeys.has(normalizeDetailKey(cleanName(element.tagName)))) return;
+      if (String(element.textContent || "").trim() !== originalId) return;
+      removeXmlNilAttribute(element);
+      element.textContent = duplicateId;
+    });
+  }
+
+  function requestDeleteSelectedAssets() {
+    const features = getSelectedFeatures();
+    if (!features.length || state.editorBusy) return;
+    const invalidRecord = features.find((feature) => !state.documents.get(feature.sourceFileId)?.validation?.valid);
+    if (invalidRecord) {
+      setStatus("Assets can only be deleted from schema-valid working XML copies.", true);
+      return;
+    }
+    state.deleteConfirmation = { selectedIds: features.map((feature) => feature.uid) };
+    state.editorFeedback = null;
+    renderDetails();
+  }
+
+  function cancelDeleteSelectedAssets() {
+    state.deleteConfirmation = null;
+    renderDetails();
+  }
+
+  async function deleteSelectedAssets() {
+    if (state.editorBusy) return;
+    const requestedIds = state.deleteConfirmation?.selectedIds || [];
+    const requestedIdSet = new Set(requestedIds);
+    const features = state.features.filter((feature) => requestedIdSet.has(feature.uid));
+    if (!requestedIds.length || features.length !== requestedIds.length) {
+      state.deleteConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: "The asset selection changed before deletion. No assets were removed." };
+      renderDetails();
+      return;
+    }
+
+    const candidateRecords = new Map();
+    features.forEach((feature) => {
+      const record = state.documents.get(feature.sourceFileId);
+      if (!record?.workingXmlText || !record.validation?.valid) return;
+      if (!candidateRecords.has(record.id)) {
+        const fallbackFeature = state.features.find((item) => item.sourceFileId === record.id && !requestedIdSet.has(item.uid));
+        candidateRecords.set(record.id, {
+          record,
+          doc: parseXmlDocument(record.workingXmlText),
+          beforeXmlText: record.workingXmlText,
+          selectedLocator: fallbackFeature?.xmlLocator || "",
+          features: [],
+        });
+      }
+      candidateRecords.get(record.id).features.push(feature);
+    });
+    if (!candidateRecords.size || Array.from(candidateRecords.values()).some((candidate) => !candidate.doc)) {
+      state.deleteConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: "The selected working XML could not be prepared. No assets were removed." };
+      renderDetails();
+      return;
+    }
+
+    let removedCount = 0;
+    candidateRecords.forEach((candidate) => {
+      candidate.features
+        .slice()
+        .sort((a, b) => parseXmlElementLocator(b.xmlLocator).length - parseXmlElementLocator(a.xmlLocator).length)
+        .forEach((feature) => {
+          const target = findXmlElementByLocator(candidate.doc, feature.xmlLocator);
+          if (!target?.parentNode) return;
+          target.parentNode.removeChild(target);
+          removedCount += 1;
+        });
+    });
+    if (removedCount !== features.length) {
+      state.deleteConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: "One or more selected assets could not be located. No assets were removed." };
+      renderDetails();
+      return;
+    }
+
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.deleteConfirmation = null;
+    state.editorFeedback = {
+      bulk: true,
+      tone: "info",
+      message: `Checking the removal of ${features.length} asset${features.length === 1 ? "" : "s"} against ${candidateRecords.size} ADAC schema${candidateRecords.size === 1 ? "" : "s"}...`,
+    };
+    renderDetails();
+
+    const candidates = Array.from(candidateRecords.values()).map((candidate) => ({
+      ...candidate,
+      afterXmlText: serializeXmlDocument(candidate.doc),
+    }));
+    const validations = await Promise.all(candidates.map((candidate) => (
+      validateAdacSchema(candidate.afterXmlText, candidate.record.name, candidate.doc)
+    )));
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    const invalidIndex = validations.findIndex((validation) => !validation.valid);
+    if (invalidIndex >= 0) {
+      const candidate = candidates[invalidIndex];
+      const firstError = normalizeValidationErrors(validations[invalidIndex].errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        bulk: true,
+        tone: "error",
+        message: `${candidate.record.name}: ${details.title}. ${details.suggestion || details.detail || "No assets were removed."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    const transaction = {
+      kind: "delete",
+      label: "asset deletion",
+      assetCount: features.length,
+      selectedIds: requestedIds,
+      documents: candidates.map((candidate, index) => ({
+        fileId: candidate.record.id,
+        beforeXmlText: candidate.beforeXmlText,
+        afterXmlText: candidate.afterXmlText,
+        selectedLocator: candidate.selectedLocator,
+        validation: validations[index],
+      })),
+    };
+    transaction.documents.forEach((change) => {
+      const record = state.documents.get(change.fileId);
+      pushXmlHistory(record, change.beforeXmlText);
+      record.historyFuture = [];
+    });
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    transaction.documents.forEach((change, index) => {
+      const candidate = candidates[index];
+      applyValidatedWorkingDocument(candidate.record, change.afterXmlText, candidate.doc, validations[index], change.selectedLocator);
+    });
+    const message = `Deleted ${features.length} asset${features.length === 1 ? "" : "s"} from the working XML ${candidateRecords.size === 1 ? "copy" : "copies"}. The original upload${candidateRecords.size === 1 ? " was" : "s were"} not changed.`;
+    state.editorFeedback = { bulk: true, tone: "success", message: `${message} Use Undo to restore ${features.length === 1 ? "it" : "them"}.` };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function getEditorControlValidationMessage(control) {
+    const value = String(control?.value ?? "");
+    const label = control?.getAttribute?.("aria-label") || "This field";
+    if (control?.required && !value.trim()) return `${label} is required by the ADAC schema.`;
+
+    const hasMinLength = Boolean(control?.hasAttribute?.("minlength"));
+    const minLength = Number(control?.getAttribute?.("minlength"));
+    if (hasMinLength && Number.isFinite(minLength) && minLength > 0 && value.length < minLength) {
+      return `${label} must contain at least ${minLength} character${minLength === 1 ? "" : "s"}.`;
+    }
+    const hasMaxLength = Boolean(control?.hasAttribute?.("maxlength"));
+    const maxLength = Number(control?.getAttribute?.("maxlength"));
+    if (hasMaxLength && Number.isFinite(maxLength) && maxLength >= 0 && value.length > maxLength) {
+      return `${label} cannot contain more than ${maxLength} characters.`;
+    }
+
+    if (control?.type === "number" && value !== "") {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return `${label} must be a valid number.`;
+      const min = Number(control.getAttribute("min"));
+      if (control.hasAttribute("min") && Number.isFinite(min) && numeric < min) return `${label} must be ${min} or greater.`;
+      const max = Number(control.getAttribute("max"));
+      if (control.hasAttribute("max") && Number.isFinite(max) && numeric > max) return `${label} must be ${max} or less.`;
+      if (control.getAttribute("step") === "1" && !Number.isInteger(numeric)) return `${label} must be a whole number.`;
+    }
+
+    if (typeof control?.checkValidity === "function" && !control.checkValidity()) {
+      return control.validationMessage || `${label} does not meet the ADAC schema constraints.`;
+    }
+    return "";
+  }
+
+  function commitGeometryCoordinateControl(control) {
+    const feature = state.features.find((item) => item.uid === control.dataset.editorGeometryFeature)
+      || state.features.find((item) => item.uid === state.selectedId);
+    const controlError = getEditorControlValidationMessage(control);
+    if (controlError) {
+      state.editorFeedback = {
+        fileId: feature?.sourceFileId || "",
+        tone: "error",
+        message: `${controlError} The previous valid coordinate has been kept.`,
+      };
+      renderDetails();
+      return;
+    }
+    commitGeometryCoordinateEdit({
+      featureUid: control.dataset.editorGeometryFeature,
+      locator: control.dataset.editorGeometry,
+      value: control.value,
+      pointIndex: Number(control.dataset.editorGeometryIndex),
+      axis: String(control.dataset.editorGeometryAxis || "").toLowerCase(),
+      control,
+    });
+  }
+
+  async function commitGeometryCoordinateEdit({ featureUid, locator, value, pointIndex, axis, control }) {
+    if (state.editorBusy) return;
+    const feature = state.features.find((item) => item.uid === featureUid)
+      || state.features.find((item) => item.uid === state.selectedId);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    const nextValue = String(value ?? "").trim();
+    const numericValue = Number(nextValue);
+    if (!feature || !record?.workingXmlText || !record.validation?.valid) return;
+    if (!nextValue || !Number.isFinite(numericValue)) {
+      state.editorFeedback = {
+        fileId: feature.sourceFileId,
+        tone: "error",
+        message: "Coordinate is required and must be a valid number. The previous valid coordinate has been kept.",
+      };
+      renderDetails();
+      return;
+    }
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const target = findXmlElementByLocator(candidateDoc, locator);
+    const assetNode = candidateDoc ? findXmlElementByLocator(candidateDoc, feature.xmlLocator) : null;
+    const targetAxis = cleanName(target?.tagName).toLowerCase();
+    if (!target || !assetNode || !["x", "y", "z"].includes(targetAxis) || !isElementInsideGeometry(target, assetNode)) {
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "error", message: "That geometry coordinate could not be located in the working XML copy." };
+      renderDetails();
+      return;
+    }
+    const previousValue = String(target.textContent || "").trim();
+    if (previousValue === nextValue) return;
+    target.textContent = nextValue;
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    const coordinateLabel = `${feature.geometryKind === "Point" ? "Point" : "Vertex"} ${pointIndex + 1} ${targetAxis.toUpperCase()}`;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      fileId: feature.sourceFileId,
+      tone: "info",
+      message: `Checking ${coordinateLabel} against ${schemaLabel(record.schemaVersion)}...`,
+    };
+    if (control) control.disabled = true;
+    renderDetails();
+
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        fileId: feature.sourceFileId,
+        tone: "error",
+        message: `${coordinateLabel} was not changed. ${details.title}. ${details.suggestion || details.detail || "The previous valid coordinate has been kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
+    const dependencyWarning = getGeometryCoordinateDependencyWarning(updatedFeature, targetAxis, pointIndex);
+    const recalculation = getGeometryCoordinateRecalculationPlan(updatedFeature, targetAxis, record.workingXmlText);
+    state.editorFeedback = {
+      fileId: feature.sourceFileId,
+      tone: dependencyWarning ? "warning" : "success",
+      message: dependencyWarning
+        ? `${coordinateLabel} updated and the working XML remains schema-valid. ${dependencyWarning}`
+        : `${coordinateLabel} updated. The working XML remains schema-valid.`,
+      recalculation: recalculation ? {
+        kind: "geometry",
+        sourceFileId: record.id,
+        xmlLocator: feature.xmlLocator,
+        changedFieldName: targetAxis,
+        labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
+      } : null,
+    };
+    renderDetails();
+    setStatus(dependencyWarning || `Updated ${coordinateLabel} in the working XML copy. The original upload was not changed.`, false);
+  }
+
+  function getGeometryCoordinateDependencyWarning(feature, axis, pointIndex) {
+    const fields = Array.isArray(feature?.editableFields) ? feature.editableFields : [];
+    const fieldKeys = new Set(fields.map((field) => normalizeDetailKey(field.name)));
+    const fieldLabel = (key, fallback) => {
+      const field = fields.find((item) => normalizeDetailKey(item.name) === key);
+      return field ? formatDetailLabel(field.name) : fallback;
+    };
+    const pointCount = getFeatureGeometryCoordinateCount(feature);
+    const related = [];
+    if (["x", "y"].includes(axis)) {
+      if (feature?.geometryKind === "Line") {
+        if (fieldKeys.has("lengthm")) related.push("Length");
+        const gradeField = ["pipegrade", "grade", "averagegrade"].find((key) => fieldKeys.has(key));
+        if (gradeField) related.push(formatDetailLabel(gradeField));
+      }
+      if (isWaterMeterLabelFeature(feature)) {
+        if (fieldKeys.has("offsetside")) related.push(fieldLabel("offsetside", "Offset side"));
+        if (fieldKeys.has("offsetm")) related.push(fieldLabel("offsetm", "Offset"));
+      }
+      if (isHouseConnectionLabelFeature(feature)) {
+        [
+          ["sonearestm", "SO nearest"],
+          ["sootherm", "SO other"],
+          ["offsetm", "Offset"],
+          ["chainagem", "Chainage"],
+          ["iodistancem", "IO distance"],
+        ].forEach(([key, fallback]) => {
+          if (fieldKeys.has(key)) related.push(fieldLabel(key, fallback));
+        });
+      }
+      if (isLotLabelFeature(feature)) {
+        const linked = getLotLinkedOffsetAssetLabels(feature);
+        if (linked.length) {
+          return `Review cadastral offset fields for ${linked.length} linked asset${linked.length === 1 ? "" : "s"} (${formatList(linked.slice(0, 5))}${linked.length > 5 ? ` and ${linked.length - 5} more` : ""}) because the lot geometry changed.`;
+        }
+      }
+      if (isRoadReserveLabelFeature(feature)) {
+        const linkedMeters = state.features
+          .filter((item) => item.sourceFileId === feature.sourceFileId && isWaterMeterLabelFeature(item))
+          .filter((item) => Boolean(findLinkedLotForMeter(item)))
+          .map((item) => item.id);
+        if (linkedMeters.length) {
+          return `Review frontage offsets for ${linkedMeters.length} linked water meter${linkedMeters.length === 1 ? "" : "s"} (${formatList(linkedMeters.slice(0, 5))}${linkedMeters.length > 5 ? ` and ${linkedMeters.length - 5} more` : ""}) because the road-reserve geometry changed.`;
+        }
+      }
+    }
+    if (axis === "z") {
+      if (feature?.geometryKind === "Point") {
+        const levelFields = fields
+          .filter((field) => /(surface|invert|elevation|level)/.test(normalizeDetailKey(field.name)))
+          .slice(0, 3)
+          .map((field) => formatDetailLabel(field.name));
+        related.push(...levelFields);
+      } else if (feature?.geometryKind === "Line" && pointIndex === 0 && fieldKeys.has("usinvertlevelm")) {
+        related.push("USIL");
+      } else if (feature?.geometryKind === "Line" && pointIndex === pointCount - 1 && fieldKeys.has("dsinvertlevelm")) {
+        related.push("DSIL");
+      }
+    }
+    const uniqueRelated = uniqueValues(related);
+    if (!uniqueRelated.length) return "";
+    const directionNote = axis === "z" && feature?.geometryKind === "Line" ? " Confirm the pipe profile and flow direction as well." : "";
+    return `Review ${formatList(uniqueRelated)} because geometry was edited independently.${directionNote}`;
+  }
+
+  function getFeatureGeometryCoordinateCount(feature) {
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    const assetNode = record?.workingDocument ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator) : null;
+    return getGeometryCoordinateGroups(assetNode).length;
+  }
+
+  function getGeometryCoordinateRecalculationPlan(feature, axis, xmlText) {
+    if (!["x", "y"].includes(axis) || !feature) return null;
+    const fields = Array.isArray(feature.editableFields) ? feature.editableFields : [];
+    const fieldByKey = new Map(fields.map((field) => [normalizeDetailKey(field.name), field]));
+    const lengthField = fieldByKey.get("lengthm");
+    const gradeKey = ["pipegrade", "grade", "averagegrade"].find((key) => fieldByKey.has(key));
+    const updates = [];
+    const remainingReview = [];
+    const queueValueUpdate = (field, nextValue) => {
+      if (!field || nextValue === null || nextValue === undefined || String(nextValue).trim() === "") return;
+      const normalizedValue = String(nextValue).trim();
+      if (!field.nil && normalizedValue === String(field.value || "").trim()) return;
+      updates.push({ locator: field.locator, name: field.name, previousValue: field.value, value: normalizedValue });
+    };
+    const queueNumericUpdate = (field, value) => {
+      if (!field || !Number.isFinite(value)) return;
+      const nextValue = formatEditorCalculatedValue(value);
+      if (!field.nil && nextValue === String(field.value || "").trim()) return;
+      queueValueUpdate(field, nextValue);
+    };
+
+    if (feature.geometryKind === "Line") {
+      const usInvert = getFeatureNumericField(feature, "usinvertlevelm");
+      const dsInvert = getFeatureNumericField(feature, "dsinvertlevelm");
+      const horizontalLength = getFeatureHorizontalGeometryLength(feature, xmlText);
+      if (horizontalLength > 0) {
+        queueNumericUpdate(lengthField, horizontalLength);
+        if (gradeKey && usInvert !== null && dsInvert !== null && usInvert >= dsInvert) {
+          queueNumericUpdate(fieldByKey.get(gradeKey), (usInvert - dsInvert) / horizontalLength * 100);
+        }
+      }
+    }
+
+    if (isWaterMeterLabelFeature(feature)) {
+      const meterOffset = getWaterMeterOffsetCalculation(feature);
+      if (meterOffset) {
+        queueValueUpdate(fieldByKey.get("offsetside"), meterOffset.side);
+        queueNumericUpdate(fieldByKey.get("offsetm"), meterOffset.distance);
+      }
+    }
+
+    if (isHouseConnectionLabelFeature(feature)) {
+      const boundaryOffsets = getHouseConnectionBoundaryOffsetCalculation(feature);
+      if (boundaryOffsets) {
+        queueNumericUpdate(fieldByKey.get("sonearestm"), boundaryOffsets.nearest);
+        queueNumericUpdate(fieldByKey.get("sootherm"), boundaryOffsets.other);
+      }
+      ["offsetm", "chainagem", "iodistancem"].forEach((key) => {
+        const field = fieldByKey.get(key);
+        if (field) remainingReview.push(formatDetailLabel(field.name));
+      });
+    }
+    return updates.length ? { updates, remainingReview: uniqueValues(remainingReview) } : null;
+  }
+
+  function getLotLinkedOffsetAssetLabels(lotFeature) {
+    return state.features
+      .filter((feature) => feature.sourceFileId === lotFeature.sourceFileId)
+      .filter((feature) => isWaterMeterLabelFeature(feature) || isHouseConnectionLabelFeature(feature))
+      .filter((feature) => {
+        const linkedLot = isWaterMeterLabelFeature(feature)
+          ? findLinkedLotForMeter(feature)
+          : findLinkedLotForConnection(feature);
+        return linkedLot?.uid === lotFeature.uid;
+      })
+      .map((feature) => feature.id);
+  }
+
+  function getWaterMeterOffsetCalculation(feature) {
+    const meterPoint = feature?.points?.[0];
+    const lot = findLinkedLotForMeter(feature);
+    const ring = getOpenOffsetRing(lot?.points);
+    if (!meterPoint || ring.length < 3) return null;
+    const frontageIndex = getLotFrontageEdgeIndex(lot, meterPoint, ring);
+    if (frontageIndex === null) return null;
+
+    const start = ring[frontageIndex];
+    const end = ring[(frontageIndex + 1) % ring.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const frontageLength = Math.sqrt(lengthSquared);
+    if (!(frontageLength > 0)) return null;
+    const rawFraction = ((meterPoint.x - start.x) * dx + (meterPoint.y - start.y) * dy) / lengthSquared;
+    const fraction = clamp(rawFraction, 0, 1);
+    const startDistance = fraction * frontageLength;
+    const endDistance = (1 - fraction) * frontageLength;
+    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const centroid = getPolygonCentroid(ring) || midpoint;
+    const forwardLength = Math.hypot(centroid.x - midpoint.x, centroid.y - midpoint.y);
+    if (!(forwardLength > 0)) return null;
+    const rightAxis = {
+      x: (centroid.y - midpoint.y) / forwardLength,
+      y: -(centroid.x - midpoint.x) / forwardLength,
+    };
+    const sideFor = (point) => (
+      (point.x - midpoint.x) * rightAxis.x + (point.y - midpoint.y) * rightAxis.y > 0 ? "Right" : "Left"
+    );
+    return startDistance <= endDistance
+      ? { side: sideFor(start), distance: startDistance }
+      : { side: sideFor(end), distance: endDistance };
+  }
+
+  function getLotFrontageEdgeIndex(lot, meterPoint, ring) {
+    if (!lot || ring.length < 2) return null;
+    const roadReserves = state.features.filter((feature) => (
+      feature.sourceFileId === lot.sourceFileId
+      && feature.geometryKind === "Polygon"
+      && planPathStarts(feature, "cadastre/landparcels/roadreserve")
+    ));
+    const edgeIndexes = ring.map((_, index) => index);
+    const edgeMidpoint = (index) => {
+      const start = ring[index];
+      const end = ring[(index + 1) % ring.length];
+      return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    };
+    if (roadReserves.length) {
+      return edgeIndexes.reduce((best, index) => {
+        const midpoint = edgeMidpoint(index);
+        const distance = Math.min(...roadReserves.map((reserve) => (
+          isPointInPolygon(midpoint, reserve.points)
+            ? 0
+            : getClosestSegmentDistance(midpoint, reserve.points, true)
+        )));
+        return !best || distance < best.distance ? { index, distance } : best;
+      }, null)?.index ?? null;
+    }
+    return edgeIndexes.reduce((best, index) => {
+      const distance = distanceToSegment(meterPoint, ring[index], ring[(index + 1) % ring.length]);
+      return !best || distance < best.distance ? { index, distance } : best;
+    }, null)?.index ?? null;
+  }
+
+  function getHouseConnectionBoundaryOffsetCalculation(feature) {
+    const inspectionPoint = feature?.points?.[0];
+    const lot = findLinkedLotForConnection(feature);
+    const ring = getOpenOffsetRing(lot?.points);
+    if (!inspectionPoint || ring.length < 3) return null;
+    const distances = ring
+      .map((point, index) => distanceToSegment(inspectionPoint, point, ring[(index + 1) % ring.length]))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+    if (distances.length < 2) return null;
+    return {
+      nearest: Math.max(distances[0], 0.001),
+      other: Math.max(distances[1], 0.001),
+    };
+  }
+
+  function getOpenOffsetRing(points) {
+    if (!Array.isArray(points)) return [];
+    const ring = points.filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+    if (ring.length > 1 && distanceBetween(ring[0], ring[ring.length - 1]) <= 1e-9) return ring.slice(0, -1);
+    return ring;
+  }
+
+  async function commitXmlFieldEdit({ featureUid, locator, value, nil, control }) {
+    if (state.editorBusy) return;
+    const feature = state.features.find((item) => item.uid === featureUid) || state.features.find((item) => item.uid === state.selectedId);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    if (!feature || !record?.workingXmlText || !record.validation?.valid) return;
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const target = findXmlElementByLocator(candidateDoc, locator);
+    if (!target) {
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "error", message: "That XML field could not be located in the working copy." };
+      renderDetails();
+      return;
+    }
+    const previousValue = String(target.textContent || "").trim();
+    const previousNil = isNilledReportElement(target);
+    if (previousValue === String(value || "").trim() && previousNil === Boolean(nil)) return;
+
+    if (nil) {
+      target.textContent = "";
+      target.setAttributeNS("http://www.w3.org/2001/XMLSchema-instance", "xsi:nil", "true");
+    } else {
+      removeXmlNilAttribute(target);
+      target.textContent = String(value ?? "");
+    }
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `Checking ${formatDetailLabel(cleanName(target.tagName))} against ${schemaLabel(record.schemaVersion)}...` };
+    if (control) control.disabled = true;
+    renderDetails();
+
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        fileId: feature.sourceFileId,
+        tone: "error",
+        message: `${details.title}. ${details.suggestion || details.detail || "The previous valid value has been kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
+    const changedFieldName = cleanName(target.tagName);
+    const directionFlip = getEditorDirectionFlipAnalysis(updatedFeature, changedFieldName, record.workingXmlText);
+    const dependencyWarning = directionFlip?.reversed
+      ? formatEditorDirectionFlipWarning(directionFlip)
+      : getEditorDependencyWarning(updatedFeature, changedFieldName);
+    const recalculation = directionFlip?.reversed ? null : getEditorRecalculationPlan(updatedFeature, changedFieldName, {
+      previousValue,
+      xmlText: record.workingXmlText,
+    });
+    const fieldLabel = formatDetailLabel(changedFieldName);
+    state.editorFeedback = {
+      fileId: feature.sourceFileId,
+      tone: dependencyWarning ? "warning" : "success",
+      message: dependencyWarning
+        ? `${fieldLabel} updated and the working XML remains schema-valid. ${dependencyWarning}`
+        : `${fieldLabel} updated. The working XML remains schema-valid.`,
+      recalculation: recalculation ? {
+        sourceFileId: record.id,
+        xmlLocator: feature.xmlLocator,
+        changedFieldName,
+        previousValue,
+        labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
+      } : null,
+      directionFlip: directionFlip?.reversed ? {
+        sourceFileId: record.id,
+        xmlLocator: feature.xmlLocator,
+        changedFieldName,
+        supported: directionFlip.supported,
+      } : null,
+    };
+    renderDetails();
+    setStatus(dependencyWarning || `Updated ${fieldLabel} in the working XML copy. The original upload was not changed.`, false);
+  }
+
+  function getEditorDependencyWarning(feature, changedFieldName) {
+    const fields = Array.isArray(feature?.editableFields) ? feature.editableFields : [];
+    if (!fields.length) return "";
+    const changedKey = normalizeDetailKey(changedFieldName);
+    const related = new Map();
+    const addFields = (predicate) => {
+      fields.forEach((field) => {
+        const key = normalizeDetailKey(field.name);
+        if (key !== changedKey && predicate(key)) related.set(key, formatDetailLabel(field.name));
+      });
+    };
+    const isInvert = (key) => /^(us|ds)?invertlevelm$/.test(key);
+    const isSurface = (key) => /^(us|ds)?surfacelevelm$/.test(key);
+    const isDepth = (key) => key === "depthm";
+    const isGrade = (key) => ["grade", "pipegrade", "averagegrade"].includes(key);
+    const changedIsInvert = isInvert(changedKey);
+    const changedIsSurface = isSurface(changedKey);
+    const changedIsDepth = isDepth(changedKey);
+    const changedIsGrade = isGrade(changedKey);
+
+    if (changedIsInvert || changedIsSurface) addFields(isDepth);
+    if (changedIsDepth) addFields((key) => isInvert(key) || isSurface(key));
+    if (changedIsInvert) addFields(isGrade);
+    if (changedIsGrade) addFields(isInvert);
+
+    const relatedLabels = Array.from(related.values());
+    if ((changedIsInvert || changedIsSurface) && feature.geometryKind) relatedLabels.push("geometry Z values, where applicable");
+    if (!relatedLabels.length) return "";
+    return `Review ${formatList(relatedLabels)}. These related values were not recalculated automatically.`;
+  }
+
+  function getEditorDirectionFlipAnalysis(feature, changedFieldName, xmlText) {
+    const changedKey = normalizeDetailKey(changedFieldName);
+    if (!feature || !["usinvertlevelm", "dsinvertlevelm"].includes(changedKey)) return null;
+    const usInvert = getFeatureNumericField(feature, "usinvertlevelm");
+    const dsInvert = getFeatureNumericField(feature, "dsinvertlevelm");
+    if (usInvert === null || dsInvert === null || usInvert >= dsInvert - 0.001) {
+      return { reversed: false, supported: false };
+    }
+
+    const fieldKeys = new Set((feature.editableFields || []).map((field) => normalizeDetailKey(field.name)));
+    const gradeKey = ["pipegrade", "grade", "averagegrade"].find((key) => fieldKeys.has(key)) || "";
+    const layer = String(feature.layer || "").toLowerCase();
+    const path = String(feature.assetPath || "").toLowerCase();
+    const doc = parseXmlDocument(xmlText);
+    const assetNode = doc ? findXmlElementByLocator(doc, feature.xmlLocator) : null;
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    let reason = "";
+    if (!["sewer", "stormwater"].includes(layer)) {
+      reason = "Automatic direction changes are currently limited to gravity sewer and stormwater assets.";
+    } else if (!gradeKey) {
+      reason = "This asset has no schema grade field, so its direction was not changed automatically.";
+    } else if (/(^|\/)(pipespressure|pipepressure|risingmains?|risingmain)(\/|$)/.test(path)) {
+      reason = "Pressure and rising-main assets are not changed automatically because invert fall does not define their flow direction.";
+    } else if (feature.geometryKind !== "Line") {
+      reason = "Only line assets can be direction-flipped automatically.";
+    } else if (!geometry.supported) {
+      reason = geometry.reason;
+    }
+
+    return {
+      reversed: true,
+      supported: !reason,
+      reason,
+      rise: dsInvert - usInvert,
+      usInvert,
+      dsInvert,
+      gradeKey,
+      hasDepth: fieldKeys.has("depthm"),
+      horizontalLength: geometry.horizontalLength,
+      linkedAssets: getLinkedSewerHouseConnections(feature),
+    };
+  }
+
+  function formatEditorDirectionFlipWarning(analysis) {
+    const rise = formatEditorCalculatedValue(analysis.rise);
+    if (!analysis.supported) {
+      return `The current levels rise ${rise} m from USIL to DSIL. ${analysis.reason} Review the asset direction and its upstream/downstream values manually.`;
+    }
+    const linked = analysis.linkedAssets.length
+      ? ` ${analysis.linkedAssets.length} linked sewer house connection${analysis.linkedAssets.length === 1 ? "" : "s"} (${formatList(analysis.linkedAssets.slice(0, 5))}${analysis.linkedAssets.length > 5 ? ` and ${analysis.linkedAssets.length - 5} more` : ""}) will be left unchanged and must be reviewed separately.`
+      : "";
+    return `The current levels rise ${rise} m from USIL to DSIL. Flip the asset direction to swap its upstream/downstream values, reverse its geometry, and recalculate its ${analysis.hasDepth ? "grade and depth" : "grade"}.${linked}`;
+  }
+
+  function getFeatureNumericField(feature, key) {
+    const field = (feature?.editableFields || []).find((item) => normalizeDetailKey(item.name) === key);
+    if (!field || field.nil || !String(field.value || "").trim()) return null;
+    const value = Number(field.value);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function getFeatureTextField(feature, key) {
+    const field = (feature?.editableFields || []).find((item) => normalizeDetailKey(item.name) === key);
+    return field && !field.nil ? String(field.value || "").trim() : "";
+  }
+
+  function getLinkedSewerHouseConnections(feature) {
+    if (String(feature?.layer || "").toLowerCase() !== "sewer") return [];
+    const lineNumber = getFeatureTextField(feature, "linenumber").toLowerCase();
+    const idParts = String(feature.id || "").split(/\s+-\s+/);
+    const downstreamId = normalizeNetworkNodeId(idParts[idParts.length - 1]);
+    if (!lineNumber || !downstreamId) return [];
+    return state.features
+      .filter((item) => item.sourceFileId === feature.sourceFileId)
+      .filter((item) => /sewerage\/connections\/connection/i.test(String(item.assetPath || "")))
+      .filter((item) => getFeatureTextField(item, "linenumber").toLowerCase() === lineNumber)
+      .filter((item) => normalizeNetworkNodeId(getFeatureTextField(item, "dsmhid")) === downstreamId)
+      .map((item) => item.id);
+  }
+
+  function normalizeNetworkNodeId(value) {
+    return String(value || "").trim().split("/")[0].replace(/\s+/g, "").toLowerCase();
+  }
+
+  function getSimpleDirectionGeometry(assetNode) {
+    if (!assetNode) return { supported: false, reason: "The asset geometry could not be located." };
+    const geometryNode = Array.from(assetNode.querySelectorAll("*")).find((element) => cleanName(element.tagName).toLowerCase() === "geometry");
+    if (!geometryNode) return { supported: false, reason: "The asset has no mapped geometry to reverse." };
+    const paths = Array.from(geometryNode.querySelectorAll("*")).filter((element) => cleanName(element.tagName).toLowerCase() === "path");
+    if (paths.length !== 1) {
+      return { supported: false, reason: "Multiple geometry paths require manual review before their flow direction can be changed." };
+    }
+    const fragments = elementChildren(paths[0]);
+    if (fragments.length !== 1 || cleanName(fragments[0].tagName).toLowerCase() !== "polysegment") {
+      return { supported: false, reason: "Curved or multi-fragment geometry requires manual review before its direction can be changed." };
+    }
+    const vertices = elementChildren(fragments[0]).filter((element) => cleanName(element.tagName).toLowerCase() === "vertex");
+    if (vertices.length < 2 || vertices.length !== elementChildren(fragments[0]).length) {
+      return { supported: false, reason: "The mapped path is not a single, simple vertex sequence." };
+    }
+    const points = vertices.map(getVertexCoordinates);
+    if (points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+      return { supported: false, reason: "The mapped path contains invalid X or Y coordinates." };
+    }
+    if (!Number.isFinite(points[0].z) || !Number.isFinite(points[points.length - 1].z)) {
+      return { supported: false, reason: "The mapped path endpoints need valid Z values before direction can be changed automatically." };
+    }
+    const horizontalLength = points.slice(1).reduce((total, point, index) => {
+      const previous = points[index];
+      return total + Math.hypot(point.x - previous.x, point.y - previous.y);
+    }, 0);
+    if (!(horizontalLength > 0)) {
+      return { supported: false, reason: "The mapped path has no measurable horizontal length." };
+    }
+    return {
+      supported: true,
+      geometryNode,
+      path: paths[0],
+      polySegment: fragments[0],
+      vertices,
+      points,
+      horizontalLength,
+    };
+  }
+
+  function getVertexCoordinates(vertex) {
+    const read = (name) => {
+      const element = elementChildren(vertex).find((child) => cleanName(child.tagName).toLowerCase() === name);
+      const value = Number(String(element?.textContent || "").trim());
+      return Number.isFinite(value) ? value : null;
+    };
+    return { x: read("x"), y: read("y"), z: read("z") };
+  }
+
+  function getFeatureHorizontalGeometryLength(feature, xmlText) {
+    if (!feature?.xmlLocator || !xmlText) return null;
+    const doc = parseXmlDocument(xmlText);
+    const assetNode = doc ? findXmlElementByLocator(doc, feature.xmlLocator) : null;
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    return geometry.supported ? geometry.horizontalLength : null;
+  }
+
+  function getEditorRecalculationPlan(feature, changedFieldName, options = {}) {
+    const fields = Array.isArray(feature?.editableFields) ? feature.editableFields : [];
+    if (!fields.length) return null;
+    const changedKey = normalizeDetailKey(changedFieldName);
+    const fieldByKey = new Map();
+    fields.forEach((field) => {
+      const key = normalizeDetailKey(field.name);
+      if (!fieldByKey.has(key)) fieldByKey.set(key, field);
+    });
+    const readNumber = (key) => {
+      const field = fieldByKey.get(key);
+      if (!field || field.nil || !String(field.value || "").trim()) return null;
+      const value = Number(field.value);
+      return Number.isFinite(value) ? value : null;
+    };
+    const updates = [];
+    const queueUpdate = (key, value) => {
+      const field = fieldByKey.get(key);
+      if (!field || !Number.isFinite(value)) return;
+      const nextValue = formatEditorCalculatedValue(value);
+      if (!field.nil && nextValue === String(field.value || "").trim()) return;
+      updates.push({ locator: field.locator, name: field.name, previousValue: field.value, value: nextValue });
+    };
+    const isInvertChange = /^(us|ds)?invertlevelm$/.test(changedKey);
+    const isSurfaceChange = /^(us|ds)?surfacelevelm$/.test(changedKey);
+
+    if (isInvertChange || isSurfaceChange) {
+      const surface = readNumber("surfacelevelm");
+      const invert = readNumber("invertlevelm");
+      if (surface !== null && invert !== null) {
+        queueUpdate("depthm", surface - invert);
+      } else {
+        const usSurface = readNumber("ussurfacelevelm");
+        const dsSurface = readNumber("dssurfacelevelm");
+        const usInvert = readNumber("usinvertlevelm");
+        const dsInvert = readNumber("dsinvertlevelm");
+        if ([usSurface, dsSurface, usInvert, dsInvert].every((value) => value !== null)) {
+          queueUpdate("depthm", ((usSurface - usInvert) + (dsSurface - dsInvert)) / 2);
+        }
+      }
+    }
+
+    if (isInvertChange) {
+      const usInvert = readNumber("usinvertlevelm");
+      const dsInvert = readNumber("dsinvertlevelm");
+      const length = getFeatureHorizontalGeometryLength(feature, options.xmlText);
+      const gradeKey = ["pipegrade", "grade", "averagegrade"].find((key) => fieldByKey.has(key));
+      if (gradeKey && usInvert !== null && dsInvert !== null && length !== null && length > 0 && usInvert >= dsInvert) {
+        queueUpdate(gradeKey, (usInvert - dsInvert) / length * 100);
+      }
+    }
+
+    const geometryUpdate = getEditorGeometryZUpdate(feature, changedKey, options.previousValue, options.xmlText);
+    if (geometryUpdate) updates.push(geometryUpdate);
+
+    return updates.length ? { updates } : null;
+  }
+
+  function getEditorGeometryZUpdate(feature, changedKey, previousValue, xmlText) {
+    const priorLevel = Number(previousValue);
+    if (!Number.isFinite(priorLevel) || !xmlText || !feature?.xmlLocator) return null;
+    let pointIndex = null;
+    let label = "Geometry Z";
+    if (feature.geometryKind === "Point" && /^(invert|surface)levelm$/.test(changedKey)) {
+      pointIndex = 0;
+    } else if (feature.geometryKind === "Line" && changedKey === "usinvertlevelm") {
+      pointIndex = 0;
+      label = "US Geometry Z";
+    } else if (feature.geometryKind === "Line" && changedKey === "dsinvertlevelm") {
+      pointIndex = -1;
+      label = "DS Geometry Z";
+    } else {
+      return null;
+    }
+
+    const points = Array.isArray(feature.points) ? feature.points : [];
+    const point = pointIndex === -1 ? points[points.length - 1] : points[pointIndex];
+    if (!Number.isFinite(point?.z) || Math.abs(point.z - priorLevel) > 0.0015) return null;
+    const changedField = feature.editableFields?.find((field) => normalizeDetailKey(field.name) === changedKey);
+    const nextLevel = Number(changedField?.value);
+    if (!Number.isFinite(nextLevel)) return null;
+
+    const doc = parseXmlDocument(xmlText);
+    const assetNode = doc ? findXmlElementByLocator(doc, feature.xmlLocator) : null;
+    if (!assetNode) return null;
+    const coordinateNodes = getGeometryCoordinateElements(assetNode);
+    const coordinateNode = pointIndex === -1 ? coordinateNodes[coordinateNodes.length - 1] : coordinateNodes[pointIndex];
+    const zElement = coordinateNode && elementChildren(coordinateNode).find((child) => cleanName(child.tagName).toLowerCase() === "z");
+    if (!zElement || !Number.isFinite(Number(String(zElement.textContent || "").trim()))) return null;
+    const nextValue = formatEditorCalculatedValue(nextLevel);
+    const currentValue = String(zElement.textContent || "").trim();
+    if (nextValue === currentValue) return null;
+    return {
+      kind: "geometry",
+      locator: getXmlElementLocator(zElement),
+      name: label,
+      previousValue: currentValue,
+      value: nextValue,
+    };
+  }
+
+  function getGeometryCoordinateElements(assetNode) {
+    return getGeometryCoordinateGroups(assetNode)
+      .filter((group) => group.elements.z)
+      .map((group) => group.container);
+  }
+
+  function getGeometryCoordinateGroups(assetNode) {
+    if (!assetNode) return [];
+    return Array.from(assetNode.querySelectorAll("*"))
+      .filter((element) => isElementInsideGeometry(element, assetNode))
+      .map((container) => {
+        const elements = {};
+        elementChildren(container).forEach((child) => {
+          const axis = cleanName(child.tagName).toLowerCase();
+          if (["x", "y", "z"].includes(axis)) elements[axis] = child;
+        });
+        return { container, elements };
+      })
+      .filter((group) => group.elements.x && group.elements.y);
+  }
+
+  function getGeometryZElements(assetNode) {
+    return getGeometryCoordinateGroups(assetNode)
+      .map((group) => group.elements.z)
+      .filter(Boolean);
+  }
+
+  function getGeometryCoordinateValueElements(assetNode) {
+    return getGeometryCoordinateGroups(assetNode).flatMap((group, pointIndex) => {
+      return ["x", "y", "z"].map((axis) => {
+        const element = group.elements[axis];
+        return element ? { element, axis, pointIndex } : null;
+      }).filter(Boolean);
+    });
+  }
+
+  function formatEditorCalculatedValue(value) {
+    const rounded = Number(Number(value).toFixed(3));
+    return Number.isFinite(rounded) ? String(rounded) : "";
+  }
+
+  async function recalculateRelatedXmlFields() {
+    if (state.editorBusy) return;
+    const request = state.editorFeedback?.recalculation;
+    if (!request) return;
+    const feature = state.features.find((item) => item.sourceFileId === request.sourceFileId && item.xmlLocator === request.xmlLocator);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    const plan = request.kind === "geometry"
+      ? getGeometryCoordinateRecalculationPlan(feature, request.changedFieldName, record?.workingXmlText)
+      : getEditorRecalculationPlan(feature, request.changedFieldName, {
+        previousValue: request.previousValue,
+        xmlText: record?.workingXmlText,
+      });
+    if (!feature || !record?.workingXmlText || !record.validation?.valid || !plan) {
+      state.editorFeedback = {
+        fileId: request.sourceFileId,
+        tone: "error",
+        message: "The related values could not be recalculated from the current XML fields.",
+      };
+      renderDetails();
+      return;
+    }
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const appliedUpdates = [];
+    plan.updates.forEach((update) => {
+      const target = findXmlElementByLocator(candidateDoc, update.locator);
+      if (!target) return;
+      const previousValue = String(target.textContent || "").trim();
+      removeXmlNilAttribute(target);
+      target.textContent = update.value;
+      appliedUpdates.push({ ...update, previousValue });
+    });
+    if (!appliedUpdates.length) return;
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: "info",
+      message: `Checking recalculated ${formatList(appliedUpdates.map((update) => formatDetailLabel(update.name)))} against ${schemaLabel(record.schemaVersion)}...`,
+    };
+    renderDetails();
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        fileId: record.id,
+        tone: "error",
+        message: `The recalculation was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid values have been kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const changes = appliedUpdates.map((update) => `${formatDetailLabel(update.name)} from ${update.previousValue || "null"} to ${update.value}`);
+    const changedKey = normalizeDetailKey(request.changedFieldName);
+    const networkReview = [...(plan.remainingReview || [])];
+    const geometryReview = [];
+    const geometryWasUpdated = appliedUpdates.some((update) => update.kind === "geometry");
+    if (/^(us|ds)?(invert|surface)levelm$/.test(changedKey) && feature.geometryKind && !geometryWasUpdated) geometryReview.push("geometry Z values");
+    const reviewMessages = [];
+    if (networkReview.length) reviewMessages.push(`Review ${formatList(networkReview)} separately; those network-dependent values were not recalculated.`);
+    if (geometryReview.length) reviewMessages.push(`Review ${formatList(geometryReview)} separately; geometry was not changed.`);
+    const message = `Recalculated ${formatList(changes)}.${reviewMessages.length ? ` ${reviewMessages.join(" ")}` : ""}`;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: reviewMessages.length ? "warning" : "success",
+      message,
+    };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  async function flipGravityAssetDirection() {
+    if (state.editorBusy) return;
+    const request = state.editorFeedback?.directionFlip;
+    if (!request) return;
+    const feature = state.features.find((item) => item.sourceFileId === request.sourceFileId && item.xmlLocator === request.xmlLocator);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    const analysis = getEditorDirectionFlipAnalysis(feature, request.changedFieldName, record?.workingXmlText);
+    if (!feature || !record?.workingXmlText || !record.validation?.valid || !analysis?.reversed) {
+      state.editorFeedback = {
+        fileId: request.sourceFileId,
+        tone: "error",
+        message: "The asset no longer has reversed upstream and downstream invert levels.",
+      };
+      renderDetails();
+      return;
+    }
+    if (!analysis.supported) {
+      state.editorFeedback = {
+        fileId: request.sourceFileId,
+        tone: "warning",
+        message: analysis.reason,
+      };
+      renderDetails();
+      return;
+    }
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const assetNode = candidateDoc ? findXmlElementByLocator(candidateDoc, feature.xmlLocator) : null;
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    if (!assetNode || !geometry.supported) {
+      state.editorFeedback = {
+        fileId: record.id,
+        tone: "error",
+        message: geometry.reason || "The asset geometry could not be prepared for a direction change.",
+      };
+      renderDetails();
+      return;
+    }
+
+    const swapped = [];
+    [
+      ["usinvertlevelm", "dsinvertlevelm", "USIL / DSIL"],
+      ["ussurfacelevelm", "dssurfacelevelm", "USSL / DSSL"],
+      ["uspipediametermm", "dspipediametermm", "US / DS pipe diameter"],
+    ].forEach(([upstreamKey, downstreamKey, label]) => {
+      if (swapAssetScalarElements(assetNode, upstreamKey, downstreamKey)) swapped.push(label);
+    });
+
+    geometry.vertices.slice().reverse().forEach((vertex) => geometry.polySegment.appendChild(vertex));
+    const reversedGeometry = getSimpleDirectionGeometry(assetNode);
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    const firstZ = getVertexCoordinateElement(reversedGeometry.vertices[0], "z");
+    const lastZ = getVertexCoordinateElement(reversedGeometry.vertices[reversedGeometry.vertices.length - 1], "z");
+    if (firstZ && usInvert !== null) firstZ.textContent = formatEditorCalculatedValue(usInvert);
+    if (lastZ && dsInvert !== null) lastZ.textContent = formatEditorCalculatedValue(dsInvert);
+
+    const recalculated = [];
+    const gradeElement = findAssetScalarElement(assetNode, analysis.gradeKey);
+    if (gradeElement && usInvert !== null && dsInvert !== null && reversedGeometry.horizontalLength > 0) {
+      removeXmlNilAttribute(gradeElement);
+      gradeElement.textContent = formatEditorCalculatedValue((usInvert - dsInvert) / reversedGeometry.horizontalLength * 100);
+      recalculated.push(formatDetailLabel(cleanName(gradeElement.tagName)));
+    }
+    const depthElement = findAssetScalarElement(assetNode, "depthm");
+    const usSurface = getAssetNumericValue(assetNode, "ussurfacelevelm");
+    const dsSurface = getAssetNumericValue(assetNode, "dssurfacelevelm");
+    if (depthElement && [usSurface, dsSurface, usInvert, dsInvert].every((value) => value !== null)) {
+      removeXmlNilAttribute(depthElement);
+      depthElement.textContent = formatEditorCalculatedValue(((usSurface - usInvert) + (dsSurface - dsInvert)) / 2);
+      recalculated.push(formatDetailLabel(cleanName(depthElement.tagName)));
+    }
+
+    const semanticError = getGravityDirectionSemanticError(assetNode);
+    if (semanticError) {
+      state.editorFeedback = { fileId: record.id, tone: "error", message: `The direction change was not applied. ${semanticError}` };
+      renderDetails();
+      return;
+    }
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: "info",
+      message: `Checking the flipped asset against ${schemaLabel(record.schemaVersion)}...`,
+    };
+    renderDetails();
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      state.editorFeedback = {
+        fileId: record.id,
+        tone: "error",
+        message: `The direction change was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid values have been kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const linkedMessage = analysis.linkedAssets.length
+      ? ` ${analysis.linkedAssets.length} linked sewer house connection${analysis.linkedAssets.length === 1 ? " was" : "s were"} not changed and still require review.`
+      : "";
+    const message = `Flipped the asset direction, swapped ${formatList(swapped)}, reversed the mapped path, and recalculated ${formatList(recalculated)}.${linkedMessage}`;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: analysis.linkedAssets.length ? "warning" : "success",
+      message,
+    };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function findAssetScalarElement(assetNode, key) {
+    if (!assetNode) return null;
+    return Array.from(assetNode.querySelectorAll("*")).find((element) => {
+      return !elementChildren(element).length
+        && !isElementInsideGeometry(element, assetNode)
+        && normalizeDetailKey(cleanName(element.tagName)) === key;
+    }) || null;
+  }
+
+  function getAssetNumericValue(assetNode, key) {
+    const element = findAssetScalarElement(assetNode, key);
+    if (!element || isNilledReportElement(element)) return null;
+    const value = Number(String(element.textContent || "").trim());
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function swapAssetScalarElements(assetNode, upstreamKey, downstreamKey) {
+    const upstream = findAssetScalarElement(assetNode, upstreamKey);
+    const downstream = findAssetScalarElement(assetNode, downstreamKey);
+    if (!upstream || !downstream) return false;
+    const upstreamSnapshot = { value: String(upstream.textContent || ""), nil: isNilledReportElement(upstream) };
+    const downstreamSnapshot = { value: String(downstream.textContent || ""), nil: isNilledReportElement(downstream) };
+    setXmlElementSnapshot(upstream, downstreamSnapshot);
+    setXmlElementSnapshot(downstream, upstreamSnapshot);
+    return true;
+  }
+
+  function setXmlElementSnapshot(element, snapshot) {
+    element.textContent = snapshot.nil ? "" : snapshot.value;
+    if (snapshot.nil) {
+      element.setAttributeNS("http://www.w3.org/2001/XMLSchema-instance", "xsi:nil", "true");
+    } else {
+      removeXmlNilAttribute(element);
+    }
+  }
+
+  function getVertexCoordinateElement(vertex, name) {
+    return elementChildren(vertex || {}).find((child) => cleanName(child.tagName).toLowerCase() === name) || null;
+  }
+
+  function getGravityDirectionSemanticError(assetNode) {
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    if (usInvert === null || dsInvert === null || usInvert < dsInvert - 0.001) {
+      return "USIL must be at or above DSIL after the flow direction is corrected.";
+    }
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    if (!geometry.supported) return geometry.reason;
+    const firstZ = geometry.points[0].z;
+    const lastZ = geometry.points[geometry.points.length - 1].z;
+    if (Math.abs(firstZ - usInvert) > 0.0015 || Math.abs(lastZ - dsInvert) > 0.0015) {
+      return "The first and last geometry Z values do not match the corrected USIL and DSIL.";
+    }
+    return "";
+  }
+
+  function removeXmlNilAttribute(element) {
+    Array.from(element.attributes || []).forEach((attribute) => {
+      if (cleanName(attribute.name).toLowerCase() === "nil") element.removeAttributeNode(attribute);
+    });
+  }
+
+  function pushXmlHistory(record, xmlText) {
+    record.historyPast.push(String(xmlText || ""));
+    if (record.historyPast.length > 50) record.historyPast.shift();
+  }
+
+  function canApplyBulkHistoryTransaction(transaction, direction) {
+    if (!transaction?.documents?.length) return false;
+    const expectedKey = direction === "redo" ? "beforeXmlText" : "afterXmlText";
+    return transaction.documents.every((change) => {
+      const record = state.documents.get(change.fileId);
+      return record?.workingXmlText === change[expectedKey];
+    });
+  }
+
+  function undoBulkXmlEdit() {
+    const transaction = state.bulkHistoryPast[state.bulkHistoryPast.length - 1];
+    if (!canApplyBulkHistoryTransaction(transaction, "undo") || state.editorBusy) return;
+    state.bulkHistoryPast.pop();
+    state.bulkHistoryFuture.push(transaction);
+    transaction.documents.forEach((change) => {
+      const record = state.documents.get(change.fileId);
+      if (!record) return;
+      if (record.historyPast[record.historyPast.length - 1] === change.beforeXmlText) record.historyPast.pop();
+      record.historyFuture.push(change.afterXmlText);
+      applyKnownValidXmlSnapshot(record, change.beforeXmlText, change.selectedLocator);
+    });
+    restoreTransactionSelection(transaction.selectedIds);
+    const message = formatBulkTransactionHistoryMessage(transaction, "Undid");
+    state.editorFeedback = { bulk: true, tone: "success", message };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function redoBulkXmlEdit() {
+    const transaction = state.bulkHistoryFuture[state.bulkHistoryFuture.length - 1];
+    if (!canApplyBulkHistoryTransaction(transaction, "redo") || state.editorBusy) return;
+    state.bulkHistoryFuture.pop();
+    state.bulkHistoryPast.push(transaction);
+    transaction.documents.forEach((change) => {
+      const record = state.documents.get(change.fileId);
+      if (!record) return;
+      pushXmlHistory(record, change.beforeXmlText);
+      if (record.historyFuture[record.historyFuture.length - 1] === change.afterXmlText) record.historyFuture.pop();
+      applyKnownValidXmlSnapshot(record, change.afterXmlText, change.selectedLocator);
+    });
+    restoreTransactionSelection(transaction.selectedIds);
+    const message = formatBulkTransactionHistoryMessage(transaction, "Redid");
+    state.editorFeedback = { bulk: true, tone: "success", message };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function restoreTransactionSelection(selectedIds) {
+    const availableIds = new Set(state.features.map((feature) => feature.uid));
+    const restoredIds = (selectedIds || []).filter((uid) => availableIds.has(uid));
+    if (restoredIds.length) {
+      state.selectedIds = new Set(restoredIds);
+      state.selectedId = restoredIds[restoredIds.length - 1];
+      return;
+    }
+    if (state.selectedId && availableIds.has(state.selectedId)) {
+      state.selectedIds = new Set([state.selectedId]);
+      return;
+    }
+    state.selectedId = state.features[0]?.uid || null;
+    state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
+  }
+
+  function formatBulkTransactionHistoryMessage(transaction, verb) {
+    if (transaction.kind === "delete") {
+      return `${verb} deletion of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
+    if (transaction.kind === "duplicate") {
+      return `${verb} duplication of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
+    return `${verb} the bulk ${transaction.label} change for ${transaction.assetCount} assets.`;
+  }
+
+  function undoXmlEdit() {
+    const context = getSelectedEditorContext();
+    const bulkTransaction = state.bulkHistoryPast[state.bulkHistoryPast.length - 1];
+    if (context && bulkTransaction?.documents.some((change) => change.fileId === context.record.id) && canApplyBulkHistoryTransaction(bulkTransaction, "undo")) {
+      undoBulkXmlEdit();
+      return;
+    }
+    if (!context?.record?.historyPast.length || state.editorBusy) return;
+    const currentXmlText = context.record.workingXmlText;
+    context.record.historyFuture.push(currentXmlText);
+    const xmlText = context.record.historyPast.pop();
+    const changes = getXmlSnapshotFieldChanges(context.record, currentXmlText, xmlText);
+    const message = formatXmlHistoryFeedback("Undid", changes, "the last XML attribute edit");
+    applyKnownValidXmlSnapshot(context.record, xmlText, context.feature.xmlLocator);
+    state.editorFeedback = { fileId: context.feature.sourceFileId, tone: "success", message };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function redoXmlEdit() {
+    const context = getSelectedEditorContext();
+    const bulkTransaction = state.bulkHistoryFuture[state.bulkHistoryFuture.length - 1];
+    if (context && bulkTransaction?.documents.some((change) => change.fileId === context.record.id) && canApplyBulkHistoryTransaction(bulkTransaction, "redo")) {
+      redoBulkXmlEdit();
+      return;
+    }
+    if (!context?.record?.historyFuture.length || state.editorBusy) return;
+    const currentXmlText = context.record.workingXmlText;
+    context.record.historyPast.push(currentXmlText);
+    const xmlText = context.record.historyFuture.pop();
+    const changes = getXmlSnapshotFieldChanges(context.record, currentXmlText, xmlText);
+    const message = formatXmlHistoryFeedback("Redid", changes, "the XML attribute edit");
+    applyKnownValidXmlSnapshot(context.record, xmlText, context.feature.xmlLocator);
+    state.editorFeedback = { fileId: context.feature.sourceFileId, tone: "success", message };
+    renderDetails();
+    setStatus(message, false);
+  }
+
+  function getXmlSnapshotFieldChanges(record, previousXmlText, currentXmlText) {
+    const previousDoc = parseXmlDocument(previousXmlText);
+    const currentDoc = parseXmlDocument(currentXmlText);
+    if (!previousDoc || !currentDoc) return [];
+    const fields = new Map();
+    [previousDoc, currentDoc].forEach((doc) => {
+      extractFeatures(doc, { schemaKey: record.schemaKey }).forEach((feature) => {
+        (feature.editableFields || []).forEach((field) => {
+          if (!fields.has(field.locator)) fields.set(field.locator, field);
+        });
+      });
+    });
+    const changes = [];
+    fields.forEach((field) => {
+      const previousElement = findXmlElementByLocator(previousDoc, field.locator);
+      const currentElement = findXmlElementByLocator(currentDoc, field.locator);
+      if (!previousElement || !currentElement) return;
+      const previousValue = String(previousElement.textContent || "").trim();
+      const currentValue = String(currentElement.textContent || "").trim();
+      const previousNil = isNilledReportElement(previousElement);
+      const currentNil = isNilledReportElement(currentElement);
+      if (previousValue === currentValue && previousNil === currentNil) return;
+      changes.push({
+        label: formatDetailLabel(field.name),
+        previous: formatEditorSnapshotValue(previousValue, previousNil),
+        current: formatEditorSnapshotValue(currentValue, currentNil),
+      });
+    });
+    const previousFeatures = new Map(extractFeatures(previousDoc, { schemaKey: record.schemaKey }).map((feature) => [feature.xmlLocator, feature]));
+    const currentFeatures = new Map(extractFeatures(currentDoc, { schemaKey: record.schemaKey }).map((feature) => [feature.xmlLocator, feature]));
+    new Set([...previousFeatures.keys(), ...currentFeatures.keys()]).forEach((featureLocator) => {
+      const previousAsset = findXmlElementByLocator(previousDoc, featureLocator);
+      const currentAsset = findXmlElementByLocator(currentDoc, featureLocator);
+      const previousCoordinates = getGeometryCoordinateValueElements(previousAsset);
+      const currentCoordinates = getGeometryCoordinateValueElements(currentAsset);
+      const count = Math.min(previousCoordinates.length, currentCoordinates.length);
+      for (let index = 0; index < count; index += 1) {
+        const previousCoordinate = previousCoordinates[index];
+        const currentCoordinate = currentCoordinates[index];
+        if (previousCoordinate.axis !== currentCoordinate.axis || previousCoordinate.pointIndex !== currentCoordinate.pointIndex) continue;
+        const previousValue = String(previousCoordinate.element.textContent || "").trim();
+        const currentValue = String(currentCoordinate.element.textContent || "").trim();
+        if (previousValue === currentValue) continue;
+        changes.push({
+          label: `Geometry ${previousCoordinate.pointIndex + 1} ${previousCoordinate.axis.toUpperCase()}`,
+          previous: formatEditorSnapshotValue(previousValue, isNilledReportElement(previousCoordinate.element)),
+          current: formatEditorSnapshotValue(currentValue, isNilledReportElement(currentCoordinate.element)),
+        });
+      }
+    });
+    return changes;
+  }
+
+  function formatXmlHistoryFeedback(verb, changes, fallback) {
+    if (!changes.length) return `${verb} ${fallback}.`;
+    if (changes.length === 1) {
+      const change = changes[0];
+      return `${verb} ${change.label}. Previous value: ${change.previous}; current value: ${change.current}.`;
+    }
+    const visibleChanges = changes.slice(0, 3)
+      .map((change) => `${change.label}: ${change.previous} to ${change.current}`)
+      .join("; ");
+    const remaining = changes.length > 3 ? `; and ${changes.length - 3} more` : "";
+    return `${verb} ${changes.length} field changes. ${visibleChanges}${remaining}.`;
+  }
+
+  function resetXmlEdits() {
+    const context = getSelectedEditorContext();
+    if (!context?.record?.dirty || state.editorBusy) return;
+    pushXmlHistory(context.record, context.record.workingXmlText);
+    context.record.historyFuture = [];
+    applyKnownValidXmlSnapshot(context.record, context.record.baselineXmlText, context.feature.xmlLocator);
+    state.editorFeedback = { fileId: context.feature.sourceFileId, tone: "success", message: "Reset this working copy to its loaded baseline. You can undo this reset." };
+    renderDetails();
+    setStatus("Reset the working XML copy. The original uploaded file was always unchanged.", false);
+  }
+
+  function downloadEditedXml() {
+    const context = getSelectedEditorContext();
+    if (!context?.record?.workingXmlText) return;
+    const blob = new Blob([context.record.workingXmlText], { type: "application/xml;charset=utf-8" });
+    downloadBlob(blob, buildEditedXmlFileName(context.record.name));
+    setStatus(`Downloaded ${buildEditedXmlFileName(context.record.name)} from the current working copy.`, false);
+  }
+
+  function buildEditedXmlFileName(fileName) {
+    const cleanNameValue = String(fileName || "ADAC.xml").replace(/\.xml$/i, "");
+    return `${cleanNameValue}_edited.xml`;
+  }
+
+  function getSelectedEditorContext() {
+    const feature = state.features.find((item) => item.uid === state.selectedId);
+    return feature ? { feature, record: state.documents.get(feature.sourceFileId) } : null;
+  }
+
+  function applyKnownValidXmlSnapshot(record, xmlText, selectedLocator) {
+    const doc = parseXmlDocument(xmlText);
+    if (!doc) return;
+    const validation = { ...record.validation, valid: true, status: "valid" };
+    applyValidatedWorkingDocument(record, xmlText, doc, validation, selectedLocator);
+  }
+
+  function applyValidatedWorkingDocument(record, xmlText, doc, validation, selectedLocator) {
+    record.workingXmlText = String(xmlText || "");
+    record.workingDocument = doc;
+    record.validation = validation;
+    record.dirty = record.workingXmlText !== record.baselineXmlText;
+    if (state.repairPreview?.active && state.loadedFiles.length === 1) {
+      state.repairPreview.repairedXmlText = record.workingXmlText;
+      state.repairPreview.validationPassed = true;
+      state.repairPreview.remainingErrorCount = 0;
+      state.repairPreview.remainingErrors = [];
+    }
+    refreshDocumentDerivedState(record, selectedLocator);
+  }
+
+  function refreshDocumentDerivedState(record, selectedLocator) {
+    const fileIndex = state.loadedFiles.findIndex((file) => file.id === record.id);
+    if (fileIndex < 0) return;
+    const sourceIndex = fileIndex + 1;
+    const previousFeatures = state.features.filter((feature) => feature.sourceFileId === record.id);
+    const extractedFeatures = extractFeatures(record.workingDocument, { schemaKey: record.schemaKey }).map((feature) => ({
+      ...feature,
+      sourceFileId: record.id,
+      sourceFile: record.name,
+      sourceIndex,
+    }));
+    const nextFeatures = reconcileFeatureUids(record.id, extractedFeatures, previousFeatures);
+    record.changedFields = buildChangedFieldMap(record, nextFeatures);
+    const nextUids = new Set(nextFeatures.map((feature) => feature.uid));
+    const baselineUids = new Set((record.baselineFeatures || []).map((feature) => feature.uid));
+    record.addedAssetCount = nextFeatures.filter((feature) => !baselineUids.has(feature.uid)).length;
+    record.deletedAssetCount = (record.baselineFeatures || []).filter((feature) => !nextUids.has(feature.uid)).length;
+    const nextFeaturesByFile = new Map();
+    state.loadedFiles.forEach((file) => {
+      nextFeaturesByFile.set(file.id, file.id === record.id
+        ? nextFeatures
+        : state.features.filter((feature) => feature.sourceFileId === file.id));
+    });
+    state.features = state.loadedFiles.flatMap((file) => nextFeaturesByFile.get(file.id) || []);
+    state.loadedFiles[fileIndex].assetCount = nextFeatures.length;
+    replaceStateFileEntry(state.fileMetas, record.id, { ...extractFileMeta(record.workingDocument), fileName: record.name, fileId: record.id });
+    replaceStateFileEntry(state.reportBundles, record.id, { ...extractReportBundle(record.workingDocument, record.name), fileName: record.name, fileId: record.id });
+    replaceStateFileEntry(state.schemaValidationResults, record.id, { ...record.validation, fileName: record.name, fileId: record.id });
+    state.fileMeta = getCombinedFileMeta();
+    state.assetKinds = getAssetKindsForFeatures(state.features);
+    const layerState = captureViewerLayerState();
+    buildLayers();
+    restoreViewerLayerState(layerState);
+    renderFilterOptions();
+    const selectedFeature = nextFeatures.find((feature) => feature.xmlLocator === selectedLocator) || nextFeatures[0];
+    const availableIds = new Set(state.features.map((feature) => feature.uid));
+    state.selectedIds = new Set(Array.from(state.selectedIds || []).filter((uid) => availableIds.has(uid)));
+    if (!state.selectedIds.size && selectedFeature) state.selectedIds.add(selectedFeature.uid);
+    if (!state.selectedId || !availableIds.has(state.selectedId)) state.selectedId = selectedFeature?.uid || Array.from(state.selectedIds).pop() || null;
+    state.selectedOverlayFeature = null;
+    state.labelObstacleCache = null;
+    state.projectedFeatureCache = null;
+    state.drawOrderCache = null;
+    updateFilteredFeatures();
+  }
+
+  function replaceStateFileEntry(entries, fileId, replacement) {
+    const index = entries.findIndex((entry) => entry.fileId === fileId);
+    if (index >= 0) entries[index] = replacement;
+    else entries.push(replacement);
+  }
+
+  function buildChangedFieldMap(record, features) {
+    const changes = new Map();
+    features.forEach((feature) => {
+      const baselineFeature = (record.baselineFeatures || []).find((candidate) => candidate.uid === feature.uid);
+      const baselineAsset = baselineFeature
+        ? findXmlElementByLocator(record.baselineDocument, baselineFeature.xmlLocator)
+        : null;
+      const workingAsset = findXmlElementByLocator(record.workingDocument, feature.xmlLocator);
+      (feature.editableFields || []).forEach((field) => {
+        const baselineElement = findEquivalentAssetDescendant(baselineAsset, feature.xmlLocator, field.locator);
+        if (!baselineElement) return;
+        const baselineValue = String(baselineElement.textContent || "").trim();
+        const baselineNil = isNilledReportElement(baselineElement);
+        if (baselineValue !== field.value || baselineNil !== field.nil) {
+          changes.set(field.locator, { baselineValue, baselineNil, value: field.value, nil: field.nil });
+        }
+      });
+      const baselineCoordinates = getGeometryCoordinateValueElements(baselineAsset);
+      const workingCoordinates = getGeometryCoordinateValueElements(workingAsset);
+      const count = Math.min(baselineCoordinates.length, workingCoordinates.length);
+      for (let index = 0; index < count; index += 1) {
+        const baselineCoordinate = baselineCoordinates[index];
+        const workingCoordinate = workingCoordinates[index];
+        if (baselineCoordinate.axis !== workingCoordinate.axis || baselineCoordinate.pointIndex !== workingCoordinate.pointIndex) continue;
+        const baselineValue = String(baselineCoordinate.element.textContent || "").trim();
+        const value = String(workingCoordinate.element.textContent || "").trim();
+        const baselineNil = isNilledReportElement(baselineCoordinate.element);
+        const nil = isNilledReportElement(workingCoordinate.element);
+        if (baselineValue === value && baselineNil === nil) continue;
+        changes.set(getXmlElementLocator(workingCoordinate.element), { baselineValue, baselineNil, value, nil });
+      }
+    });
+    return changes;
+  }
+
+  function findEquivalentAssetDescendant(baselineAsset, workingAssetLocator, workingElementLocator) {
+    if (!baselineAsset) return null;
+    const assetParts = parseXmlElementLocator(workingAssetLocator);
+    const elementParts = parseXmlElementLocator(workingElementLocator);
+    if (elementParts.length <= assetParts.length) return null;
+    let current = baselineAsset;
+    for (const part of elementParts.slice(assetParts.length)) {
+      const matches = elementChildren(current).filter((child) => cleanName(child.tagName) === part.name);
+      current = matches[part.index - 1] || null;
+      if (!current) return null;
+    }
+    return current;
+  }
+
+  function captureViewerLayerState() {
+    const snapshot = new Map();
+    state.layers.forEach((layer, layerName) => {
+      snapshot.set(layerName, {
+        visible: layer.visible,
+        labelVisible: layer.labelVisible,
+        expanded: layer.expanded,
+        labelExpanded: layer.labelExpanded,
+        types: new Map(Array.from(layer.types.entries()).map(([name, type]) => [name, {
+          visible: type.visible,
+          labelVisible: type.labelVisible,
+        }])),
+      });
+    });
+    return snapshot;
+  }
+
+  function restoreViewerLayerState(snapshot) {
+    state.layers.forEach((layer, layerName) => {
+      const saved = snapshot.get(layerName);
+      if (!saved) return;
+      layer.visible = saved.visible;
+      layer.labelVisible = saved.labelVisible;
+      layer.expanded = saved.expanded;
+      layer.labelExpanded = saved.labelExpanded;
+      layer.types.forEach((type, typeName) => {
+        const savedType = saved.types.get(typeName);
+        if (!savedType) return;
+        type.visible = savedType.visible;
+        type.labelVisible = savedType.labelVisible;
+      });
+    });
   }
 
   function renderProjectDetails(feature) {
@@ -6178,6 +9136,64 @@
     `;
   }
 
+  function renderEditableGeometryDetails(feature, record) {
+    const assetNode = record?.workingDocument ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator) : null;
+    const coordinateGroups = getGeometryCoordinateGroups(assetNode);
+    if (!coordinateGroups.length) {
+      return `<div><dt>Geometry</dt><dd>No directly editable X/Y coordinates were found in this asset geometry.</dd></div>`;
+    }
+    const coordinateLabel = feature.geometryKind === "Point" ? "Point" : "Vertex";
+    const rows = coordinateGroups.map((group, index) => {
+      const controls = ["x", "y", "z"].map((axis) => {
+        const element = group.elements[axis];
+        if (!element) return "";
+        const locator = getXmlElementLocator(element);
+        const change = record.changedFields?.get(locator);
+        const original = change
+          ? `<small>Original: ${escapeHtml(formatEditorSnapshotValue(change.baselineValue, change.baselineNil))}</small>`
+          : "";
+        return `
+          <label class="viewer-geometry-editor__coordinate${change ? " is-edited" : ""}">
+            <span>${axis.toUpperCase()}</span>
+            <input
+              type="number"
+              step="any"
+              required
+              value="${escapeHtml(String(element.textContent || "").trim())}"
+              aria-label="${escapeHtml(`${coordinateLabel} ${index + 1} ${axis.toUpperCase()} coordinate`)}"
+              data-editor-geometry="${escapeHtml(locator)}"
+              data-editor-geometry-feature="${escapeHtml(feature.uid)}"
+              data-editor-geometry-index="${index}"
+              data-editor-geometry-axis="${axis}"
+              ${state.editorBusy ? "disabled" : ""}
+            />
+            ${original}
+          </label>
+        `;
+      }).join("");
+      return `
+        <fieldset class="viewer-geometry-editor__row">
+          <legend>${escapeHtml(coordinateLabel)} ${index + 1}</legend>
+          <div class="viewer-geometry-editor__coordinates">${controls}</div>
+        </fieldset>
+      `;
+    }).join("");
+    return `
+      <div class="viewer-details__geometry viewer-details__geometry--editable">
+        <dt>Geometry</dt>
+        <dd>
+          <details class="viewer-geometry-editor" data-role="geometry-editor" ${state.geometryEditorOpen ? "open" : ""}>
+            <summary>
+              <span><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i> Manual geometry</span>
+              <strong>${coordinateGroups.length} ${coordinateGroups.length === 1 ? coordinateLabel.toLowerCase() : coordinateLabel === "Vertex" ? "vertices" : "points"}</strong>
+            </summary>
+            <div class="viewer-geometry-editor__rows">${rows}</div>
+          </details>
+        </dd>
+      </div>
+    `;
+  }
+
   function renderOverlayDetails(selection) {
     const overlay = selection.overlay;
     const feature = selection.feature;
@@ -6235,6 +9251,15 @@
       }
     }
     checks.push(getSchemaValidationCheckItem());
+    const editedDocuments = Array.from(state.documents.values()).filter((record) => record.dirty);
+    if (editedDocuments.length) {
+      const changedFields = editedDocuments.reduce((total, record) => total + (record.changedFields?.size || 0), 0);
+      checks.push({
+        tone: "good",
+        icon: "fa-pen-to-square",
+        text: `${changedFields} working-copy field${changedFields === 1 ? "" : "s"} changed across ${editedDocuments.length} XML file${editedDocuments.length === 1 ? "" : "s"}. All accepted edits remain schema-valid; original uploads are unchanged.`,
+      });
+    }
     if (state.validationErrorResults.length) {
       checks.push(...buildSchemaValidationFailureChecks());
     }
@@ -6379,10 +9404,11 @@
   }
 
   function getFeaturesForMapDrawing(features) {
+    const selectionKey = Array.from(state.selectedIds || []).sort().join("|");
     if (
       state.drawOrderCache
       && state.drawOrderCache.features === features
-      && state.drawOrderCache.selectedId === state.selectedId
+      && state.drawOrderCache.selectionKey === selectionKey
     ) {
       return state.drawOrderCache.result;
     }
@@ -6392,7 +9418,7 @@
       .map((item) => item.feature);
     state.drawOrderCache = {
       features,
-      selectedId: state.selectedId,
+      selectionKey,
       result,
     };
     return result;
@@ -6422,7 +9448,7 @@
   function drawAssetFeature(feature, transform) {
     const style = getPlanStyleForFeature(feature);
     const color = style.color;
-    const isSelected = state.selectedId === feature.uid;
+    const isSelected = isFeatureSelected(feature);
     const screenPointPairs = getProjectedFeatureScreenPairs(feature, transform);
     const points = screenPointPairs.map((pair) => pair.screenPoint);
     if (!points.length) return;
@@ -6877,6 +9903,10 @@
 
   function isLotLabelFeature(feature) {
     return feature?.geometryKind === "Polygon" && planPathStarts(feature, "cadastre/landparcels/lot");
+  }
+
+  function isRoadReserveLabelFeature(feature) {
+    return feature?.geometryKind === "Polygon" && planPathStarts(feature, "cadastre/landparcels/roadreserve");
   }
 
   function isHouseConnectionLabelFeature(feature) {
@@ -7637,7 +10667,7 @@
   }
 
   function getSelectionDrawRank(feature) {
-    return state.selectedId === feature.uid ? 1 : 0;
+    return isFeatureSelected(feature) ? 1 : 0;
   }
 
   function getPlanDrawOrder(feature) {

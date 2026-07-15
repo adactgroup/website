@@ -3922,6 +3922,18 @@ h3,
     overflow-wrap: anywhere;
 }
 
+.viewer-details__header--multi {
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-details__selection-help {
+    margin: 9px 0 0;
+    color: #65758a;
+    font-size: 0.66rem;
+    line-height: 1.4;
+}
+
 .viewer-project-details {
     margin: 0 0 14px;
     border-top: 1px solid var(--mockup-line);
@@ -4023,8 +4035,298 @@ h3,
 .viewer-details__title-row {
     display: flex;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 12px;
     min-width: 0;
+}
+
+.viewer-details__title-row > h2 {
+    flex: 1 1 120px;
+}
+
+.viewer-details__title-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.viewer-details-edit-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 30px;
+    padding: 5px 8px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 700 0.68rem "Manrope", "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+}
+
+.viewer-details-edit-toggle:hover,
+.viewer-details-edit-toggle.is-active {
+    border-color: rgba(32, 111, 207, 0.45);
+    background: rgba(32, 111, 207, 0.08);
+    color: #155da8;
+}
+
+.viewer-details-edit-toggle i {
+    font-size: 0.68rem;
+}
+
+.viewer-details__header .viewer-details-edit-toggle span {
+    display: inline;
+    min-height: 0;
+    margin: 0;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    letter-spacing: 0;
+    line-height: 1;
+    text-transform: none;
+}
+
+.viewer-xml-editor {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 10px;
+    border: 1px solid rgba(32, 111, 207, 0.22);
+    border-radius: 8px;
+    background: #f4f8fc;
+}
+
+.viewer-xml-editor__status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--mockup-ink);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.viewer-xml-editor__status i {
+    width: 14px;
+    color: #206fcf;
+    text-align: center;
+}
+
+.viewer-xml-editor > p {
+    margin: 0;
+    color: #5d6d80;
+    font-size: 0.66rem;
+    line-height: 1.4;
+}
+
+.viewer-xml-editor__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.viewer-xml-editor__actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    min-height: 31px;
+    padding: 5px 7px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 700 0.65rem "Manrope", "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+}
+
+.viewer-xml-editor__actions button:hover:not(:disabled) {
+    border-color: rgba(32, 111, 207, 0.44);
+    color: #155da8;
+}
+
+.viewer-xml-editor__actions button:disabled {
+    cursor: default;
+    opacity: 0.42;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__download {
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__duplicate {
+    grid-column: 1 / -1;
+    border-color: rgba(32, 111, 207, 0.38);
+    background: #f5f9ff;
+    color: #155da8;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__duplicate:hover:not(:disabled) {
+    border-color: #206fcf;
+    background: #edf5ff;
+    color: #104f91;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__delete {
+    grid-column: 1 / -1;
+    border-color: rgba(181, 55, 45, 0.42);
+    background: #fff7f6;
+    color: #a4362e;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__delete:hover:not(:disabled) {
+    border-color: #a4362e;
+    background: #fff0ee;
+    color: #8e2e27;
+}
+
+.viewer-delete-confirmation {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 9px;
+    margin: 0 0 10px;
+    padding: 10px;
+    border: 1px solid rgba(181, 55, 45, 0.32);
+    border-radius: 8px;
+    background: #fff7f6;
+    color: #7f302a;
+}
+
+.viewer-delete-confirmation > i {
+    margin-top: 2px;
+    color: #b5372d;
+    text-align: center;
+}
+
+.viewer-delete-confirmation strong {
+    display: block;
+    color: #7f302a;
+    font-size: 0.74rem;
+}
+
+.viewer-delete-confirmation p {
+    margin: 4px 0 0;
+    color: #704944;
+    font-size: 0.66rem;
+    line-height: 1.4;
+}
+
+.viewer-delete-confirmation__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.viewer-delete-confirmation__actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 30px;
+    padding: 5px 9px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 700 0.64rem "Manrope", "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+}
+
+.viewer-delete-confirmation__actions button.is-danger {
+    border-color: #a4362e;
+    background: #a4362e;
+    color: #ffffff;
+}
+
+.viewer-delete-confirmation__actions button.is-danger:hover {
+    border-color: #842921;
+    background: #842921;
+}
+
+.viewer-xml-editor__feedback {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 0 0 9px;
+    padding: 8px 9px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #f8fbfe;
+    color: #526276;
+    font-size: 0.68rem;
+    line-height: 1.4;
+}
+
+.viewer-xml-editor__feedback-content {
+    display: grid;
+    flex: 1 1 auto;
+    gap: 7px;
+    min-width: 0;
+}
+
+.viewer-xml-editor__feedback-content > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 30px;
+    padding: 5px 8px;
+    border: 1px solid rgba(122, 81, 0, 0.34);
+    border-radius: 6px;
+    background: #ffffff;
+    color: #684600;
+    font: 750 0.64rem "Manrope", "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+}
+
+.viewer-xml-editor__feedback-content > button:hover:not(:disabled) {
+    border-color: #8f6200;
+    background: #fffdf7;
+}
+
+.viewer-xml-editor__feedback-content > .viewer-xml-editor__feedback-action--flip {
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+.viewer-xml-editor__feedback-content > .viewer-xml-editor__feedback-action--flip:hover:not(:disabled) {
+    border-color: #173d68;
+    background: #173d68;
+    color: #ffffff;
+}
+
+.viewer-xml-editor__feedback-content > button:disabled {
+    cursor: default;
+    opacity: 0.52;
+}
+
+.viewer-xml-editor__feedback--success {
+    border-color: rgba(24, 132, 88, 0.26);
+    background: #f2faf6;
+    color: #176a4b;
+}
+
+.viewer-xml-editor__feedback--warning {
+    border-color: rgba(181, 119, 0, 0.32);
+    background: #fff9ec;
+    color: #7a5100;
+}
+
+.viewer-xml-editor__feedback--error {
+    border-color: rgba(198, 67, 57, 0.26);
+    background: #fff6f5;
+    color: #a53b34;
 }
 
 .viewer-details__grid {
@@ -4045,6 +4347,120 @@ h3,
     background: #f8fbfe;
 }
 
+.viewer-details__grid > .viewer-details__editable-row {
+    align-items: center;
+    background: #ffffff;
+}
+
+.viewer-details__grid > .viewer-details__editable-row.is-edited {
+    border-color: rgba(24, 132, 88, 0.34);
+    box-shadow: inset 3px 0 0 #188458;
+}
+
+.viewer-details__editable-row dt small,
+.viewer-details__edited-mark {
+    display: block;
+    margin-top: 3px;
+    color: #7a8898;
+    font-size: 0.56rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.25;
+    text-transform: none;
+}
+
+.viewer-details__editable-row dt .viewer-details__edited-mark {
+    color: #188458;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.viewer-details__original-value {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    color: #65758a;
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.3;
+    text-transform: none;
+}
+
+.viewer-details__editable-row select,
+.viewer-details__editable-row input[type="text"],
+.viewer-details__editable-row input[type="number"],
+.viewer-details__editable-row input[type="date"],
+.viewer-details__editable-row input[type="datetime-local"] {
+    width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    padding: 6px 8px;
+    border: 1px solid #c6d4e2;
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 650 0.74rem "Manrope", "Segoe UI", Arial, sans-serif;
+}
+
+.viewer-details__editable-row select:focus,
+.viewer-details__editable-row input:focus {
+    border-color: #206fcf;
+    outline: 2px solid rgba(32, 111, 207, 0.14);
+    outline-offset: 1px;
+}
+
+.viewer-details__editable-row input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.viewer-details__editable-row input[type="number"]::-webkit-inner-spin-button,
+.viewer-details__editable-row input[type="number"]::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.viewer-details__editable-row select:disabled,
+.viewer-details__editable-row input:disabled {
+    background: #eef3f7;
+    color: #7a8898;
+}
+
+.viewer-editor-nullable {
+    display: grid;
+    gap: 5px;
+}
+
+.viewer-editor-nullable > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #65758a;
+    font-size: 0.62rem;
+    line-height: 1.2;
+}
+
+.viewer-editor-nullable > label input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--mockup-navy);
+}
+
+.viewer-editor-readonly {
+    display: grid;
+    gap: 3px;
+    color: var(--mockup-ink);
+}
+
+.viewer-editor-readonly small {
+    color: #7a8898;
+    font-size: 0.58rem;
+    line-height: 1.3;
+}
+
 .viewer-details__grid dt {
     margin: 0;
     color: #65758a;
@@ -4056,10 +4472,51 @@ h3,
     text-transform: uppercase;
 }
 
+.viewer-details__grid dt > small {
+    display: block;
+    margin-top: 3px;
+    color: #7a8898;
+    font-size: 0.56rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.25;
+    text-transform: none;
+}
+
+.viewer-details__grid--multi > div {
+    grid-template-columns: minmax(82px, 0.42fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
 .viewer-details__grid dd {
     margin: 0;
     color: var(--mockup-ink);
     overflow-wrap: anywhere;
+}
+
+.viewer-details__grid dd > small,
+.viewer-details__grid dd.is-varied small {
+    display: block;
+    margin-top: 3px;
+    color: #718095;
+    font-size: 0.6rem;
+    line-height: 1.35;
+}
+
+.viewer-details__grid dd.is-varied,
+.viewer-editor-readonly.is-varied {
+    color: #6b4b00;
+    font-style: italic;
+}
+
+.viewer-details__editable-row--bulk dt > small:last-child {
+    margin-top: 5px;
+    color: #65758a;
+    font-weight: 550;
+}
+
+.viewer-xml-editor--bulk .viewer-xml-editor__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .viewer-level-grid {
@@ -4124,6 +4581,132 @@ h3,
 
 .viewer-coordinate-list strong {
     color: var(--mockup-ink);
+}
+
+.viewer-geometry-editor {
+    min-width: 0;
+}
+
+.viewer-geometry-editor > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    cursor: pointer;
+    color: var(--mockup-ink);
+    font-size: 0.72rem;
+    font-weight: 800;
+    list-style-position: outside;
+}
+
+.viewer-geometry-editor > summary span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.viewer-geometry-editor > summary strong {
+    color: #65758a;
+    font-size: 0.61rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.viewer-geometry-editor__rows {
+    display: grid;
+    max-height: 360px;
+    margin-top: 7px;
+    overflow: auto;
+    border-top: 1px solid var(--mockup-line);
+}
+
+.viewer-geometry-editor__row {
+    min-width: 0;
+    margin: 0;
+    padding: 10px 0 11px;
+    border: 0;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-geometry-editor__row:last-child {
+    border-bottom: 0;
+}
+
+.viewer-geometry-editor__row legend {
+    padding: 0;
+    color: #65758a;
+    font-size: 0.59rem;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.viewer-geometry-editor__coordinates {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 6px;
+}
+
+.viewer-geometry-editor__coordinate {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    color: #65758a;
+    font-size: 0.59rem;
+    font-weight: 800;
+}
+
+.viewer-geometry-editor__coordinate input {
+    width: 100%;
+    min-width: 0;
+    min-height: 32px;
+    padding: 5px 6px;
+    border: 1px solid #c6d4e2;
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 650 0.66rem "Manrope", "Segoe UI", Arial, sans-serif;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.viewer-geometry-editor__coordinate input::-webkit-inner-spin-button,
+.viewer-geometry-editor__coordinate input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.viewer-geometry-editor__coordinate input:focus {
+    border-color: #206fcf;
+    outline: 2px solid rgba(32, 111, 207, 0.14);
+    outline-offset: 1px;
+}
+
+.viewer-geometry-editor__coordinate input:disabled {
+    background: #eef3f7;
+    color: #7a8898;
+}
+
+.viewer-geometry-editor__coordinate.is-edited input {
+    border-color: rgba(24, 132, 88, 0.58);
+    box-shadow: inset 2px 0 0 #188458;
+}
+
+.viewer-geometry-editor__coordinate small {
+    overflow-wrap: anywhere;
+    color: #65758a;
+    font-size: 0.52rem;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+@media (max-width: 560px) {
+    .viewer-geometry-editor__coordinates {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .suggestion-widget {
