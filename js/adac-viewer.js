@@ -1061,6 +1061,12 @@
     schemaValidationResults: [],
     validationErrorResults: [],
     repairPreview: null,
+    dxfReferences: [],
+    dxfFitReferenceId: "",
+    dxfSnapSelection: null,
+    dxfSnapHover: null,
+    dxfSnapHoverFrame: 0,
+    dxfSnapPointer: null,
     assetKinds: new Set(),
     locationCheck: {
       status: "idle",
@@ -1106,6 +1112,7 @@
 
   const els = {
     fileInput: document.getElementById("adac-file-input"),
+    dxfInput: document.getElementById("dxf-reference-input"),
     canvas: document.getElementById("adac-map-canvas"),
     mapModeButtons: root.querySelectorAll("[data-map-mode]"),
     statusText: root.querySelector("[data-role='status-text']"),
@@ -1128,6 +1135,9 @@
     termsModal: document.querySelector("[data-role='terms-modal']"),
     visibleLayerCount: root.querySelector("[data-role='visible-layer-count']"),
     layerList: root.querySelector("[data-role='layer-list']"),
+    dxfLayerSection: root.querySelector("[data-role='dxf-layer-section']"),
+    dxfLayerList: root.querySelector("[data-role='dxf-layer-list']"),
+    dxfReferenceStatus: root.querySelector("[data-role='dxf-reference-status']"),
     overlayList: root.querySelector("[data-role='overlay-list']"),
     overlayStatus: root.querySelector("[data-role='overlay-status']"),
     checkCount: root.querySelector("[data-role='check-count']"),
@@ -1149,6 +1159,7 @@
     dropzoneMessage: root.querySelector("[data-role='dropzone-message']"),
     dropTarget: root,
     uploadDropTarget: root.querySelector("[data-role='upload-drop-target']"),
+    dxfUploadDropTarget: root.querySelector("[data-role='dxf-upload-drop-target']"),
     suggestionWidget: document.querySelector("[data-role='suggestion-widget']"),
     suggestionPanel: document.querySelector("[data-role='suggestion-panel']"),
     suggestionForm: document.getElementById("suggestion-form"),
@@ -1156,9 +1167,13 @@
   };
 
   const ctx = els.canvas.getContext("2d");
+  let dxfWorker = null;
+  let dxfRequestSequence = 0;
+  const dxfWorkerRequests = new Map();
 
   function init() {
     els.fileInput.addEventListener("change", handleFileInput);
+    if (els.dxfInput) els.dxfInput.addEventListener("change", handleDxfFileInput);
     els.search.addEventListener("input", updateFilteredFeatures);
     if (els.layerFilter) els.layerFilter.addEventListener("change", () => {
       state.filters.layer = els.layerFilter.value;
@@ -1204,12 +1219,14 @@
         els.dropzone.classList.add("is-dragging");
         els.dropzone.setAttribute("aria-hidden", "false");
         els.uploadDropTarget?.classList.add("is-dragging");
+        els.dxfUploadDropTarget?.classList.add("is-dragging");
       };
       const hideDropzone = () => {
         dragDepth = 0;
         els.dropzone.classList.remove("is-dragging");
         els.dropzone.setAttribute("aria-hidden", "true");
         els.uploadDropTarget?.classList.remove("is-dragging");
+        els.dxfUploadDropTarget?.classList.remove("is-dragging");
       };
 
       els.dropTarget.addEventListener("dragenter", (event) => {
@@ -1239,15 +1256,19 @@
         event.stopPropagation();
         hideDropzone();
         const droppedFiles = Array.from(event.dataTransfer.files || []);
-        const files = droppedFiles.filter((file) => {
+        const xmlFiles = droppedFiles.filter((file) => {
           const name = String(file.name || "").toLowerCase();
           return name.endsWith(".xml") || /xml/.test(file.type || "");
         });
-        if (!files.length) {
-          setStatus("Drop one or more ADAC XML files to load them into the viewer.", true);
+        const dxfFiles = droppedFiles.filter((file) => String(file.name || "").toLowerCase().endsWith(".dxf"));
+        if (!xmlFiles.length && !dxfFiles.length) {
+          setStatus("Drop ADAC XML files or DXF reference drawings to load them into the viewer.", true);
           return;
         }
-        readXmlFiles(files);
+        Promise.all([
+          xmlFiles.length ? readXmlFiles(xmlFiles) : Promise.resolve(),
+          dxfFiles.length ? readDxfReferenceFiles(dxfFiles) : Promise.resolve(),
+        ]).catch(() => {});
       });
     }
 
@@ -1276,7 +1297,11 @@
 
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) {
-      runAction(actionButton.dataset.action);
+      if (["toggle-dxf-reference", "toggle-dxf-layer"].includes(actionButton.dataset.action)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      runAction(actionButton.dataset.action, actionButton);
       return;
     }
 
@@ -1348,6 +1373,11 @@
   }
 
   function handleChange(event) {
+    const dxfOpacity = event.target.closest("[data-dxf-opacity]");
+    if (dxfOpacity) {
+      setDxfReferenceOpacity(dxfOpacity.dataset.dxfOpacity, dxfOpacity.value);
+      return;
+    }
     const allDetailsToggle = event.target.closest("[data-role='all-details-toggle']");
     if (allDetailsToggle) {
       state.showAllDetails = allDetailsToggle.checked;
@@ -1415,7 +1445,7 @@
     state.projectDetailsOpen = projectDetails.open;
   }
 
-  function runAction(action) {
+  function runAction(action, control = null) {
     if (action === "fit") {
       fitMap();
     } else if (action === "toggle-multi-select") {
@@ -1498,6 +1528,16 @@
       recalculateRelatedXmlFields();
     } else if (action === "flip-gravity-asset-direction") {
       flipGravityAssetDirection();
+    } else if (action === "toggle-dxf-reference") {
+      toggleDxfReference(control?.dataset.dxfReferenceId);
+    } else if (action === "toggle-dxf-layer") {
+      toggleDxfLayer(control?.dataset.dxfReferenceId, control?.dataset.dxfLayerName);
+    } else if (action === "remove-dxf-reference") {
+      removeDxfReference(control?.dataset.dxfReferenceId);
+    } else if (action === "fit-dxf-reference") {
+      fitDxfReference(control?.dataset.dxfReferenceId);
+    } else if (action === "snap-geometry-to-dxf") {
+      beginDxfGeometrySnapSelection(control?.dataset.dxfSnapFeature, Number(control?.dataset.dxfSnapIndex));
     } else if (action === "toggle-suggestions") {
       toggleSuggestions();
     } else if (action === "close-suggestions") {
@@ -1519,6 +1559,10 @@
       return;
     }
     if (event.key === "Escape") {
+      if (state.dxfSnapSelection) {
+        cancelDxfGeometrySnapSelection();
+        return;
+      }
       closeTransientUi();
       if (isMeasurementActive()) finishMeasurement();
     }
@@ -2480,6 +2524,7 @@
   }
 
   function fitMap() {
+    state.dxfFitReferenceId = "";
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     drawMap();
@@ -2682,14 +2727,14 @@
   }
 
   function handleMapWheel(event) {
-    if (!state.filteredFeatures.length) return;
+    if (!getCurrentMapExtentFeatures().length) return;
     event.preventDefault();
     const zoomFactor = event.deltaY < 0 ? 1.16 : 1 / 1.16;
     zoomAtCanvasPoint(zoomFactor, getCanvasPoint(event));
   }
 
   function handleMapPointerDown(event) {
-    if (!state.filteredFeatures.length || event.button !== 0) return;
+    if (!getCurrentMapExtentFeatures().length || event.button !== 0) return;
     event.preventDefault();
     state.isPointerDown = true;
     state.hasDraggedMap = false;
@@ -2706,6 +2751,10 @@
 
   function handleMapPointerMove(event) {
     if (!state.isPointerDown) {
+      if (state.dxfSnapSelection) {
+        scheduleDxfSnapHover(getCanvasPoint(event));
+        return;
+      }
       if (isMeasurementActive() && state.measurement.points.length) {
         state.measurement.preview = getMeasurementPointFromCanvas(getCanvasPoint(event));
         drawMap();
@@ -2736,7 +2785,13 @@
   }
 
   function handleMapPointerUp(event) {
-    if (!state.isPointerDown) return;
+    if (!state.isPointerDown) {
+      if (event.type === "pointerleave" && state.dxfSnapHover) {
+        resetDxfSnapHoverState();
+        drawMap();
+      }
+      return;
+    }
     const wasDragging = state.hasDraggedMap;
     state.isPointerDown = false;
     state.isPanning = false;
@@ -2745,8 +2800,31 @@
     if (els.canvas.hasPointerCapture && els.canvas.hasPointerCapture(event.pointerId)) {
       els.canvas.releasePointerCapture(event.pointerId);
     }
+    if (event.type !== "pointerup") {
+      if (state.dxfSnapSelection) {
+        resetDxfSnapHoverState();
+        drawMap();
+      }
+      return;
+    }
     if (!wasDragging) {
       const canvasPoint = getCanvasPoint(event);
+      if (state.dxfSnapSelection) {
+        const target = findDxfGeometryAtCanvasPoint(canvasPoint);
+        if (target) applySelectedDxfGeometrySnap(target);
+        else {
+          resetDxfSnapHoverState();
+          const feature = state.features.find((item) => item.uid === state.dxfSnapSelection.featureUid);
+          state.editorFeedback = {
+            fileId: feature?.sourceFileId || "",
+            tone: "warning",
+            message: "No visible DXF geometry was found at that position. Click a DXF point or line, or press Esc to cancel.",
+          };
+          renderDetails();
+          drawMap();
+        }
+        return;
+      }
       if (isMeasurementActive()) {
         if (event.detail > 1) {
           finishMeasurement();
@@ -2825,7 +2903,7 @@
   }
 
   function getCurrentMapTransform() {
-    const features = state.filteredFeatures;
+    const features = getCurrentMapExtentFeatures();
     if (!features.length) return null;
     const width = els.canvas.clientWidth || els.canvas.width;
     const height = els.canvas.clientHeight || els.canvas.height;
@@ -2833,7 +2911,7 @@
   }
 
   function zoomAtCanvasPoint(factor, point) {
-    const features = state.filteredFeatures;
+    const features = getCurrentMapExtentFeatures();
     if (!features.length) return;
 
     const width = els.canvas.clientWidth || els.canvas.width;
@@ -2850,6 +2928,10 @@
     state.pan.x += point.x - projected.x;
     state.pan.y += point.y - projected.y;
     drawMap();
+  }
+
+  function getCurrentMapExtentFeatures() {
+    return getMapExtentFeatures(state.filteredFeatures);
   }
 
   function getCanvasCenter() {
@@ -2873,13 +2955,104 @@
     event.target.value = "";
   }
 
+  function handleDxfFileInput(event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length) readDxfReferenceFiles(files);
+    event.target.value = "";
+  }
+
   function readXmlFiles(files) {
     const fileCount = files.length;
     const fileLabel = fileCount === 1 ? files[0].name : `${fileCount} XML files`;
     setStatus(`Reading ${fileLabel}...`, false, true);
-    Promise.all(files.map(readFileAsText))
+    return Promise.all(files.map(readFileAsText))
       .then((items) => loadXmlFiles(items, { replace: false }))
-      .catch(() => setStatus("Could not read one of those files.", true));
+      .catch((error) => {
+        setStatus(error?.message || "Could not read one of those XML files.", true);
+        throw error;
+      });
+  }
+
+  function getDxfWorker() {
+    if (dxfWorker) return dxfWorker;
+    dxfWorker = new Worker("js/dxf-reference-worker.js?v=20260716a");
+    dxfWorker.addEventListener("message", (event) => {
+      const message = event.data || {};
+      const request = dxfWorkerRequests.get(message.requestId);
+      if (!request) return;
+      dxfWorkerRequests.delete(message.requestId);
+      if (message.type === "parsed") request.resolve(message.reference);
+      else request.reject(new Error(message.message || "The DXF could not be parsed."));
+    });
+    dxfWorker.addEventListener("error", (event) => {
+      const error = new Error(event.message || "The DXF parser worker stopped unexpectedly.");
+      dxfWorkerRequests.forEach((request) => request.reject(error));
+      dxfWorkerRequests.clear();
+      dxfWorker?.terminate();
+      dxfWorker = null;
+    });
+    return dxfWorker;
+  }
+
+  function parseDxfReference(text, fileName) {
+    const requestId = `dxf-${Date.now()}-${++dxfRequestSequence}`;
+    return new Promise((resolve, reject) => {
+      dxfWorkerRequests.set(requestId, { resolve, reject });
+      getDxfWorker().postMessage({ type: "parse", requestId, text, fileName });
+    });
+  }
+
+  async function readDxfReferenceFiles(files) {
+    const acceptedFiles = Array.from(files || []).filter((file) => String(file.name || "").toLowerCase().endsWith(".dxf"));
+    if (!acceptedFiles.length) {
+      setStatus("Choose one or more ASCII DXF reference drawings.", true);
+      return;
+    }
+    const oversized = acceptedFiles.find((file) => file.size > 50 * 1024 * 1024);
+    if (oversized) {
+      setStatus(`${oversized.name} is larger than the 50 MB browser reference limit. Export a smaller DXF or remove unnecessary CAD layers.`, true);
+      return;
+    }
+
+    const label = acceptedFiles.length === 1 ? acceptedFiles[0].name : `${acceptedFiles.length} DXF drawings`;
+    setStatus(`Loading DXF reference ${label}...`, false, true);
+    const results = await Promise.allSettled(acceptedFiles.map(async (file) => {
+      const text = await file.text();
+      const parsed = await parseDxfReference(text, file.name);
+      return createDxfReference(parsed);
+    }));
+    const loaded = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
+    const failures = results.filter((result) => result.status === "rejected");
+    if (loaded.length) {
+      state.dxfReferences.push(...loaded);
+      state.dxfFitReferenceId = state.features.length ? "" : loaded[loaded.length - 1].id;
+      updateDxfReferenceAlignment();
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+      renderAll();
+      centerViewerInViewport();
+    }
+    if (failures.length) {
+      const message = failures[0].reason?.message || "The DXF could not be parsed.";
+      setStatus(`${loaded.length ? `Loaded ${loaded.length} DXF reference${loaded.length === 1 ? "" : "s"}. ` : ""}${failures.length} drawing${failures.length === 1 ? "" : "s"} failed: ${message}`, true);
+      return;
+    }
+    const entityCount = loaded.reduce((total, reference) => total + reference.entities.length, 0);
+    setStatus(`Loaded ${loaded.length} DXF reference${loaded.length === 1 ? "" : "s"} with ${entityCount.toLocaleString("en-AU")} visible reference entities.`, false);
+  }
+
+  function createDxfReference(parsed) {
+    const id = `dxf-reference-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return {
+      ...parsed,
+      id,
+      visible: true,
+      opacity: 0.34,
+      expanded: false,
+      alignment: { status: "unverified", message: "Load XML to check coordinate alignment." },
+      layers: (parsed.layers || []).map((layer) => ({ ...layer, visible: layer.visible !== false })),
+      entities: (parsed.entities || []).map((entity, index) => ({ ...entity, uid: `${id}:${entity.id || index}` })),
+    };
   }
 
   function readFileAsText(file) {
@@ -2953,7 +3126,7 @@
 
     if (!parsedFiles.length) {
       if (replace || !state.features.length) {
-        clearLoadedFiles(false);
+        clearLoadedFiles(false, { keepDxf: true });
       }
       state.validationErrorResults = failedValidationResults;
       const message = state.validationErrorResults.length
@@ -2987,7 +3160,7 @@
   function applyParsedFilesToState(parsedFiles, options = {}) {
     const replace = Boolean(options.replace);
     if (replace) {
-      clearLoadedFiles(false);
+      clearLoadedFiles(false, { keepDxf: true });
     }
     state.validationErrorResults = options.validationErrorResults || [];
     if (options.repairPreview) state.repairPreview = options.repairPreview;
@@ -3055,6 +3228,10 @@
     state.selectedId = state.features[0] ? state.features[0].uid : null;
     state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
     state.coordinateZone = inferCoordinateZoneFromDoc(parsedFiles[0].doc) || inferCoordinateZoneFromFeatures(state.features) || 56;
+    state.dxfFitReferenceId = "";
+    state.dxfSnapSelection = null;
+    resetDxfSnapHoverState();
+    updateDxfReferenceAlignment();
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     state.mapMode = "grid";
@@ -3931,7 +4108,8 @@
     return `${count} XML files failed ADAC schema validation and were not loaded.`;
   }
 
-  function clearLoadedFiles(shouldRender = true) {
+  function clearLoadedFiles(shouldRender = true, options = {}) {
+    const keepDxf = Boolean(options.keepDxf);
     state.features = [];
     state.filteredFeatures = [];
     state.layers = new Map();
@@ -3947,6 +4125,10 @@
     state.schemaValidationResults = [];
     state.validationErrorResults = [];
     state.repairPreview = null;
+    if (!keepDxf) state.dxfReferences = [];
+    state.dxfFitReferenceId = keepDxf && state.dxfReferences.length ? state.dxfReferences[state.dxfReferences.length - 1].id : "";
+    state.dxfSnapSelection = null;
+    resetDxfSnapHoverState();
     state.assetKinds = new Set();
     state.fileName = "";
     state.projectDetailsOpen = false;
@@ -3967,7 +4149,9 @@
     resetOverlayQueries();
     clearAssetFilters(false);
     if (els.fileInput) els.fileInput.value = "";
-    setStatus("Cleared loaded XML files.", false);
+    if (els.dxfInput && !keepDxf) els.dxfInput.value = "";
+    updateDxfReferenceAlignment();
+    setStatus(keepDxf ? "Cleared loaded XML files. DXF references remain available." : "Cleared loaded XML and DXF files.", false);
     if (shouldRender) {
       renderFilterOptions();
       renderAll();
@@ -5087,6 +5271,7 @@
     updateMultiSelectButton();
     renderMetrics();
     renderLayers();
+    renderDxfReferences();
     renderLabelLayers();
     renderOverlays();
     renderChecks();
@@ -5097,7 +5282,11 @@
   }
 
   function renderMetrics() {
-    const visibleLayers = Array.from(state.layers.values()).filter((layer) => layer.visible).length;
+    const visibleXmlLayers = Array.from(state.layers.values()).filter((layer) => layer.visible).length;
+    const visibleDxfLayers = state.dxfReferences.reduce((total, reference) => (
+      total + (reference.visible ? reference.layers.filter((layer) => layer.visible).length : 0)
+    ), 0);
+    const visibleLayers = visibleXmlLayers + visibleDxfLayers;
 
     if (els.fileName) els.fileName.textContent = state.fileName || "No file loaded";
     if (els.exportReportButton) els.exportReportButton.hidden = !state.loadedFiles.length;
@@ -5105,7 +5294,7 @@
     if (state.reportBundles.length < 2) closeReportExportMenu();
     if (els.visibleLayerCount) els.visibleLayerCount.textContent = `${visibleLayers} visible`;
     updateLabelPanelState();
-    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0 || shouldShowValidationPanel());
+    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0 || state.dxfReferences.length > 0 || shouldShowValidationPanel());
   }
 
   function shouldShowValidationPanel() {
@@ -6108,6 +6297,177 @@
       group.appendChild(children);
       els.layerList.appendChild(group);
     });
+  }
+
+  function renderDxfReferences() {
+    if (!els.dxfLayerSection || !els.dxfLayerList) return;
+    els.dxfLayerSection.hidden = state.dxfReferences.length === 0;
+    els.dxfLayerList.innerHTML = "";
+    const visibleCount = state.dxfReferences.filter((reference) => reference.visible).length;
+    if (els.dxfReferenceStatus) {
+      els.dxfReferenceStatus.textContent = state.dxfReferences.length
+        ? `${visibleCount}/${state.dxfReferences.length} shown`
+        : "No drawings";
+    }
+
+    state.dxfReferences.forEach((reference) => {
+      const group = document.createElement("details");
+      group.className = "viewer-dxf-group";
+      group.open = Boolean(reference.expanded);
+      group.addEventListener("toggle", () => { reference.expanded = group.open; });
+      const alignment = reference.alignment || { status: "unverified", message: "Alignment not checked." };
+      const unsupportedCount = (reference.unsupported || []).reduce((total, item) => total + item.count, 0);
+      group.innerHTML = `
+        <summary class="viewer-dxf-group__summary">
+          <span class="viewer-dxf-group__icon"><i class="fa-solid fa-compass-drafting" aria-hidden="true"></i></span>
+          <span class="viewer-dxf-group__title">
+            <strong>${escapeHtml(reference.name)}</strong>
+            <small>${reference.entities.length.toLocaleString("en-AU")} entities · ${reference.layers.length} layers</small>
+          </span>
+          <button type="button" class="viewer-overlay-section__visibility" data-action="toggle-dxf-reference" data-dxf-reference-id="${escapeHtml(reference.id)}" aria-label="${reference.visible ? "Hide" : "Show"} ${escapeHtml(reference.name)}">
+            <i class="fa-solid ${reference.visible ? "fa-eye" : "fa-eye-slash"}" aria-hidden="true"></i>
+          </button>
+        </summary>
+        <div class="viewer-dxf-group__body">
+          <div class="viewer-dxf-status viewer-dxf-status--${escapeHtml(alignment.status)}">
+            <i class="fa-solid ${alignment.status === "aligned" ? "fa-circle-check" : alignment.status === "warning" ? "fa-triangle-exclamation" : "fa-circle-info"}" aria-hidden="true"></i>
+            <span>${escapeHtml(alignment.message)}</span>
+          </div>
+          <dl class="viewer-dxf-meta">
+            <div><dt>Units</dt><dd>${escapeHtml(reference.unitsLabel || "Unknown")}</dd></div>
+            <div><dt>Version</dt><dd>${escapeHtml(reference.version || "Not stated")}</dd></div>
+            ${reference.approximateEntityCount ? `<div><dt>Approximated</dt><dd>${reference.approximateEntityCount}</dd></div>` : ""}
+            ${unsupportedCount ? `<div><dt>Unsupported</dt><dd>${unsupportedCount}</dd></div>` : ""}
+          </dl>
+          <div class="viewer-dxf-controls">
+            <label>
+              <span>Opacity</span>
+              <input type="range" min="0.08" max="0.8" step="0.02" value="${reference.opacity}" data-dxf-opacity="${escapeHtml(reference.id)}" />
+            </label>
+          </div>
+          <div class="viewer-dxf-actions">
+            <button type="button" class="viewer-icon-text-button" data-action="fit-dxf-reference" data-dxf-reference-id="${escapeHtml(reference.id)}"><i class="fa-solid fa-expand" aria-hidden="true"></i><span>Fit drawing</span></button>
+            <button type="button" class="viewer-icon-text-button viewer-icon-text-button--danger" data-action="remove-dxf-reference" data-dxf-reference-id="${escapeHtml(reference.id)}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button>
+          </div>
+          <div class="viewer-dxf-layers" aria-label="Layers in ${escapeHtml(reference.name)}">
+            ${reference.layers.map((layer) => `
+              <div class="viewer-dxf-layer ${reference.visible && layer.visible ? "" : "is-muted"}">
+                <span class="viewer-layer__swatch" style="background:${escapeHtml(layer.color || "#718096")}"></span>
+                <span class="viewer-dxf-layer__name">${escapeHtml(layer.name)}</span>
+                <small>${layer.entityCount.toLocaleString("en-AU")}</small>
+                <button type="button" class="viewer-overlay__visibility" data-action="toggle-dxf-layer" data-dxf-reference-id="${escapeHtml(reference.id)}" data-dxf-layer-name="${escapeHtml(layer.name)}" aria-label="${layer.visible ? "Hide" : "Show"} ${escapeHtml(layer.name)}"><i class="fa-solid ${layer.visible ? "fa-eye" : "fa-eye-slash"}" aria-hidden="true"></i></button>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+      els.dxfLayerList.appendChild(group);
+    });
+  }
+
+  function getDxfReference(referenceId) {
+    return state.dxfReferences.find((reference) => reference.id === referenceId) || null;
+  }
+
+  function toggleDxfReference(referenceId) {
+    const reference = getDxfReference(referenceId);
+    if (!reference) return;
+    reference.visible = !reference.visible;
+    syncDxfSnapSelectionAvailability();
+    renderDxfReferences();
+    renderMetrics();
+    renderChecks();
+    drawMap();
+  }
+
+  function toggleDxfLayer(referenceId, layerName) {
+    const reference = getDxfReference(referenceId);
+    const layer = reference?.layers.find((item) => item.name === layerName);
+    if (!layer) return;
+    layer.visible = !layer.visible;
+    syncDxfSnapSelectionAvailability();
+    renderDxfReferences();
+    renderMetrics();
+    drawMap();
+  }
+
+  function setDxfReferenceOpacity(referenceId, value) {
+    const reference = getDxfReference(referenceId);
+    if (!reference) return;
+    reference.opacity = clamp(Number(value) || 0.34, 0.08, 0.8);
+    drawMap();
+  }
+
+  function removeDxfReference(referenceId) {
+    const reference = getDxfReference(referenceId);
+    if (!reference) return;
+    state.dxfReferences = state.dxfReferences.filter((item) => item.id !== referenceId);
+    if (state.dxfFitReferenceId === referenceId) state.dxfFitReferenceId = "";
+    syncDxfSnapSelectionAvailability();
+    updateDxfReferenceAlignment();
+    renderAll();
+    setStatus(`Removed ${reference.name}. The source DXF was not changed.`, false);
+  }
+
+  function syncDxfSnapSelectionAvailability() {
+    resetDxfSnapHoverState();
+    const hasVisibleGeometry = state.dxfReferences.some((reference) => (
+      reference.visible && reference.layers.some((layer) => layer.visible)
+    ));
+    if (!hasVisibleGeometry) state.dxfSnapSelection = null;
+    renderDetails();
+  }
+
+  function fitDxfReference(referenceId) {
+    if (!getDxfReference(referenceId)) return;
+    state.dxfFitReferenceId = referenceId;
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    drawMap();
+  }
+
+  function updateDxfReferenceAlignment() {
+    const xmlBounds = getFeatureBounds(state.features);
+    state.dxfReferences.forEach((reference) => {
+      if (!xmlBounds || !reference.bounds) {
+        reference.alignment = { status: "unverified", message: state.features.length ? "Drawing bounds could not be compared with the XML." : "Load XML to check coordinate alignment." };
+        return;
+      }
+      if (!["Metres", "Unitless"].includes(reference.unitsLabel)) {
+        reference.alignment = { status: "warning", message: `DXF units are ${reference.unitsLabel || "unknown"}. No automatic scaling has been applied.` };
+        return;
+      }
+      const xmlSpan = Math.hypot(xmlBounds.maxX - xmlBounds.minX, xmlBounds.maxY - xmlBounds.minY);
+      const dxfSpan = Math.hypot(reference.bounds.maxX - reference.bounds.minX, reference.bounds.maxY - reference.bounds.minY);
+      const allowance = Math.max(5, xmlSpan * 0.05, dxfSpan * 0.01);
+      const distance = getBoundsDistance(xmlBounds, reference.bounds);
+      reference.alignment = distance <= allowance
+        ? { status: "aligned", message: "DXF and XML extents overlap in the current coordinate space." }
+        : { status: "warning", message: `DXF is approximately ${formatNumber(distance, 1)} m from the XML extent. Check coordinates and units before snapping.` };
+    });
+  }
+
+  function getFeatureBounds(features) {
+    let bounds = null;
+    (features || []).forEach((feature) => {
+      (feature.points || []).forEach((point) => {
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+        if (!bounds) bounds = { minX: point.x, minY: point.y, maxX: point.x, maxY: point.y };
+        else {
+          bounds.minX = Math.min(bounds.minX, point.x);
+          bounds.minY = Math.min(bounds.minY, point.y);
+          bounds.maxX = Math.max(bounds.maxX, point.x);
+          bounds.maxY = Math.max(bounds.maxY, point.y);
+        }
+      });
+    });
+    return bounds;
+  }
+
+  function getBoundsDistance(first, second) {
+    const dx = Math.max(first.minX - second.maxX, second.minX - first.maxX, 0);
+    const dy = Math.max(first.minY - second.maxY, second.minY - first.maxY, 0);
+    return Math.hypot(dx, dy);
   }
 
   function renderLabelLayers() {
@@ -8844,6 +9204,7 @@
     state.labelObstacleCache = null;
     state.projectedFeatureCache = null;
     state.drawOrderCache = null;
+    updateDxfReferenceAlignment();
     updateFilteredFeatures();
   }
 
@@ -9171,10 +9532,21 @@
           </label>
         `;
       }).join("");
+      const canSnap = group.elements.x && group.elements.y && state.dxfReferences.some((reference) => (
+        reference.visible
+        && reference.layers.some((layer) => layer.visible && layer.entityCount > 0)
+      ));
+      const snapActive = state.dxfSnapSelection?.featureUid === feature.uid && state.dxfSnapSelection?.pointIndex === index;
       return `
         <fieldset class="viewer-geometry-editor__row">
           <legend>${escapeHtml(coordinateLabel)} ${index + 1}</legend>
           <div class="viewer-geometry-editor__coordinates">${controls}</div>
+          ${canSnap ? `
+            <button type="button" class="viewer-geometry-editor__snap ${snapActive ? "is-active" : ""}" data-action="snap-geometry-to-dxf" data-dxf-snap-feature="${escapeHtml(feature.uid)}" data-dxf-snap-index="${index}" ${state.editorBusy ? "disabled" : ""}>
+              <i class="fa-solid ${snapActive ? "fa-xmark" : "fa-crosshairs"}" aria-hidden="true"></i>
+              <span>${snapActive ? "Cancel DXF geometry choice" : "Choose DXF geometry to snap to"}</span>
+            </button>
+          ` : ""}
         </fieldset>
       `;
     }).join("");
@@ -9192,6 +9564,235 @@
         </dd>
       </div>
     `;
+  }
+
+  function beginDxfGeometrySnapSelection(featureUid, pointIndex) {
+    const feature = state.features.find((item) => item.uid === featureUid);
+    const hasVisibleDxfGeometry = state.dxfReferences.some((reference) => (
+      reference.visible && reference.layers.some((layer) => layer.visible)
+    ));
+    if (!feature?.points?.[pointIndex] || !hasVisibleDxfGeometry || state.editorBusy) return;
+    if (state.dxfSnapSelection?.featureUid === featureUid && state.dxfSnapSelection?.pointIndex === pointIndex) {
+      cancelDxfGeometrySnapSelection();
+      return;
+    }
+    closeTransientUi();
+    state.measurement.mode = "off";
+    state.measurement.preview = null;
+    resetDxfSnapHoverState();
+    state.dxfSnapSelection = { featureUid, pointIndex, pending: false };
+    state.selectedId = featureUid;
+    state.selectedIds = new Set([featureUid]);
+    state.editorFeedback = {
+      fileId: feature.sourceFileId,
+      tone: "info",
+      message: `Choose the visible DXF point or line for ${feature.geometryKind === "Point" ? "this point" : `vertex ${pointIndex + 1}`} on the map. Drag to pan or press Esc to cancel.`,
+    };
+    renderDetails();
+    drawMap();
+    setStatus("DXF snap selection active. Click the specific DXF geometry to use.", false);
+  }
+
+  function cancelDxfGeometrySnapSelection(options = {}) {
+    const selection = state.dxfSnapSelection;
+    state.dxfSnapSelection = null;
+    resetDxfSnapHoverState();
+    if (selection && !options.silent) {
+      const feature = state.features.find((item) => item.uid === selection.featureUid);
+      state.editorFeedback = { fileId: feature?.sourceFileId || "", tone: "info", message: "DXF geometry choice cancelled. No coordinates were changed." };
+      setStatus("DXF geometry choice cancelled.", false);
+    }
+    renderDetails();
+    drawMap();
+  }
+
+  function getDxfSnapTargetKey(target) {
+    if (!target) return "";
+    return `${target.reference?.id || ""}:${target.entityUid || ""}:${target.segmentIndex ?? "point"}`;
+  }
+
+  function scheduleDxfSnapHover(canvasPoint) {
+    if (!state.dxfSnapSelection || state.dxfSnapSelection.pending) return;
+    state.dxfSnapPointer = canvasPoint;
+    if (state.dxfSnapHoverFrame) return;
+    state.dxfSnapHoverFrame = window.requestAnimationFrame(() => {
+      state.dxfSnapHoverFrame = 0;
+      if (!state.dxfSnapSelection || state.dxfSnapSelection.pending || !state.dxfSnapPointer) return;
+      const hover = findDxfGeometryAtCanvasPoint(state.dxfSnapPointer);
+      if (getDxfSnapTargetKey(hover) !== getDxfSnapTargetKey(state.dxfSnapHover)) {
+        state.dxfSnapHover = hover;
+        drawMap();
+      }
+    });
+  }
+
+  function resetDxfSnapHoverState() {
+    if (state.dxfSnapHoverFrame) window.cancelAnimationFrame(state.dxfSnapHoverFrame);
+    state.dxfSnapHoverFrame = 0;
+    state.dxfSnapPointer = null;
+    state.dxfSnapHover = null;
+  }
+
+  function findDxfGeometryAtCanvasPoint(canvasPoint) {
+    const transform = getCurrentMapTransform();
+    if (!transform) return null;
+    const hitTolerance = 11;
+    let best = null;
+    state.dxfReferences.forEach((reference) => {
+      if (!reference.visible) return;
+      const visibleLayers = new Set(reference.layers.filter((layer) => layer.visible).map((layer) => layer.name));
+      reference.entities.forEach((entity) => {
+        if (!visibleLayers.has(entity.layer)) return;
+        const worldPoints = entity.points || [];
+        const screenPoints = worldPoints.map((point) => projectFeaturePoint(point, transform));
+        if (!screenPoints.length || screenPoints.some((point) => !point)) return;
+        if (entity.geometryKind === "Point" || entity.geometryKind === "Text") {
+          const distancePixels = distanceBetween(canvasPoint, screenPoints[0]);
+          if (distancePixels <= hitTolerance && (!best || distancePixels < best.distancePixels)) {
+            best = {
+              kind: "point",
+              point: worldPoints[0],
+              reference,
+              layer: entity.layer,
+              entityUid: entity.uid,
+              sourceType: entity.sourceType,
+              distancePixels,
+            };
+          }
+          return;
+        }
+        const segmentCount = screenPoints.length - 1 + ((entity.closed || entity.geometryKind === "Polygon") && screenPoints.length > 2 ? 1 : 0);
+        for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+          const nextIndex = (segmentIndex + 1) % screenPoints.length;
+          const distancePixels = distanceToSegment(canvasPoint, screenPoints[segmentIndex], screenPoints[nextIndex]);
+          if (distancePixels <= hitTolerance && (!best || distancePixels < best.distancePixels)) {
+            best = {
+              kind: "segment",
+              start: worldPoints[segmentIndex],
+              end: worldPoints[nextIndex],
+              reference,
+              layer: entity.layer,
+              entityUid: entity.uid,
+              sourceType: entity.sourceType,
+              segmentIndex,
+              distancePixels,
+            };
+          }
+        }
+      });
+    });
+    return best;
+  }
+
+  function getNearestPointOnSegment(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (!(lengthSquared > 0)) return { x: start.x, y: start.y, z: start.z ?? null };
+    const fraction = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
+    const startZ = Number(start.z);
+    const endZ = Number(end.z);
+    return {
+      x: start.x + dx * fraction,
+      y: start.y + dy * fraction,
+      z: Number.isFinite(startZ) && Number.isFinite(endZ) ? startZ + (endZ - startZ) * fraction : null,
+    };
+  }
+
+  function applySelectedDxfGeometrySnap(target) {
+    const selection = state.dxfSnapSelection;
+    if (!selection || selection.pending || !target) return;
+    selection.pending = true;
+    resetDxfSnapHoverState();
+    state.dxfSnapHover = target;
+    snapGeometryPointToSelectedDxf(selection.featureUid, selection.pointIndex, target);
+  }
+
+  async function snapGeometryPointToSelectedDxf(featureUid, pointIndex, target) {
+    if (state.editorBusy) return;
+    const feature = state.features.find((item) => item.uid === featureUid);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    const sourcePoint = feature?.points?.[pointIndex];
+    if (!feature || !record?.workingXmlText || !sourcePoint) {
+      state.dxfSnapSelection = null;
+      resetDxfSnapHoverState();
+      state.editorFeedback = { fileId: feature?.sourceFileId || "", tone: "error", message: "That XML coordinate is no longer available. No coordinates were changed." };
+      renderDetails();
+      drawMap();
+      return;
+    }
+    const snapPoint = target.kind === "point" ? target.point : getNearestPointOnSegment(sourcePoint, target.start, target.end);
+    const snapDistance = Math.hypot(snapPoint.x - sourcePoint.x, snapPoint.y - sourcePoint.y);
+    const targetLabel = `${target.reference.name} / ${target.layer}${target.sourceType ? ` ${target.sourceType}` : ""}`;
+    if (snapDistance < 1e-9) {
+      state.dxfSnapSelection = null;
+      resetDxfSnapHoverState();
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `This coordinate is already on the chosen DXF geometry (${targetLabel}).` };
+      renderDetails();
+      drawMap();
+      return;
+    }
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const assetNode = candidateDoc ? findXmlElementByLocator(candidateDoc, feature.xmlLocator) : null;
+    const group = getGeometryCoordinateGroups(assetNode)[pointIndex];
+    if (!group?.elements.x || !group?.elements.y) {
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "error", message: "The selected X/Y geometry coordinates could not be found in the working XML copy." };
+      state.dxfSnapSelection = null;
+      resetDxfSnapHoverState();
+      renderDetails();
+      drawMap();
+      return;
+    }
+    group.elements.x.textContent = formatDxfCoordinate(snapPoint.x);
+    group.elements.y.textContent = formatDxfCoordinate(snapPoint.y);
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `Checking the chosen ${target.sourceType || "DXF"} geometry against ${schemaLabel(record.schemaVersion)}...` };
+    renderDetails();
+    drawMap();
+
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validation.errors)[0]);
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "error", message: `The snap was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid geometry was kept."}` };
+      state.dxfSnapSelection = null;
+      resetDxfSnapHoverState();
+      renderDetails();
+      drawMap();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
+    const dependencyWarning = getGeometryCoordinateDependencyWarning(updatedFeature, "x", pointIndex);
+    const recalculation = getGeometryCoordinateRecalculationPlan(updatedFeature, "x", record.workingXmlText);
+    state.dxfSnapSelection = null;
+    resetDxfSnapHoverState();
+    state.editorFeedback = {
+      fileId: feature.sourceFileId,
+      tone: dependencyWarning ? "warning" : "success",
+      message: `Snapped X/Y ${formatNumber(snapDistance, 3)} m to the chosen DXF geometry (${targetLabel}). The original upload and DXF were not changed.${dependencyWarning ? ` ${dependencyWarning}` : ""}`,
+      recalculation: recalculation ? {
+        kind: "geometry",
+        sourceFileId: record.id,
+        xmlLocator: feature.xmlLocator,
+        changedFieldName: "x",
+        labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
+      } : null,
+    };
+    renderDetails();
+    drawMap();
+    setStatus(`Snapped ${feature.id || feature.type} to the chosen DXF geometry.`, false);
+  }
+
+  function formatDxfCoordinate(value) {
+    return Number(value).toFixed(6).replace(/\.?0+$/, "");
   }
 
   function renderOverlayDetails(selection) {
@@ -9222,8 +9823,9 @@
   function buildChecks() {
     if (!state.features.length) {
       if (state.validationErrorResults.length) {
-        return buildSchemaValidationFailureChecks();
+        return [...buildSchemaValidationFailureChecks(), ...buildDxfReferenceChecks()];
       }
+      if (state.dxfReferences.length) return buildDxfReferenceChecks();
       return [{ tone: "muted", icon: "fa-circle-info", text: "Waiting for an ADAC XML file." }];
     }
 
@@ -9265,6 +9867,7 @@
     }
     checks.push({ tone: "good", icon: "fa-check", text: `${state.features.length} mapped assets found.` });
     checks.push(getLocationCheckItem());
+    checks.push(...buildDxfReferenceChecks());
 
     if (missingIds) {
       checks.push({ tone: "warn", icon: "fa-triangle-exclamation", text: `${missingIds} assets may be missing IDs.` });
@@ -9279,6 +9882,23 @@
       checks.push({ tone: "good", icon: "fa-check", text: "Asset IDs and geometry passed the quick checks." });
     }
 
+    return checks;
+  }
+
+  function buildDxfReferenceChecks() {
+    if (!state.dxfReferences.length) return [];
+    const checks = [];
+    state.dxfReferences.forEach((reference) => {
+      const alignment = reference.alignment || { status: "unverified", message: "Alignment not checked." };
+      const tone = alignment.status === "aligned" ? "good" : alignment.status === "warning" ? "warn" : "muted";
+      const icon = alignment.status === "aligned" ? "fa-check" : alignment.status === "warning" ? "fa-triangle-exclamation" : "fa-circle-info";
+      checks.push({ tone, icon, text: `${reference.name}: ${alignment.message}` });
+      const unsupportedCount = (reference.unsupported || []).reduce((total, item) => total + item.count, 0);
+      if (unsupportedCount) {
+        const examples = reference.unsupported.slice(0, 3).map((item) => `${item.type} (${item.count})`).join(", ");
+        checks.push({ tone: "muted", icon: "fa-circle-info", text: `${reference.name}: ${unsupportedCount} unsupported DXF entit${unsupportedCount === 1 ? "y was" : "ies were"} omitted${examples ? `: ${examples}` : ""}.` });
+      }
+    });
     return checks;
   }
 
@@ -9377,13 +9997,14 @@
     state.projectedFeatureCache = null;
 
     const features = state.filteredFeatures;
-    if (!features.length) {
+    const extentFeatures = getMapExtentFeatures(features);
+    if (!extentFeatures.length) {
       drawGrid(width, height);
       renderMeasurementUi();
       return;
     }
 
-    const transform = getActiveMapTransform(features, width, height);
+    const transform = getActiveMapTransform(extentFeatures, width, height);
     state.projectedFeatureCache = new Map();
     if (state.mapMode === "grid" || !transform || transform.type !== "geo") {
       drawGrid(width, height);
@@ -9396,11 +10017,143 @@
       scheduleOverlayQueries(transform);
     }
 
+    drawDxfReferencesOnMap(transform);
     getFeaturesForMapDrawing(features).forEach((feature) => {
       drawAssetFeature(feature, transform);
     });
     drawMeasurementOverlay(transform);
     renderMeasurementUi();
+  }
+
+  function getMapExtentFeatures(xmlFeatures) {
+    if (state.dxfFitReferenceId) {
+      const reference = getDxfReference(state.dxfFitReferenceId);
+      if (reference?.bounds) return [getBoundsExtentFeature(reference.bounds, `fit-${reference.id}`)];
+    }
+    if (xmlFeatures.length) return xmlFeatures;
+    const bounds = getVisibleDxfBounds();
+    return bounds ? [getBoundsExtentFeature(bounds, "dxf-extent")] : [];
+  }
+
+  function getVisibleDxfBounds() {
+    let bounds = null;
+    state.dxfReferences.forEach((reference) => {
+      if (!reference.visible || !reference.bounds || !reference.layers.some((layer) => layer.visible)) return;
+      if (!bounds) bounds = { ...reference.bounds };
+      else {
+        bounds.minX = Math.min(bounds.minX, reference.bounds.minX);
+        bounds.minY = Math.min(bounds.minY, reference.bounds.minY);
+        bounds.maxX = Math.max(bounds.maxX, reference.bounds.maxX);
+        bounds.maxY = Math.max(bounds.maxY, reference.bounds.maxY);
+      }
+    });
+    return bounds;
+  }
+
+  function getBoundsExtentFeature(bounds, uid) {
+    return {
+      uid,
+      points: [
+        { x: bounds.minX, y: bounds.minY, z: null },
+        { x: bounds.maxX, y: bounds.maxY, z: null },
+      ],
+    };
+  }
+
+  function drawDxfReferencesOnMap(transform) {
+    if (!transform) return;
+    state.dxfReferences.forEach((reference) => {
+      if (!reference.visible) return;
+      const visibleLayers = new Set(reference.layers.filter((layer) => layer.visible).map((layer) => layer.name));
+      ctx.save();
+      ctx.globalAlpha = reference.opacity;
+      reference.entities.forEach((entity) => {
+        if (!visibleLayers.has(entity.layer)) return;
+        const points = (entity.points || []).map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+        if (!points.length) return;
+        const color = getMutedDxfColor(entity.color);
+        if (entity.geometryKind === "Point") {
+          const point = points[0];
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(point.x - 3, point.y);
+          ctx.lineTo(point.x + 3, point.y);
+          ctx.moveTo(point.x, point.y - 3);
+          ctx.lineTo(point.x, point.y + 3);
+          ctx.stroke();
+          return;
+        }
+        if (entity.geometryKind === "Text") {
+          ctx.fillStyle = color;
+          ctx.font = "500 9px Manrope, Segoe UI, Arial, sans-serif";
+          ctx.textBaseline = "bottom";
+          ctx.save();
+          ctx.translate(points[0].x, points[0].y);
+          ctx.rotate(-degreesToRadians(entity.rotation || 0));
+          ctx.fillText(String(entity.text || "").slice(0, 80), 2, -2);
+          ctx.restore();
+          return;
+        }
+        drawStyledScreenPath(points, {
+          closePath: entity.geometryKind === "Polygon" || entity.closed,
+          dash: getDxfLineDash(entity.lineType),
+          lineWidth: getDxfLineWidth(entity.lineweight),
+          stroke: color,
+        });
+      });
+      ctx.restore();
+    });
+    drawDxfSnapTargetHighlight(transform);
+  }
+
+  function drawDxfSnapTargetHighlight(transform) {
+    const target = state.dxfSnapHover;
+    if (!target) return;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    if (target.kind === "point") {
+      const point = projectFeaturePoint(target.point, transform);
+      if (point) {
+        ctx.fillStyle = "#ffd24a";
+        ctx.strokeStyle = "#0b1f3a";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      const points = [target.start, target.end].map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+      if (points.length === 2) {
+        drawStyledScreenPath(points, { lineWidth: 7, stroke: "rgba(11, 31, 58, 0.92)" });
+        drawStyledScreenPath(points, { lineWidth: 3.5, stroke: "#ffd24a" });
+      }
+    }
+    ctx.restore();
+  }
+
+  function getMutedDxfColor(value) {
+    const match = String(value || "").match(/^#([0-9a-f]{6})$/i);
+    if (!match) return "#718096";
+    const numeric = Number.parseInt(match[1], 16);
+    const components = [(numeric >> 16) & 255, (numeric >> 8) & 255, numeric & 255];
+    const muted = components.map((component) => Math.round(component * 0.48 + 120));
+    return `rgb(${muted[0]}, ${muted[1]}, ${muted[2]})`;
+  }
+
+  function getDxfLineDash(lineType) {
+    const value = String(lineType || "").toUpperCase();
+    if (/CENTER|PHANTOM/.test(value)) return [8, 3, 2, 3];
+    if (/DASH|HIDDEN/.test(value)) return [5, 3];
+    if (/DOT/.test(value)) return [1, 3];
+    return [];
+  }
+
+  function getDxfLineWidth(lineweight) {
+    const numeric = Number(lineweight);
+    if (!Number.isFinite(numeric) || numeric < 0) return 1;
+    return clamp(0.7 + numeric / 100, 0.7, 1.8);
   }
 
   function getFeaturesForMapDrawing(features) {
@@ -13927,14 +14680,14 @@
     if (isLoading) {
       els.dropzone.setAttribute("aria-hidden", "false");
       if (els.dropzoneIcon) els.dropzoneIcon.className = "fa-solid fa-spinner fa-spin";
-      if (els.dropzoneTitle) els.dropzoneTitle.textContent = "Loading ADAC XML";
-      if (els.dropzoneMessage) els.dropzoneMessage.textContent = message || "Reading and validating the uploaded XML files...";
+      if (els.dropzoneTitle) els.dropzoneTitle.textContent = /dxf/i.test(message) ? "Loading DXF reference" : "Loading ADAC XML";
+      if (els.dropzoneMessage) els.dropzoneMessage.textContent = message || "Reading the selected files...";
       return;
     }
 
     if (els.dropzoneIcon) els.dropzoneIcon.className = "fa-solid fa-file-arrow-up";
-    if (els.dropzoneTitle) els.dropzoneTitle.textContent = "Drop ADAC XML here";
-    if (els.dropzoneMessage) els.dropzoneMessage.textContent = "Drop one or more XML files to load them into the viewer.";
+    if (els.dropzoneTitle) els.dropzoneTitle.textContent = "Drop XML or DXF here";
+    if (els.dropzoneMessage) els.dropzoneMessage.textContent = "Load ADAC XML files or add DXF reference drawings.";
     if (!els.dropzone.classList.contains("is-dragging")) {
       els.dropzone.setAttribute("aria-hidden", "true");
     }
@@ -14242,6 +14995,7 @@
     els.canvas.dataset.panY = state.pan.y.toFixed(1);
     els.canvas.dataset.measurementMode = state.measurement.mode;
     els.canvas.classList.toggle("is-measuring", isMeasurementActive());
+    els.canvas.classList.toggle("is-dxf-snap-picking", Boolean(state.dxfSnapSelection));
   }
 
   function escapeHtml(value) {

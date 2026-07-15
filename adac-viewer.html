@@ -21,7 +21,7 @@
   <link rel="canonical" href="https://adact.com.au/adac-viewer.html" />
   <title>ADAC XML Viewer &amp; Editor | Free Online Tool | ADACT</title>
   <meta property="og:title" content="ADAC XML Viewer &amp; Editor | Free Online Tool | ADACT" />
-  <meta property="og:description" content="Validate, map and edit ADAC XML files in a browser-based workspace with schema checks, repair guidance, asset editing and downloadable working copies." />
+  <meta property="og:description" content="Validate, map and edit ADAC XML files with schema checks, DXF reference drawings, asset editing and downloadable working copies." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://adact.com.au/adac-viewer.html" />
   <meta property="og:image" content="https://adact.com.au/img/adact-search-preview.png" />
@@ -33,7 +33,7 @@
   <meta name="ICBM" content="-27.4698, 153.0251" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="ADAC XML Viewer &amp; Editor | Free Online Tool | ADACT" />
-  <meta name="twitter:description" content="Validate, map and edit ADAC XML files with schema checks, repair guidance, asset editing and downloadable working copies." />
+  <meta name="twitter:description" content="Validate, map and edit ADAC XML files with schema checks, DXF reference drawings, asset editing and downloadable working copies." />
   <meta name="twitter:image" content="https://adact.com.au/img/adact-search-preview.png" />
   <script type="application/ld+json">
   {
@@ -48,7 +48,7 @@
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web",
         "browserRequirements": "Requires a modern web browser with JavaScript enabled.",
-        "description": "A free browser-based ADAC XML viewer and editor for schema validation, repair guidance, mapped asset review, attribute and geometry editing, reports and downloadable working copies.",
+        "description": "A free browser-based ADAC XML viewer and editor for schema validation, DXF reference drawings, mapped asset review, attribute and geometry editing, reports and downloadable working copies.",
         "image": "https://adact.com.au/img/adact-search-preview.png",
         "publisher": {
           "@type": "Organization",
@@ -70,6 +70,7 @@
           "Review readable validation errors and suggested repairs",
           "Inspect mapped civil infrastructure assets and project details",
           "Toggle XML layers, labels, basemaps and reference overlays",
+          "Overlay DXF reference drawings and control their CAD layers",
           "Edit schema-controlled attributes and geometry in a working copy",
           "Bulk edit compatible attributes across selected assets",
           "Duplicate and delete assets with Undo and Redo",
@@ -104,7 +105,7 @@
             "name": "What is the ADACT ADAC XML Viewer?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The ADACT ADAC XML Viewer is a free browser-based workspace for validating, mapping, reviewing and editing ADAC XML files. It includes supported schema checks, repair guidance, asset inspection, working-copy editing, reports and XML downloads."
+              "text": "The ADACT ADAC XML Viewer is a free browser-based workspace for validating, mapping, reviewing and editing ADAC XML files. It includes supported schema checks, DXF reference drawings, asset inspection, working-copy editing, reports and XML downloads."
             }
           },
           {
@@ -146,7 +147,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260715k" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260716a" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -185,7 +186,7 @@
             <span class="adac-viewer__kicker">ADAC Viewer</span>
             <h1 class="adac-viewer__title">Free ADAC XML viewer and editor for civil infrastructure assets</h1>
             <p class="adac-viewer__intro">
-              Validate, map and review ADAC XML files, then edit a temporary working copy with schema-controlled attributes, geometry tools, bulk updates, asset duplication and downloadable outputs.
+              Validate, map and review ADAC XML files against optional DXF reference drawings, then edit a temporary working copy with schema-controlled attributes, geometry tools, bulk updates, asset duplication and downloadable outputs.
             </p>
           </div>
           <div class="adac-viewer__actions" aria-label="ADAC viewer actions">
@@ -196,6 +197,14 @@
               </label>
               <span class="viewer-upload-control__hint">or drag &amp; drop XMLs</span>
               <input type="file" id="adac-file-input" class="adac-viewer__file-input" accept=".xml,text/xml,application/xml" multiple />
+            </span>
+            <span class="viewer-upload-control viewer-reference-upload" data-role="dxf-upload-drop-target">
+              <label class="viewer-button" for="dxf-reference-input">
+                <i class="fa-solid fa-compass-drafting" aria-hidden="true"></i>
+                <span>Add DXF reference</span>
+              </label>
+              <span class="viewer-upload-control__hint">CAD underlay</span>
+              <input type="file" id="dxf-reference-input" class="adac-viewer__file-input" accept=".dxf,application/dxf,application/x-dxf,image/vnd.dxf" multiple />
             </span>
             <span class="viewer-report-export viewer-sample-loader">
               <button class="viewer-button" type="button" data-action="toggle-sample-menu" data-role="sample-menu-button" aria-haspopup="dialog" aria-expanded="false">
@@ -351,6 +360,13 @@
                       </div>
                       <div class="viewer-layer-list" data-role="layer-list"></div>
                     </section>
+                    <section class="viewer-layer-section" aria-label="DXF reference layers" data-role="dxf-layer-section" hidden>
+                      <div class="viewer-layer-section__heading">
+                        <span>DXF references</span>
+                        <strong data-role="dxf-reference-status">No drawings</strong>
+                      </div>
+                      <div class="viewer-dxf-list" data-role="dxf-layer-list"></div>
+                    </section>
                     <section class="viewer-layer-section" aria-label="Map overlay layers">
                       <div class="viewer-layer-section__heading">
                         <span>Map overlays</span>
@@ -430,8 +446,8 @@
                 <span class="viewer-map-dropzone__icon" aria-hidden="true">
                   <i class="fa-solid fa-file-arrow-up" data-role="dropzone-icon"></i>
                 </span>
-                <strong data-role="dropzone-title">Drop ADAC XML here</strong>
-                <span data-role="dropzone-message">Drop one or more XML files to load them into the viewer.</span>
+                <strong data-role="dropzone-title">Drop XML or DXF here</strong>
+                <span data-role="dropzone-message">Load ADAC XML files or add DXF reference drawings.</span>
               </div>
               <div class="viewer-measure-readout" data-role="measurement-readout" hidden>
                 <span data-role="measurement-mode">Measurement</span>
@@ -439,8 +455,8 @@
               </div>
               <div class="viewer-empty" data-role="empty-state">
                 <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
-                <strong>Load an ADAC XML file to begin</strong>
-                <span>The validator, map, layers and asset inspector will update automatically.</span>
+                <strong>Load ADAC XML or a DXF reference</strong>
+                <span>The map and layer manager will update automatically. XML remains the editable source.</span>
               </div>
               <div class="viewer-validation-panel" data-role="schema-validation-panel" hidden></div>
               <div class="viewer-repair-banner" data-role="repair-preview-banner" hidden></div>
@@ -459,7 +475,7 @@
             <span class="adac-viewer__seo-kicker">Online ADAC XML workspace</span>
             <h2 id="adac-viewer-about-title">View, validate and edit ADAC XML files online</h2>
             <p>
-              The ADACT ADAC Viewer is a free browser-based workspace for ADAC XML files used in civil infrastructure and as constructed asset handover workflows. Upload one or more files to validate supported schemas, inspect mapped assets, compare reference overlays, edit a working copy and export review outputs.
+              The ADACT ADAC Viewer is a free browser-based workspace for ADAC XML files used in civil infrastructure and as constructed asset handover workflows. Upload one or more files to validate supported schemas, add DXF reference drawings, inspect mapped assets, edit a working copy and export review outputs.
             </p>
           </div>
           <div class="adac-viewer__seo-grid">
@@ -472,7 +488,7 @@
             <article class="adac-viewer__seo-card">
               <h3>Inspect and compare</h3>
               <p>
-                Explore point, line and polygon assets using grid, map or satellite backgrounds. Control XML layers, labels and regional reference overlays, inspect project and asset details, select multiple assets, and measure distances or areas.
+                Explore point, line and polygon assets using grid, map or satellite backgrounds. Control XML, DXF and regional reference layers, inspect project and asset details, select multiple assets, and measure distances or areas.
               </p>
             </article>
             <article class="adac-viewer__seo-card">
@@ -486,7 +502,7 @@
             <details>
               <summary>What is the ADACT ADAC XML Viewer?</summary>
               <p>
-                It is a free browser-based workspace for validating, mapping, reviewing and editing ADAC XML files. It combines supported schema checks, repair guidance, mapped asset inspection, working-copy editing, reports and XML downloads.
+                It is a free browser-based workspace for validating, mapping, reviewing and editing ADAC XML files. It combines supported schema checks, DXF reference drawings, mapped asset inspection, working-copy editing, reports and XML downloads.
               </p>
             </details>
             <details>
@@ -531,7 +547,7 @@
           </div>
           <div class="viewer-terms-modal__body">
             <p>
-              The ADACT ADAC Viewer is provided by ADACT SOLUTIONS PTY LTD as a free browser-based tool for viewing, validating, reviewing and editing ADAC XML files. Current capabilities may include supported schema validation, suggested repairs, mapped asset inspection, reference overlays, measurements, labels, attribute and geometry editing, bulk updates, recalculation guidance, asset duplication or deletion, PDF reports and downloadable XML working copies.
+              The ADACT ADAC Viewer is provided by ADACT SOLUTIONS PTY LTD as a free browser-based tool for viewing, validating, reviewing and editing ADAC XML files. Current capabilities may include supported schema validation, suggested repairs, mapped asset inspection, DXF reference drawings, reference overlays, measurements, labels, attribute and geometry editing, bulk updates, recalculation guidance, asset duplication or deletion, PDF reports and downloadable XML working copies.
             </p>
             <p>
               The tool and all displayed, calculated, repaired, edited or exported outputs are provided "as is" for review assistance only. They are not a substitute for certified engineering validation, survey verification, council or utility acceptance processes, source records, professional judgment, or any software or procedure required by a receiving authority.
@@ -539,10 +555,11 @@
             <h3>Terms and conditions</h3>
             <ol>
               <li><strong>Permitted use:</strong> The viewer may be used for professional, commercial and general ADAC review workflows. It is provided free of charge and without warranties as to availability, fitness for purpose, completeness or acceptance by any council, utility or other receiving authority.</li>
-              <li><strong>Browser processing and data responsibility:</strong> The current viewer is designed to process uploaded XML within the user's browser rather than submit the XML file to ADACT SOLUTIONS PTY LTD. Third-party maps, overlays, analytics, links and suggestion services may still make network requests. Users must have authority to use the data and must not load confidential, personal, restricted or sensitive information where browser-based processing or third-party requests would be inappropriate.</li>
+              <li><strong>Browser processing and data responsibility:</strong> The current viewer is designed to process uploaded XML and DXF reference drawings within the user's browser rather than submit those files to ADACT SOLUTIONS PTY LTD. Third-party maps, overlays, analytics, links and suggestion services may still make network requests. Users must have authority to use the data and must not load confidential, personal, restricted or sensitive information where browser-based processing or third-party requests would be inappropriate.</li>
               <li><strong>Working copies and user edits:</strong> Uploaded XML files are not overwritten. Repairs, attribute changes, geometry edits, bulk updates, recalculations, duplications and deletions are applied to a temporary working copy. Changes may be lost when the page is refreshed or closed unless the user downloads the edited XML. Users are responsible for reviewing every change and retaining appropriate source and revision records.</li>
               <li><strong>Schema validation and suggested repairs:</strong> Validation is limited to the ADAC schema versions and rules supported by the viewer. A schema-valid result confirms supported XML structure and allowed values only; it does not prove engineering accuracy, survey accuracy, completeness, topology, asset connectivity, ownership, receiver acceptance or project compliance. Suggested fixes and automated repair previews are guidance only and may not reflect the intended engineering meaning.</li>
               <li><strong>Calculated and spatial outputs:</strong> Measurements, labels, map placement, coordinate interpretation, lengths, grades, depths, offsets, direction changes and optional recalculations may be approximate, incomplete or dependent on the uploaded data. Warnings do not identify every possible dependency. Users must independently verify geometry and derived values before relying on them.</li>
+              <li><strong>DXF references:</strong> Uploaded DXF drawings are displayed as temporary, read-only visual and snapping references. DXF interpretation may omit or approximate unsupported entities, fonts, external references, proxy objects, three-dimensional content or CAD-specific display behaviour. The viewer does not modify or export the uploaded DXF, and users must confirm drawing units, coordinates and alignment before using it to edit XML geometry.</li>
               <li><strong>Reports and downloaded files:</strong> PDF reports, repaired XML and edited XML downloads are review outputs, not certified documents or evidence of submission acceptance. Users are responsible for checking downloaded files against source information, the applicable ADAC schema, receiver requirements and professional obligations.</li>
               <li><strong>Third-party data sources:</strong> Map backgrounds, satellite imagery, cadastre, council, utility, REST services and other reference overlays may be supplied by third parties and may be incomplete, unavailable, delayed or subject to separate terms, licences and attribution requirements. Users are responsible for complying with provider requirements, including those applying to <a href="https://unitywater.maps.arcgis.com/sharing/rest/content/items/f43e43dce9a54fd0b1e3366653e6a0f9/data" target="_blank" rel="noopener">Unitywater public data</a> where relevant.</li>
               <li><strong>Intellectual property:</strong> The ADACT ADAC Viewer interface, structure, source code, branding and associated content are the intellectual property of ADACT SOLUTIONS PTY LTD unless otherwise stated. You may not reproduce, copy, distribute, modify or reverse engineer any part of the viewer without prior written consent, except where permitted by law.</li>
@@ -583,7 +600,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260715n"></script>
+  <script src="js/adac-viewer.js?v=20260716a"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
 </body>
 
