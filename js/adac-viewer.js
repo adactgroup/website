@@ -1024,6 +1024,14 @@
     selectedId: null,
     selectedIds: new Set(),
     multiSelectMode: false,
+    selectionBuilder: {
+      scope: "all",
+      assetClass: "",
+      field: "",
+      operator: "equals",
+      value: "",
+      mode: "replace",
+    },
     selectedOverlayFeature: null,
     mapMode: "grid",
     coordinateZone: 56,
@@ -1123,6 +1131,9 @@
     sampleMenu: root.querySelector("[data-role='sample-menu']"),
     labelButton: root.querySelector("[data-role='label-button']"),
     labelMenu: root.querySelector("[data-role='label-menu']"),
+    selectionButton: root.querySelector("[data-role='selection-button']"),
+    selectionMenu: root.querySelector("[data-role='selection-menu']"),
+    selectionMenuContent: root.querySelector("[data-role='selection-menu-content']"),
     labelLayerPanel: root.querySelector("[data-role='label-layer-panel']"),
     visibleLabelCount: root.querySelector("[data-role='visible-label-count']"),
     labelLayerList: root.querySelector("[data-role='label-layer-list']"),
@@ -1143,6 +1154,7 @@
     checkCount: root.querySelector("[data-role='check-count']"),
     checkList: root.querySelector("[data-role='check-list']"),
     repairedXmlDownloadButton: root.querySelector("[data-role='download-repaired-xml']"),
+    editedXmlDownloadButton: root.querySelector("[data-role='download-edited-xml']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1203,6 +1215,7 @@
     root.addEventListener("click", handleClick);
     root.addEventListener("change", handleChange);
     root.addEventListener("input", handleEditorInput);
+    root.addEventListener("input", handleSelectionBuilderInput);
     if (els.termsButton) {
       els.termsButton.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1317,6 +1330,9 @@
     if (isMeasurementMenuOpen() && !event.target.closest("[data-role='measurement-menu']") && !event.target.closest("[data-role='measurement-button']")) {
       closeMeasurementMenu();
     }
+    if (isSelectionMenuOpen() && !event.target.closest("[data-role='selection-menu']") && !event.target.closest("[data-role='selection-button']")) {
+      closeSelectionMenu();
+    }
 
     const assetButton = event.target.closest("[data-feature-id]");
     if (assetButton) {
@@ -1373,6 +1389,11 @@
   }
 
   function handleChange(event) {
+    const selectionControl = event.target.closest("[data-selection-builder]");
+    if (selectionControl) {
+      updateSelectionBuilderControl(selectionControl);
+      return;
+    }
     const dxfOpacity = event.target.closest("[data-dxf-opacity]");
     if (dxfOpacity) {
       setDxfReferenceOpacity(dxfOpacity.dataset.dxfOpacity, dxfOpacity.value);
@@ -1434,6 +1455,13 @@
     }, 450);
   }
 
+  function handleSelectionBuilderInput(event) {
+    const control = event.target.closest?.("[data-selection-builder='value']");
+    if (!control || control.tagName === "SELECT") return;
+    state.selectionBuilder.value = control.value;
+    renderSelectionBuilderResult();
+  }
+
   function handleProjectDetailsToggle(event) {
     const geometryEditor = event.target.closest?.("[data-role='geometry-editor']");
     if (geometryEditor) {
@@ -1450,6 +1478,16 @@
       fitMap();
     } else if (action === "toggle-multi-select") {
       toggleMultiSelectMode();
+    } else if (action === "toggle-selection-menu") {
+      toggleSelectionMenu();
+    } else if (action === "set-selection-mode") {
+      setSelectionBuilderMode(control?.dataset.selectionMode);
+    } else if (action === "apply-selection-criteria") {
+      applySelectionBuilderMatches();
+    } else if (action === "clear-selection-criteria") {
+      clearSelectionBuilderCriteria();
+    } else if (action === "clear-feature-selection") {
+      clearFeatureSelection();
     } else if (action === "export-report-pdf") {
       handleReportExportRequest();
     } else if (action === "export-combined-report-pdf") {
@@ -1573,6 +1611,7 @@
     if (except !== "sample") closeSampleMenu();
     if (except !== "label") closeLabelMenu();
     if (except !== "measurement") closeMeasurementMenu();
+    if (except !== "selection") closeSelectionMenu();
     if (except !== "terms") closeTermsModal();
     if (except !== "suggestions") closeSuggestions();
   }
@@ -4116,6 +4155,15 @@
     state.selectedId = null;
     state.selectedIds = new Set();
     state.multiSelectMode = false;
+    state.selectionBuilder = {
+      scope: "all",
+      assetClass: "",
+      field: "",
+      operator: "equals",
+      value: "",
+      mode: "replace",
+    };
+    closeSelectionMenu();
     state.selectedOverlayFeature = null;
     state.fileMeta = { receiver: "", receiverField: "" };
     state.fileMetas = [];
@@ -5255,6 +5303,407 @@
     button.title = state.multiSelectMode ? "Finish selecting multiple assets" : "Select multiple assets";
   }
 
+  function toggleSelectionMenu() {
+    if (isSelectionMenuOpen()) closeSelectionMenu();
+    else openSelectionMenu();
+  }
+
+  function openSelectionMenu() {
+    if (!els.selectionMenu || !state.features.length) {
+      setStatus("Load an ADAC XML file before selecting assets by criteria.", true);
+      return;
+    }
+    closeTransientUi("selection");
+    els.selectionMenu.hidden = false;
+    els.selectionButton?.classList.add("is-active");
+    els.selectionButton?.setAttribute("aria-expanded", "true");
+    renderSelectionBuilder();
+  }
+
+  function closeSelectionMenu() {
+    if (!els.selectionMenu) return;
+    els.selectionMenu.hidden = true;
+    els.selectionButton?.classList.remove("is-active");
+    els.selectionButton?.setAttribute("aria-expanded", "false");
+  }
+
+  function isSelectionMenuOpen() {
+    return Boolean(els.selectionMenu && !els.selectionMenu.hidden);
+  }
+
+  function getSelectionAssetClassKey(feature) {
+    return feature?.assetPath || `${feature?.layer || "Other"}/${feature?.assetTag || feature?.type || "Unknown"}`;
+  }
+
+  function getSelectionAssetClassLabel(feature) {
+    const classLabel = formatDetailLabel(feature?.assetTag || feature?.type || "Unknown");
+    return `${feature?.layer || "Other"} / ${classLabel}`;
+  }
+
+  function getSelectionFieldKey(feature, field) {
+    return getRelativeEditableFieldKey(feature, field);
+  }
+
+  function getSelectionFieldLabel(field) {
+    const fieldLabel = formatDetailLabel(field?.name || "Attribute");
+    const parentLabel = field?.parent && normalizeDetailKey(field.parent) !== normalizeDetailKey(field.name)
+      ? formatDetailLabel(field.parent)
+      : "";
+    return parentLabel ? `${parentLabel} / ${fieldLabel}` : fieldLabel;
+  }
+
+  function getSelectionBuilderScopeFeatures(scope = state.selectionBuilder.scope) {
+    if (scope === "visible") return state.filteredFeatures;
+    if (scope.startsWith("file:")) {
+      const fileId = scope.slice(5);
+      return state.features.filter((feature) => feature.sourceFileId === fileId);
+    }
+    return state.features;
+  }
+
+  function getSelectionBuilderClassOptions(features, fieldKey = "") {
+    const classes = new Map();
+    features.forEach((feature) => {
+      if (fieldKey && !(feature.editableFields || []).some((field) => getSelectionFieldKey(feature, field) === fieldKey)) return;
+      const key = getSelectionAssetClassKey(feature);
+      if (!classes.has(key)) classes.set(key, { key, label: getSelectionAssetClassLabel(feature), count: 0 });
+      classes.get(key).count += 1;
+    });
+    return Array.from(classes.values()).sort((a, b) => naturalCompare(a.label, b.label));
+  }
+
+  function getSelectionBuilderFieldOptions(features, assetClass = "") {
+    const fields = new Map();
+    features.forEach((feature) => {
+      if (assetClass && getSelectionAssetClassKey(feature) !== assetClass) return;
+      const seen = new Set();
+      (feature.editableFields || []).forEach((field) => {
+        const key = getSelectionFieldKey(feature, field);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        if (!fields.has(key)) fields.set(key, { key, label: getSelectionFieldLabel(field), count: 0, classKeys: new Set() });
+        const option = fields.get(key);
+        option.count += 1;
+        option.classKeys.add(getSelectionAssetClassKey(feature));
+      });
+    });
+    return Array.from(fields.values())
+      .map((field) => ({ ...field, classCount: field.classKeys.size }))
+      .sort((a, b) => naturalCompare(a.label, b.label));
+  }
+
+  function getSelectionBuilderFieldInfo(features, assetClass, fieldKey) {
+    if (!assetClass || !fieldKey) return null;
+    const entries = [];
+    features.forEach((feature) => {
+      if (getSelectionAssetClassKey(feature) !== assetClass) return;
+      const field = (feature.editableFields || []).find((item) => getSelectionFieldKey(feature, item) === fieldKey);
+      if (field) entries.push({ feature, field });
+    });
+    if (!entries.length) return null;
+    const primitives = uniqueValues(entries.map(({ field }) => field.rule?.primitive || "").filter(Boolean));
+    const primitive = primitives.length === 1 ? primitives[0] : "string";
+    const schemaValues = entries
+      .flatMap(({ field }) => field.rule?.values || [])
+      .map(String);
+    const observedValues = uniqueValues(entries
+      .filter(({ field }) => !field.nil && String(field.value || "").trim() !== "")
+      .map(({ field }) => String(field.value).trim()))
+      .sort(naturalCompare);
+    return {
+      entries,
+      primitive,
+      isEnum: schemaValues.length > 0,
+      observedValues,
+      label: getSelectionFieldLabel(entries[0].field),
+    };
+  }
+
+  function getSelectionBuilderOperators(fieldInfo) {
+    const nullable = [
+      { value: "is-null", label: "Is null" },
+      { value: "is-not-null", label: "Is not null" },
+    ];
+    if (!fieldInfo) return [{ value: "equals", label: "Equals" }];
+    if (["integer", "decimal"].includes(fieldInfo.primitive)) {
+      return [
+        { value: "equals", label: "Equals" },
+        { value: "not-equals", label: "Does not equal" },
+        { value: "greater-than", label: "Greater than" },
+        { value: "greater-or-equal", label: "Greater than or equal" },
+        { value: "less-than", label: "Less than" },
+        { value: "less-or-equal", label: "Less than or equal" },
+        ...nullable,
+      ];
+    }
+    if (["date", "datetime"].includes(fieldInfo.primitive)) {
+      return [
+        { value: "equals", label: "Equals" },
+        { value: "not-equals", label: "Does not equal" },
+        { value: "before", label: "Before" },
+        { value: "after", label: "After" },
+        ...nullable,
+      ];
+    }
+    return [
+      { value: "equals", label: "Equals" },
+      { value: "not-equals", label: "Does not equal" },
+      ...(fieldInfo.isEnum ? [] : [
+        { value: "contains", label: "Contains" },
+        { value: "starts-with", label: "Starts with" },
+        { value: "ends-with", label: "Ends with" },
+      ]),
+      ...nullable,
+    ];
+  }
+
+  function selectionOperatorNeedsValue(operator = state.selectionBuilder.operator) {
+    return !["is-null", "is-not-null"].includes(operator);
+  }
+
+  function renderSelectionBuilderValueControl(fieldInfo) {
+    if (!fieldInfo) return "";
+    const value = state.selectionBuilder.value;
+    const disabled = selectionOperatorNeedsValue() ? "" : "disabled";
+    if (fieldInfo.isEnum) {
+      return `
+        <select data-selection-builder="value" aria-label="Value" ${disabled}>
+          <option value="">Choose value</option>
+          ${fieldInfo.observedValues.map((item) => `<option value="${escapeHtml(item)}" ${item === value ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}
+        </select>
+      `;
+    }
+    const type = ["integer", "decimal"].includes(fieldInfo.primitive)
+      ? "number"
+      : fieldInfo.primitive === "date"
+        ? "date"
+        : fieldInfo.primitive === "datetime"
+          ? "datetime-local"
+          : "text";
+    const step = fieldInfo.primitive === "integer" ? "1" : fieldInfo.primitive === "decimal" ? "any" : "";
+    return `<input type="${type}" data-selection-builder="value" value="${escapeHtml(value)}" ${step ? `step="${step}"` : ""} placeholder="Value" aria-label="Value" ${disabled} />`;
+  }
+
+  function renderSelectionBuilder() {
+    if (!els.selectionMenuContent) return;
+    const scopeFeatures = getSelectionBuilderScopeFeatures();
+    let classOptions = getSelectionBuilderClassOptions(scopeFeatures, state.selectionBuilder.field);
+    if (state.selectionBuilder.assetClass && !classOptions.some((option) => option.key === state.selectionBuilder.assetClass)) {
+      state.selectionBuilder.assetClass = "";
+      state.selectionBuilder.value = "";
+    }
+    let fieldOptions = getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
+    if (state.selectionBuilder.field && !fieldOptions.some((option) => option.key === state.selectionBuilder.field)) {
+      state.selectionBuilder.field = "";
+      state.selectionBuilder.value = "";
+      classOptions = getSelectionBuilderClassOptions(scopeFeatures);
+      fieldOptions = getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
+    }
+    const fieldInfo = getSelectionBuilderFieldInfo(scopeFeatures, state.selectionBuilder.assetClass, state.selectionBuilder.field);
+    const operators = getSelectionBuilderOperators(fieldInfo);
+    if (!operators.some((operator) => operator.value === state.selectionBuilder.operator)) {
+      state.selectionBuilder.operator = "equals";
+    }
+    const scopeOptions = [
+      { value: "all", label: `All loaded XMLs (${state.features.length})` },
+      { value: "visible", label: `Visible assets (${state.filteredFeatures.length})` },
+      ...state.loadedFiles.map((file) => ({
+        value: `file:${file.id}`,
+        label: `${file.name} (${state.features.filter((feature) => feature.sourceFileId === file.id).length})`,
+      })),
+    ];
+    els.selectionMenuContent.innerHTML = `
+      <span class="viewer-selection-menu__heading">
+        <strong>Select by criteria</strong>
+        <small>${state.selectedIds.size} currently selected</small>
+      </span>
+      <label class="viewer-selection-field">
+        <span>Scope</span>
+        <select data-selection-builder="scope">
+          ${scopeOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === state.selectionBuilder.scope ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="viewer-selection-field">
+        <span>Asset class</span>
+        <select data-selection-builder="assetClass">
+          <option value="">Choose asset class</option>
+          ${classOptions.map((option) => `<option value="${escapeHtml(option.key)}" ${option.key === state.selectionBuilder.assetClass ? "selected" : ""}>${escapeHtml(`${option.label} (${option.count})`)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="viewer-selection-field">
+        <span>Attribute</span>
+        <select data-selection-builder="field">
+          <option value="">Any attribute</option>
+          ${fieldOptions.map((option) => {
+            const context = state.selectionBuilder.assetClass ? `${option.count} assets` : `${option.classCount} classes`;
+            return `<option value="${escapeHtml(option.key)}" ${option.key === state.selectionBuilder.field ? "selected" : ""}>${escapeHtml(`${option.label} (${context})`)}</option>`;
+          }).join("")}
+        </select>
+      </label>
+      ${state.selectionBuilder.field && !state.selectionBuilder.assetClass ? `
+        <span class="viewer-selection-menu__notice"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Choose an asset class to set the condition.</span></span>
+      ` : ""}
+      ${fieldInfo ? `
+        <span class="viewer-selection-condition">
+          <label class="viewer-selection-field">
+            <span>Condition</span>
+            <select data-selection-builder="operator">
+              ${operators.map((operator) => `<option value="${operator.value}" ${operator.value === state.selectionBuilder.operator ? "selected" : ""}>${escapeHtml(operator.label)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="viewer-selection-field">
+            <span>Value</span>
+            ${renderSelectionBuilderValueControl(fieldInfo)}
+          </label>
+        </span>
+      ` : ""}
+      <span class="viewer-selection-mode" role="group" aria-label="Selection mode">
+        ${[
+          ["replace", "Replace"],
+          ["add", "Add"],
+          ["remove", "Remove"],
+        ].map(([mode, label]) => `<button type="button" data-action="set-selection-mode" data-selection-mode="${mode}" class="${state.selectionBuilder.mode === mode ? "is-active" : ""}" aria-pressed="${state.selectionBuilder.mode === mode}">${label}</button>`).join("")}
+      </span>
+      <span class="viewer-selection-result" data-role="selection-result"></span>
+      <span class="viewer-selection-actions">
+        <button type="button" data-action="clear-selection-criteria" class="viewer-selection-actions__clear"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span>Reset criteria</span></button>
+        <button type="button" data-action="apply-selection-criteria" class="viewer-selection-actions__apply" data-role="apply-selection-criteria"><i class="fa-solid fa-check" aria-hidden="true"></i><span>Select matches</span></button>
+      </span>
+    `;
+    renderSelectionBuilderResult();
+  }
+
+  function updateSelectionBuilderControl(control) {
+    const key = control.dataset.selectionBuilder;
+    if (!key || !(key in state.selectionBuilder)) return;
+    const previous = state.selectionBuilder[key];
+    state.selectionBuilder[key] = control.value;
+    if (["assetClass", "field"].includes(key) && previous !== control.value) {
+      state.selectionBuilder.value = "";
+      state.selectionBuilder.operator = "equals";
+    }
+    renderSelectionBuilder();
+  }
+
+  function setSelectionBuilderMode(mode) {
+    if (!["replace", "add", "remove"].includes(mode)) return;
+    state.selectionBuilder.mode = mode;
+    renderSelectionBuilder();
+  }
+
+  function clearSelectionBuilderCriteria() {
+    state.selectionBuilder.assetClass = "";
+    state.selectionBuilder.field = "";
+    state.selectionBuilder.operator = "equals";
+    state.selectionBuilder.value = "";
+    renderSelectionBuilder();
+  }
+
+  function getSelectionBuilderMatches() {
+    const { assetClass, field: fieldKey, operator, value } = state.selectionBuilder;
+    if (!assetClass) return [];
+    return getSelectionBuilderScopeFeatures().filter((feature) => {
+      if (getSelectionAssetClassKey(feature) !== assetClass) return false;
+      if (!fieldKey) return true;
+      const field = (feature.editableFields || []).find((item) => getSelectionFieldKey(feature, item) === fieldKey);
+      if (!field) return false;
+      if (operator === "is-null") return field.nil || String(field.value || "").trim() === "";
+      if (operator === "is-not-null") return !field.nil && String(field.value || "").trim() !== "";
+      if (field.nil) return false;
+      const primitive = field.rule?.primitive || "string";
+      const actualText = String(field.value || "").trim();
+      if (["integer", "decimal"].includes(primitive)) {
+        const actualNumber = Number(actualText);
+        const targetNumber = Number(value);
+        if (!Number.isFinite(actualNumber) || !Number.isFinite(targetNumber)) return false;
+        if (operator === "not-equals") return actualNumber !== targetNumber;
+        if (operator === "greater-than") return actualNumber > targetNumber;
+        if (operator === "greater-or-equal") return actualNumber >= targetNumber;
+        if (operator === "less-than") return actualNumber < targetNumber;
+        if (operator === "less-or-equal") return actualNumber <= targetNumber;
+        return actualNumber === targetNumber;
+      }
+      if (["date", "datetime"].includes(primitive) && ["before", "after"].includes(operator)) {
+        const actualDate = Date.parse(actualText);
+        const targetDate = Date.parse(value);
+        if (!Number.isFinite(actualDate) || !Number.isFinite(targetDate)) return false;
+        return operator === "before" ? actualDate < targetDate : actualDate > targetDate;
+      }
+      const actual = normalizeDetailValue(actualText);
+      const target = normalizeDetailValue(value);
+      if (operator === "not-equals") return actual !== target;
+      if (operator === "contains") return actual.includes(target);
+      if (operator === "starts-with") return actual.startsWith(target);
+      if (operator === "ends-with") return actual.endsWith(target);
+      return actual === target;
+    });
+  }
+
+  function isSelectionBuilderReady() {
+    if (!state.selectionBuilder.assetClass) return false;
+    if (!state.selectionBuilder.field) return true;
+    return !selectionOperatorNeedsValue() || String(state.selectionBuilder.value || "").trim() !== "";
+  }
+
+  function renderSelectionBuilderResult() {
+    if (!els.selectionMenuContent) return;
+    const result = els.selectionMenuContent.querySelector("[data-role='selection-result']");
+    const applyButton = els.selectionMenuContent.querySelector("[data-role='apply-selection-criteria']");
+    if (!result || !applyButton) return;
+    const ready = isSelectionBuilderReady();
+    const matches = ready ? getSelectionBuilderMatches() : [];
+    const visibleIds = new Set(state.filteredFeatures.map((feature) => feature.uid));
+    const hiddenCount = matches.filter((feature) => !visibleIds.has(feature.uid)).length;
+    const valueRequired = Boolean(
+      state.selectionBuilder.assetClass
+      && state.selectionBuilder.field
+      && selectionOperatorNeedsValue()
+      && !String(state.selectionBuilder.value || "").trim()
+    );
+    result.innerHTML = !state.selectionBuilder.assetClass
+      ? `<strong>Asset class required</strong><small>Choose a class before applying the selection.</small>`
+      : valueRequired
+        ? `<strong>Value required</strong><small>Enter a value to preview matching assets.</small>`
+        : `<strong>${matches.length} match${matches.length === 1 ? "" : "es"}</strong>${hiddenCount ? `<small>${hiddenCount} hidden by the current map filters or layers</small>` : `<small>All matches are currently visible</small>`}`;
+    applyButton.disabled = !ready || matches.length === 0;
+    const verb = state.selectionBuilder.mode === "add" ? "Add" : state.selectionBuilder.mode === "remove" ? "Remove" : "Select";
+    applyButton.querySelector("span").textContent = ready ? `${verb} ${matches.length} match${matches.length === 1 ? "" : "es"}` : "Select matches";
+  }
+
+  function applySelectionBuilderMatches() {
+    if (!isSelectionBuilderReady()) {
+      setStatus("Choose an asset class before selecting matching assets.", true);
+      return;
+    }
+    const matches = getSelectionBuilderMatches();
+    if (!matches.length) {
+      setStatus("No assets match the selected class and condition.", true);
+      renderSelectionBuilderResult();
+      return;
+    }
+    const matchIds = new Set(matches.map((feature) => feature.uid));
+    let nextSelectedIds = new Set(state.selectedIds || []);
+    if (state.selectionBuilder.mode === "replace") nextSelectedIds = matchIds;
+    else if (state.selectionBuilder.mode === "add") matchIds.forEach((uid) => nextSelectedIds.add(uid));
+    else matchIds.forEach((uid) => nextSelectedIds.delete(uid));
+    state.selectedIds = nextSelectedIds;
+    state.selectedId = nextSelectedIds.has(state.selectedId)
+      ? state.selectedId
+      : Array.from(nextSelectedIds).pop() || null;
+    state.selectedOverlayFeature = null;
+    state.multiSelectMode = nextSelectedIds.size > 1;
+    state.editMode = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
+    state.drawOrderCache = null;
+    updateMultiSelectButton();
+    closeSelectionMenu();
+    renderDetails();
+    drawMap();
+    const action = state.selectionBuilder.mode === "add" ? "Added" : state.selectionBuilder.mode === "remove" ? "Removed" : "Selected";
+    setStatus(`${action} ${matches.length} matching asset${matches.length === 1 ? "" : "s"}.`, false);
+  }
+
   function selectOverlayFeature(selection) {
     state.selectedId = null;
     state.selectedIds = new Set();
@@ -5269,6 +5718,8 @@
 
   function renderAll() {
     updateMultiSelectButton();
+    if (els.selectionButton) els.selectionButton.disabled = !state.features.length;
+    if (isSelectionMenuOpen()) renderSelectionBuilder();
     renderMetrics();
     renderLayers();
     renderDxfReferences();
@@ -5291,6 +5742,7 @@
     if (els.fileName) els.fileName.textContent = state.fileName || "No file loaded";
     if (els.exportReportButton) els.exportReportButton.hidden = !state.loadedFiles.length;
     if (els.repairedXmlDownloadButton) els.repairedXmlDownloadButton.hidden = !state.repairPreview?.repairedXmlText;
+    renderEditedXmlDownloadButton();
     if (state.reportBundles.length < 2) closeReportExportMenu();
     if (els.visibleLayerCount) els.visibleLayerCount.textContent = `${visibleLayers} visible`;
     updateLabelPanelState();
@@ -6861,6 +7313,7 @@
   }
 
   function renderDetails() {
+    renderEditedXmlDownloadButton();
     const feature = state.features.find((item) => item.uid === state.selectedId);
     const selectedFeatures = getSelectedFeatures();
     if (selectedFeatures.length > 1) {
@@ -9128,6 +9581,22 @@
     const blob = new Blob([context.record.workingXmlText], { type: "application/xml;charset=utf-8" });
     downloadBlob(blob, buildEditedXmlFileName(context.record.name));
     setStatus(`Downloaded ${buildEditedXmlFileName(context.record.name)} from the current working copy.`, false);
+  }
+
+  function renderEditedXmlDownloadButton() {
+    if (!els.editedXmlDownloadButton) return;
+    const context = getSelectedEditorContext();
+    const canDownload = Boolean(context?.record?.dirty && context.record.workingXmlText);
+    els.editedXmlDownloadButton.hidden = !canDownload;
+    els.editedXmlDownloadButton.disabled = !canDownload || state.editorBusy;
+    if (canDownload) {
+      const downloadName = buildEditedXmlFileName(context.record.name);
+      els.editedXmlDownloadButton.title = `Download ${downloadName}`;
+      els.editedXmlDownloadButton.setAttribute("aria-label", `Download edited XML ${downloadName}`);
+    } else {
+      els.editedXmlDownloadButton.removeAttribute("title");
+      els.editedXmlDownloadButton.removeAttribute("aria-label");
+    }
   }
 
   function buildEditedXmlFileName(fileName) {

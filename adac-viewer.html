@@ -147,7 +147,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260716a" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260716b" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -276,6 +276,10 @@
             <i class="fa-solid fa-download" aria-hidden="true"></i>
             <span>Download repaired XML</span>
           </button>
+          <button class="viewer-status-download" type="button" data-action="download-edited-xml" data-role="download-edited-xml" hidden>
+            <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+            <span>Download edited XML</span>
+          </button>
         </div>
 
         <div class="viewer-shell">
@@ -297,6 +301,14 @@
                 <button type="button" data-action="toggle-multi-select" data-role="multi-select-button" title="Select multiple assets" aria-label="Select multiple assets" aria-pressed="false">
                   <i class="fa-solid fa-object-group" aria-hidden="true"></i>
                 </button>
+                <span class="viewer-selection-tool">
+                  <button type="button" data-action="toggle-selection-menu" data-role="selection-button" title="Select by criteria" aria-label="Select assets by criteria" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fa-solid fa-filter" aria-hidden="true"></i>
+                  </button>
+                  <span class="viewer-selection-menu" data-role="selection-menu" role="dialog" aria-label="Select assets by criteria" hidden>
+                    <span class="viewer-selection-menu__panel" data-role="selection-menu-content"></span>
+                  </span>
+                </span>
                 <span class="viewer-label-tool">
                   <button type="button" data-action="toggle-label-menu" data-role="label-button" title="Labels" aria-label="Labels" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fa-solid fa-tags" aria-hidden="true"></i>
@@ -600,7 +612,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260716a"></script>
+  <script src="js/adac-viewer.js?v=20260716c"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
 </body>
 
