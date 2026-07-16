@@ -1106,7 +1106,6 @@
     editorBusy: false,
     editorFeedback: null,
     editorRevision: 0,
-    editorInputTimer: null,
     deleteConfirmation: null,
     splitSession: null,
     mergeSession: null,
@@ -1224,7 +1223,6 @@
     }
     root.addEventListener("click", handleClick);
     root.addEventListener("change", handleChange);
-    root.addEventListener("input", handleEditorInput);
     root.addEventListener("input", handleSelectionBuilderInput);
     if (els.termsButton) {
       els.termsButton.addEventListener("click", (event) => {
@@ -1436,10 +1434,6 @@
     }
     const geometryField = event.target.closest("[data-editor-geometry]");
     if (geometryField) {
-      if (state.editorInputTimer) {
-        window.clearTimeout(state.editorInputTimer);
-        state.editorInputTimer = null;
-      }
       commitGeometryCoordinateControl(geometryField);
       return;
     }
@@ -1455,33 +1449,13 @@
     }
     const bulkEditorField = event.target.closest("[data-bulk-editor-field]");
     if (bulkEditorField) {
-      if (state.editorInputTimer) {
-        window.clearTimeout(state.editorInputTimer);
-        state.editorInputTimer = null;
-      }
       commitBulkEditorFieldControl(bulkEditorField);
       return;
     }
     const editorField = event.target.closest("[data-editor-field]");
     if (editorField) {
-      if (state.editorInputTimer) {
-        window.clearTimeout(state.editorInputTimer);
-        state.editorInputTimer = null;
-      }
       commitEditorFieldControl(editorField);
     }
-  }
-
-  function handleEditorInput(event) {
-    const editorField = event.target.closest?.("input[data-editor-field], input[data-editor-geometry], input[data-bulk-editor-field]");
-    if (!editorField || editorField.type === "checkbox") return;
-    if (state.editorInputTimer) window.clearTimeout(state.editorInputTimer);
-    state.editorInputTimer = window.setTimeout(() => {
-      state.editorInputTimer = null;
-      if (editorField.matches("[data-editor-geometry]")) commitGeometryCoordinateControl(editorField);
-      else if (editorField.matches("[data-bulk-editor-field]")) commitBulkEditorFieldControl(editorField);
-      else commitEditorFieldControl(editorField);
-    }, 450);
   }
 
   function handleSelectionBuilderInput(event) {
@@ -1636,10 +1610,6 @@
     const editorField = event.target.closest?.("input[data-editor-field], input[data-editor-geometry], input[data-bulk-editor-field]");
     if (event.key === "Enter" && editorField) {
       event.preventDefault();
-      if (state.editorInputTimer) {
-        window.clearTimeout(state.editorInputTimer);
-        state.editorInputTimer = null;
-      }
       if (editorField.matches("[data-editor-geometry]")) commitGeometryCoordinateControl(editorField);
       else if (editorField.matches("[data-bulk-editor-field]")) commitBulkEditorFieldControl(editorField);
       else commitEditorFieldControl(editorField);
@@ -4854,8 +4824,6 @@
     state.editorRevision += 1;
     state.bulkHistoryPast = [];
     state.bulkHistoryFuture = [];
-    if (state.editorInputTimer) window.clearTimeout(state.editorInputTimer);
-    state.editorInputTimer = null;
     state.zoom = 1;
     state.pan = { x: 0, y: 0 };
     setMeasurementMode("off");
