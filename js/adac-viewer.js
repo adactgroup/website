@@ -1108,6 +1108,7 @@
     editorRevision: 0,
     editorInputTimer: null,
     deleteConfirmation: null,
+    splitSession: null,
     bulkHistoryPast: [],
     bulkHistoryFuture: [],
     filters: {
@@ -1389,6 +1390,16 @@
   }
 
   function handleChange(event) {
+    const splitIdField = event.target.closest("[data-split-id]");
+    if (splitIdField) {
+      updateSplitSessionId(splitIdField.dataset.splitId, splitIdField.value);
+      return;
+    }
+    const splitReferenceZ = event.target.closest("[data-split-reference-z]");
+    if (splitReferenceZ) {
+      updateSplitReferenceZ(splitReferenceZ.checked);
+      return;
+    }
     const selectionControl = event.target.closest("[data-selection-builder]");
     if (selectionControl) {
       updateSelectionBuilderControl(selectionControl);
@@ -1552,6 +1563,18 @@
       redoBulkXmlEdit();
     } else if (action === "duplicate-selected-asset") {
       duplicateSelectedAsset();
+    } else if (action === "begin-split-asset") {
+      beginSplitAsset();
+    } else if (action === "set-split-target-mode") {
+      setSplitTargetMode(control?.dataset.splitMode);
+    } else if (action === "choose-split-vertex") {
+      chooseSplitVertex(Number(control?.dataset.splitVertexIndex));
+    } else if (action === "set-split-coordinate-source") {
+      setSplitCoordinateSource(control?.dataset.splitCoordinateSource);
+    } else if (action === "apply-split-asset") {
+      applySplitAsset();
+    } else if (action === "cancel-split-asset") {
+      cancelSplitAsset();
     } else if (action === "request-delete-selected-assets") {
       requestDeleteSelectedAssets();
     } else if (action === "confirm-delete-selected-assets") {
@@ -1597,6 +1620,10 @@
       return;
     }
     if (event.key === "Escape") {
+      if (state.splitSession) {
+        cancelSplitAsset();
+        return;
+      }
       if (state.dxfSnapSelection) {
         cancelDxfGeometrySnapSelection();
         return;
@@ -2645,6 +2672,7 @@
 
   function setMeasurementMode(mode) {
     const nextMode = ["distance", "area"].includes(mode) ? mode : "off";
+    if (nextMode !== "off" && state.splitSession) cancelSplitAsset({ silent: true });
     closeMeasurementMenu();
     if (nextMode === "off") {
       state.measurement.mode = "off";
@@ -2790,6 +2818,10 @@
 
   function handleMapPointerMove(event) {
     if (!state.isPointerDown) {
+      if (isSplitTargetPicking()) {
+        updateSplitTargetHover(getCanvasPoint(event));
+        return;
+      }
       if (state.dxfSnapSelection) {
         scheduleDxfSnapHover(getCanvasPoint(event));
         return;
@@ -2840,6 +2872,10 @@
       els.canvas.releasePointerCapture(event.pointerId);
     }
     if (event.type !== "pointerup") {
+      if (state.splitSession) {
+        state.splitSession.hover = null;
+        drawMap();
+      }
       if (state.dxfSnapSelection) {
         resetDxfSnapHoverState();
         drawMap();
@@ -2848,6 +2884,10 @@
     }
     if (!wasDragging) {
       const canvasPoint = getCanvasPoint(event);
+      if (isSplitTargetPicking()) {
+        chooseSplitTargetAtCanvasPoint(canvasPoint);
+        return;
+      }
       if (state.dxfSnapSelection) {
         const target = findDxfGeometryAtCanvasPoint(canvasPoint);
         if (target) applySelectedDxfGeometrySnap(target);
@@ -3269,6 +3309,7 @@
     state.coordinateZone = inferCoordinateZoneFromDoc(parsedFiles[0].doc) || inferCoordinateZoneFromFeatures(state.features) || 56;
     state.dxfFitReferenceId = "";
     state.dxfSnapSelection = null;
+    state.splitSession = null;
     resetDxfSnapHoverState();
     updateDxfReferenceAlignment();
     state.zoom = 1;
@@ -4185,6 +4226,7 @@
     state.editorBusy = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.splitSession = null;
     state.editorRevision += 1;
     state.bulkHistoryPast = [];
     state.bulkHistoryFuture = [];
@@ -5241,6 +5283,7 @@
   }
 
   function selectFeature(featureUid, options = {}) {
+    if (state.splitSession && featureUid !== state.splitSession.sourceUid) cancelSplitAsset({ silent: true });
     const additive = Boolean(options.additive);
     const nextSelectedIds = new Set(state.selectedIds || []);
     if (additive) {
@@ -5267,6 +5310,7 @@
   }
 
   function clearFeatureSelection() {
+    if (state.splitSession) cancelSplitAsset({ silent: true });
     state.selectedId = null;
     state.selectedIds = new Set();
     state.selectedOverlayFeature = null;
@@ -6866,7 +6910,16 @@
     const hasVisibleGeometry = state.dxfReferences.some((reference) => (
       reference.visible && reference.layers.some((layer) => layer.visible)
     ));
-    if (!hasVisibleGeometry) state.dxfSnapSelection = null;
+    if (!hasVisibleGeometry) {
+      state.dxfSnapSelection = null;
+      if (state.splitSession?.targetMode === "cad") {
+        state.splitSession.targetMode = "vertex";
+        state.splitSession.stage = "picking";
+        state.splitSession.hover = null;
+        state.splitSession.proposal = null;
+        state.editorFeedback = { fileId: state.splitSession.sourceFileId, tone: "warning", message: "The CAD split target was cleared because no DXF geometry is currently visible." };
+      }
+    }
     renderDetails();
   }
 
@@ -7362,6 +7415,7 @@
         </div>
       </div>
       ${state.editMode ? renderXmlEditorToolbar(documentRecord) : ""}
+      ${state.editMode ? renderSplitAssetPanel(feature, documentRecord) : ""}
       ${state.editMode ? renderDeleteConfirmation(selectedFeatures) : ""}
       ${renderXmlEditorFeedback(feature)}
       <dl class="viewer-details__grid">
@@ -7654,6 +7708,8 @@
 
   function renderXmlEditorToolbar(record) {
     if (!record) return "";
+    const selectedFeature = state.features.find((feature) => feature.uid === state.selectedId);
+    const splitEligible = getSplitAssetEligibility(selectedFeature, record).eligible;
     const changeCount = record.changedFields?.size || 0;
     const addedCount = record.addedAssetCount || 0;
     const deletedCount = record.deletedAssetCount || 0;
@@ -7689,6 +7745,9 @@
           </button>
           <button type="button" class="viewer-xml-editor__duplicate" data-action="duplicate-selected-asset" title="Duplicate this asset in the working XML" ${state.editorBusy ? "disabled" : ""}>
             <i class="fa-solid fa-copy" aria-hidden="true"></i><span>Duplicate asset</span>
+          </button>
+          <button type="button" class="viewer-xml-editor__split" data-action="begin-split-asset" title="Split this line asset in the working XML" ${state.editorBusy || !splitEligible ? "disabled" : ""}>
+            <i class="fa-solid fa-scissors" aria-hidden="true"></i><span>Split asset</span>
           </button>
           <button type="button" class="viewer-xml-editor__delete" data-action="request-delete-selected-assets" title="Delete this asset from the working XML" ${state.editorBusy ? "disabled" : ""}>
             <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete asset</span>
@@ -8085,6 +8144,471 @@
     }
     removeXmlNilAttribute(target);
     target.textContent = String(value ?? "");
+  }
+
+  function getSplitAssetEligibility(feature, record) {
+    if (!feature || !record?.workingDocument || !record.validation?.valid) {
+      return { eligible: false, reason: "A schema-valid XML line asset is required." };
+    }
+    if (feature.geometryKind !== "Line") {
+      return { eligible: false, reason: "The first split implementation supports line assets only." };
+    }
+    const assetNode = findXmlElementByLocator(record.workingDocument, feature.xmlLocator);
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    if (!geometry.supported) return { eligible: false, reason: geometry.reason };
+    if (geometry.vertices.length < 2) return { eligible: false, reason: "The line needs at least two vertices." };
+    const cells = getAssetNumericValue(assetNode, "cells");
+    if (/stormwater/i.test(feature.assetPath || "") && cells !== null && cells > 1) {
+      return { eligible: false, reason: "Multicell stormwater geometry must be reviewed and split manually." };
+    }
+    return { eligible: true, geometry, assetNode };
+  }
+
+  function beginSplitAsset() {
+    if (state.editorBusy || getSelectedFeatures().length !== 1) return;
+    const context = getSelectedEditorContext();
+    const eligibility = getSplitAssetEligibility(context?.feature, context?.record);
+    if (!eligibility.eligible) {
+      state.editorFeedback = { fileId: context?.record?.id || "", tone: "warning", message: eligibility.reason };
+      renderDetails();
+      return;
+    }
+    closeTransientUi();
+    if (state.dxfSnapSelection) cancelDxfGeometrySnapSelection({ silent: true });
+    state.measurement.mode = "off";
+    state.measurement.preview = null;
+    const sourceIdField = (context.feature.editableFields || []).find((field) => normalizeDetailKey(field.name) === "adacid");
+    const part2Id = buildSplitAssetId(context.record.id, context.feature.id, sourceIdField?.rule);
+    state.splitSession = {
+      sourceUid: context.feature.uid,
+      sourceFileId: context.record.id,
+      sourceLocator: context.feature.xmlLocator,
+      sourceId: context.feature.id,
+      targetMode: "vertex",
+      stage: "picking",
+      hover: null,
+      proposal: null,
+      coordinateSource: "projected",
+      useReferenceZ: false,
+      part1Id: context.feature.id,
+      part2Id,
+    };
+    state.editorFeedback = null;
+    renderDetails();
+    drawMap();
+    setStatus("Split tool active. Choose an internal vertex, XML point asset, or CAD reference.", false);
+  }
+
+  function cancelSplitAsset(options = {}) {
+    const session = state.splitSession;
+    state.splitSession = null;
+    if (!options.silent && session) {
+      state.editorFeedback = { fileId: session.sourceFileId, tone: "info", message: "Asset split cancelled. The working XML was not changed." };
+      setStatus("Asset split cancelled.", false);
+    }
+    renderDetails();
+    drawMap();
+  }
+
+  function setSplitTargetMode(mode) {
+    const session = state.splitSession;
+    if (!session || !["vertex", "asset", "cad"].includes(mode)) return;
+    if (mode === "cad" && !hasVisibleDxfGeometry()) {
+      state.editorFeedback = { fileId: session.sourceFileId, tone: "warning", message: "Load and show a DXF reference before choosing a CAD split target." };
+      renderDetails();
+      return;
+    }
+    session.targetMode = mode;
+    session.stage = "picking";
+    session.hover = null;
+    session.proposal = null;
+    session.coordinateSource = "projected";
+    session.useReferenceZ = false;
+    state.editorFeedback = null;
+    renderDetails();
+    drawMap();
+    const instruction = mode === "vertex"
+      ? "Choose an internal line vertex."
+      : mode === "asset"
+        ? "Click a point asset from the same XML file."
+        : "Click the specific visible DXF point or line to use.";
+    setStatus(instruction, false);
+  }
+
+  function hasVisibleDxfGeometry() {
+    return state.dxfReferences.some((reference) => reference.visible && reference.layers.some((layer) => layer.visible && layer.entityCount > 0));
+  }
+
+  function isSplitTargetPicking() {
+    return Boolean(state.splitSession?.stage === "picking");
+  }
+
+  function updateSplitSessionId(part, value) {
+    if (!state.splitSession || !["part1", "part2"].includes(part)) return;
+    state.splitSession[part === "part1" ? "part1Id" : "part2Id"] = String(value || "").trim();
+  }
+
+  function updateSplitReferenceZ(checked) {
+    if (!state.splitSession?.proposal?.hasReferenceZ) return;
+    state.splitSession.useReferenceZ = Boolean(checked);
+    refreshSplitProposalResolvedPoint();
+  }
+
+  function setSplitCoordinateSource(source) {
+    if (!state.splitSession?.proposal || !["projected", "reference"].includes(source)) return;
+    state.splitSession.coordinateSource = source;
+    refreshSplitProposalResolvedPoint();
+  }
+
+  function refreshSplitProposalResolvedPoint() {
+    const session = state.splitSession;
+    if (!session?.proposal) return;
+    const proposal = session.proposal;
+    const base = session.coordinateSource === "reference" ? proposal.referencePoint : proposal.projectedPoint;
+    proposal.splitPoint = {
+      x: base.x,
+      y: base.y,
+      z: session.useReferenceZ && proposal.hasReferenceZ ? proposal.referencePoint.z : proposal.projectedPoint.z,
+    };
+    renderDetails();
+    drawMap();
+  }
+
+  function renderSplitAssetPanel(feature, record) {
+    const session = state.splitSession;
+    if (!session || session.sourceUid !== feature.uid || session.sourceFileId !== record?.id) return "";
+    const eligibility = getSplitAssetEligibility(feature, record);
+    if (!eligibility.eligible) return "";
+    const internalVertices = eligibility.geometry.points.slice(1, -1);
+    const modeButtons = [
+      ["vertex", "fa-circle-nodes", "Vertex"],
+      ["asset", "fa-location-dot", "Asset"],
+      ["cad", "fa-compass-drafting", "CAD"],
+    ].map(([mode, icon, label]) => `
+      <button type="button" class="${session.targetMode === mode ? "is-active" : ""}" data-action="set-split-target-mode" data-split-mode="${mode}" ${mode === "cad" && !hasVisibleDxfGeometry() ? "disabled" : ""}>
+        <i class="fa-solid ${icon}" aria-hidden="true"></i><span>${label}</span>
+      </button>
+    `).join("");
+    const picker = session.stage === "picking"
+      ? renderSplitTargetPicker(session, internalVertices)
+      : renderSplitProposal(session);
+    return `
+      <section class="viewer-split-panel" aria-label="Split line asset">
+        <div class="viewer-split-panel__header">
+          <span><i class="fa-solid fa-scissors" aria-hidden="true"></i> Split ${escapeHtml(feature.id)}</span>
+          <button type="button" data-action="cancel-split-asset" title="Cancel split" aria-label="Cancel split"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <div class="viewer-split-panel__modes" aria-label="Split target type">${modeButtons}</div>
+        ${picker}
+      </section>
+    `;
+  }
+
+  function renderSplitTargetPicker(session, internalVertices) {
+    if (session.targetMode === "vertex") {
+      if (!internalVertices.length) {
+        return `<p class="viewer-split-panel__instruction">This line has no internal vertices. Choose an asset or CAD reference instead.</p>`;
+      }
+      return `
+        <p class="viewer-split-panel__instruction">Select a highlighted internal vertex on the map or choose it below.</p>
+        <div class="viewer-split-panel__vertices">
+          ${internalVertices.map((point, index) => `<button type="button" data-action="choose-split-vertex" data-split-vertex-index="${index + 1}">Vertex ${index + 2}<small>${escapeHtml(formatSplitCoordinate(point))}</small></button>`).join("")}
+        </div>
+      `;
+    }
+    if (session.targetMode === "asset") {
+      return `<p class="viewer-split-panel__instruction">Click a point asset in the same XML. The source line will remain unchanged until you review and apply the split.</p>`;
+    }
+    return `<p class="viewer-split-panel__instruction">Click a visible DXF point or line. Intersections are used directly; otherwise the closest split position is previewed.</p>`;
+  }
+
+  function renderSplitProposal(session) {
+    const proposal = session.proposal;
+    if (!proposal) return "";
+    const offset = proposal.offset;
+    const canUseReference = offset > 0.001;
+    const splitPoint = proposal.splitPoint;
+    const partLengths = getSplitPreviewLengths(proposal, splitPoint);
+    return `
+      <div class="viewer-split-panel__preview">
+        <div class="viewer-split-panel__target"><strong>${escapeHtml(proposal.targetLabel)}</strong><span>${escapeHtml(formatSplitCoordinate(splitPoint))}</span></div>
+        ${canUseReference ? `
+          <div class="viewer-split-panel__coordinate-choice">
+            <span>Split coordinate</span>
+            <div>
+              <button type="button" class="${session.coordinateSource === "projected" ? "is-active" : ""}" data-action="set-split-coordinate-source" data-split-coordinate-source="projected">On XML line</button>
+              <button type="button" class="${session.coordinateSource === "reference" ? "is-active" : ""}" data-action="set-split-coordinate-source" data-split-coordinate-source="reference">Reference (${escapeHtml(formatNumber(offset, 3))} m offset)</button>
+            </div>
+          </div>
+        ` : ""}
+        ${proposal.hasReferenceZ ? `<label class="viewer-split-panel__z"><input type="checkbox" data-split-reference-z ${session.useReferenceZ ? "checked" : ""} /><span>Use reference Z (${escapeHtml(formatNumber(proposal.referencePoint.z, 3))}) instead of interpolated XML Z</span></label>` : ""}
+        <div class="viewer-split-panel__ids">
+          <label><span>Part 1 ADAC ID</span><input type="text" value="${escapeHtml(session.part1Id)}" data-split-id="part1" /></label>
+          <label><span>Part 2 ADAC ID</span><input type="text" value="${escapeHtml(session.part2Id)}" data-split-id="part2" /></label>
+        </div>
+        <dl class="viewer-split-panel__summary">
+          <div><dt>Part 1 geometry</dt><dd>${escapeHtml(formatNumber(partLengths.first, 3))} m</dd></div>
+          <div><dt>Part 2 geometry</dt><dd>${escapeHtml(formatNumber(partLengths.second, 3))} m</dd></div>
+          <div><dt>Material length</dt><dd>Split ${escapeHtml(formatNumber(proposal.ratio * 100, 1))}% / ${escapeHtml(formatNumber((1 - proposal.ratio) * 100, 1))}%</dd></div>
+        </dl>
+        ${proposal.warnings.length ? `<div class="viewer-split-panel__warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(proposal.warnings.join(" "))}</span></div>` : ""}
+        <div class="viewer-split-panel__actions">
+          <button type="button" data-action="set-split-target-mode" data-split-mode="${escapeHtml(session.targetMode)}">Choose again</button>
+          <button type="button" class="is-primary" data-action="apply-split-asset" ${state.editorBusy ? "disabled" : ""}><i class="fa-solid fa-scissors" aria-hidden="true"></i><span>Apply split</span></button>
+        </div>
+      </div>
+    `;
+  }
+
+  function formatSplitCoordinate(point) {
+    if (!point) return "Coordinate unavailable";
+    return `X ${formatNumber(point.x, 3)}, Y ${formatNumber(point.y, 3)}${Number.isFinite(Number(point.z)) ? `, Z ${formatNumber(point.z, 3)}` : ""}`;
+  }
+
+  function buildSplitAssetId(fileId, originalId, rule) {
+    const existingIds = new Set(state.features.filter((feature) => feature.sourceFileId === fileId).map((feature) => String(feature.id || "").trim().toLowerCase()));
+    const maxLengthValue = Number(rule?.facets?.maxlength || rule?.facets?.length || 64);
+    const maxLength = Number.isFinite(maxLengthValue) && maxLengthValue > 0 ? maxLengthValue : 64;
+    const base = String(originalId || "ASSET").trim() || "ASSET";
+    for (let index = 1; index <= 999; index += 1) {
+      const suffix = index === 1 ? "-SPLIT" : `-SPLIT-${index}`;
+      if (suffix.length >= maxLength) continue;
+      const candidate = `${base.slice(0, maxLength - suffix.length)}${suffix}`;
+      if (!existingIds.has(candidate.toLowerCase())) return candidate;
+    }
+    return "";
+  }
+
+  async function applySplitAsset() {
+    const session = state.splitSession;
+    const context = getSplitSourceContext();
+    if (!session?.proposal || !context?.record?.workingXmlText || state.editorBusy) return;
+    const idError = getSplitIdValidationError(session, context.feature);
+    if (idError) {
+      state.editorFeedback = { fileId: session.sourceFileId, tone: "error", message: idError };
+      renderDetails();
+      return;
+    }
+    const candidateDoc = parseXmlDocument(context.record.workingXmlText);
+    const sourceNode = candidateDoc ? findXmlElementByLocator(candidateDoc, session.sourceLocator) : null;
+    const clone = sourceNode?.cloneNode(true);
+    const sourceGeometry = getSimpleDirectionGeometry(sourceNode);
+    const cloneGeometry = getSimpleDirectionGeometry(clone);
+    const originalId = String(findAssetIdentityElement(sourceNode, "adacid")?.textContent || context.feature.id || "").trim();
+    if (!sourceNode?.parentNode || !clone || !sourceGeometry.supported || !cloneGeometry.supported || !originalId) {
+      state.editorFeedback = { fileId: session.sourceFileId, tone: "error", message: "The line geometry changed before the split could be applied. Choose the split target again." };
+      renderDetails();
+      return;
+    }
+
+    updateDuplicatedAssetIdentityValues(sourceNode, originalId, session.part1Id);
+    updateDuplicatedAssetIdentityValues(clone, originalId, session.part2Id);
+    const splitPoint = { ...session.proposal.splitPoint };
+    replaceSplitGeometryVertices(sourceGeometry, cloneGeometry, session.proposal, splitPoint);
+    updateSplitDependentFields(sourceNode, clone, session.proposal, splitPoint);
+    sourceNode.parentNode.insertBefore(clone, sourceNode.nextSibling);
+    const sourceLocator = getXmlElementLocator(sourceNode);
+    const cloneLocator = getXmlElementLocator(clone);
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.editorFeedback = { fileId: session.sourceFileId, tone: "info", message: `Checking both split assets against ${schemaLabel(context.record.schemaVersion)}...` };
+    renderDetails();
+    drawMap();
+
+    const validation = await validateAdacSchema(candidateXmlText, context.record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validation.errors)[0]);
+      state.editorFeedback = {
+        fileId: session.sourceFileId,
+        tone: "error",
+        message: `The split was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid working XML was kept."}`,
+      };
+      renderDetails();
+      drawMap();
+      return;
+    }
+
+    const transaction = {
+      kind: "split",
+      label: "asset split",
+      assetCount: 1,
+      beforeSelectedIds: [context.feature.uid],
+      afterSelectedIds: [],
+      selectedIds: [],
+      documents: [{
+        fileId: context.record.id,
+        beforeXmlText: context.record.workingXmlText,
+        afterXmlText: candidateXmlText,
+        selectedLocator: sourceLocator,
+        validation,
+      }],
+    };
+    pushXmlHistory(context.record, context.record.workingXmlText);
+    context.record.historyFuture = [];
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    state.splitSession = null;
+    applyValidatedWorkingDocument(context.record, candidateXmlText, candidateDoc, validation, sourceLocator);
+    const splitFeatures = state.features.filter((feature) => (
+      feature.sourceFileId === context.record.id
+      && feature.assetPath === context.feature.assetPath
+      && [session.part1Id, session.part2Id].includes(feature.id)
+    ));
+    if (splitFeatures.length) {
+      const ids = splitFeatures.map((feature) => feature.uid);
+      transaction.afterSelectedIds = ids;
+      transaction.selectedIds = ids;
+      state.selectedIds = new Set(ids);
+      state.selectedId = ids[ids.length - 1];
+    }
+    const message = `Split ${originalId} into ${session.part1Id} and ${session.part2Id} in the working XML copy. The original upload was not changed.`;
+    state.editorFeedback = { bulk: true, tone: session.proposal.warnings.length ? "warning" : "success", message: `${message}${session.proposal.warnings.length ? ` ${session.proposal.warnings.join(" ")}` : ""} Use Undo to restore the source asset.` };
+    renderDetails();
+    drawMap();
+    setStatus(message, false);
+  }
+
+  function getSplitIdValidationError(session, sourceFeature) {
+    const part1 = String(session.part1Id || "").trim();
+    const part2 = String(session.part2Id || "").trim();
+    if (!part1 || !part2) return "Both resulting assets need an ADAC ID before the split can be applied.";
+    if (part1.toLowerCase() === part2.toLowerCase()) return "The two resulting assets must have different ADAC IDs.";
+    const existingIds = new Set(state.features
+      .filter((feature) => feature.sourceFileId === session.sourceFileId && feature.uid !== sourceFeature.uid)
+      .map((feature) => String(feature.id || "").trim().toLowerCase()));
+    if (existingIds.has(part1.toLowerCase())) return `ADAC ID ${part1} is already used by another asset in this XML.`;
+    if (existingIds.has(part2.toLowerCase())) return `ADAC ID ${part2} is already used by another asset in this XML.`;
+    return "";
+  }
+
+  function replaceSplitGeometryVertices(sourceGeometry, cloneGeometry, proposal, splitPoint) {
+    const sourceVertices = sourceGeometry.vertices;
+    const firstVertices = [];
+    const secondVertices = [];
+    if (Number.isInteger(proposal.existingVertexIndex)) {
+      sourceVertices.slice(0, proposal.existingVertexIndex + 1).forEach((vertex) => firstVertices.push(vertex.cloneNode(true)));
+      sourceVertices.slice(proposal.existingVertexIndex).forEach((vertex) => secondVertices.push(vertex.cloneNode(true)));
+    } else {
+      sourceVertices.slice(0, proposal.segmentIndex + 1).forEach((vertex) => firstVertices.push(vertex.cloneNode(true)));
+      sourceVertices.slice(proposal.segmentIndex + 1).forEach((vertex) => secondVertices.push(vertex.cloneNode(true)));
+      const derived = createSplitVertex(sourceVertices[proposal.segmentIndex], splitPoint);
+      firstVertices.push(derived.cloneNode(true));
+      secondVertices.unshift(derived.cloneNode(true));
+    }
+    replaceElementChildren(sourceGeometry.polySegment, firstVertices);
+    replaceElementChildren(cloneGeometry.polySegment, secondVertices);
+  }
+
+  function createSplitVertex(templateVertex, point) {
+    const vertex = templateVertex.cloneNode(true);
+    Array.from(vertex.querySelectorAll("*")).forEach((element) => {
+      if (cleanName(element.tagName).toLowerCase() === "gnssmetadata") element.remove();
+    });
+    setVertexCoordinate(vertex, "x", point.x);
+    setVertexCoordinate(vertex, "y", point.y);
+    if (Number.isFinite(Number(point.z))) setVertexCoordinate(vertex, "z", point.z);
+    return vertex;
+  }
+
+  function setVertexCoordinate(vertex, axis, value) {
+    let element = elementChildren(vertex).find((child) => cleanName(child.tagName).toLowerCase() === axis);
+    if (!element && axis === "z") {
+      const yElement = elementChildren(vertex).find((child) => cleanName(child.tagName).toLowerCase() === "y");
+      const qualifiedName = yElement?.prefix ? `${yElement.prefix}:Z` : "Z";
+      element = vertex.ownerDocument.createElementNS(yElement?.namespaceURI || vertex.namespaceURI || null, qualifiedName);
+      if (yElement?.nextSibling) vertex.insertBefore(element, yElement.nextSibling);
+      else vertex.appendChild(element);
+    }
+    if (!element) return;
+    removeXmlNilAttribute(element);
+    element.textContent = formatDxfCoordinate(value);
+  }
+
+  function replaceElementChildren(parent, children) {
+    while (parent.firstChild) parent.removeChild(parent.firstChild);
+    children.forEach((child) => parent.appendChild(child));
+  }
+
+  function updateSplitDependentFields(firstAsset, secondAsset, proposal, splitPoint) {
+    const ratio = clamp(proposal.ratio, 0, 1);
+    const paths = getSplitPointArrays(proposal, splitPoint);
+    const firstGeometryLength = getPolylineLength(paths.first);
+    const secondGeometryLength = getPolylineLength(paths.second);
+    const originalLength = getAssetNumericValue(firstAsset, "lengthm");
+    if (originalLength !== null) {
+      const firstLength = originalLength * ratio;
+      setAssetNumericValue(firstAsset, "lengthm", firstLength);
+      setAssetNumericValue(secondAsset, "lengthm", originalLength - firstLength);
+    }
+
+    const levelPairs = [
+      ["usinvertlevelm", "dsinvertlevelm"],
+      ["ussurfacelevelm", "dssurfacelevelm"],
+    ];
+    levelPairs.forEach(([usKey, dsKey]) => {
+      const us = getAssetNumericValue(firstAsset, usKey);
+      const ds = getAssetNumericValue(firstAsset, dsKey);
+      if (us === null || ds === null) return;
+      const splitValue = us + (ds - us) * ratio;
+      setAssetNumericValue(firstAsset, dsKey, splitValue);
+      setAssetNumericValue(secondAsset, usKey, splitValue);
+    });
+
+    const startChainage = getAssetNumericValue(firstAsset, "startchainage");
+    const endChainage = getAssetNumericValue(firstAsset, "endchainage");
+    if (startChainage !== null && endChainage !== null) {
+      const splitChainage = startChainage + (endChainage - startChainage) * ratio;
+      setAssetNumericValue(firstAsset, "endchainage", splitChainage);
+      setAssetNumericValue(secondAsset, "startchainage", splitChainage);
+    }
+
+    updateSplitGrade(firstAsset, firstGeometryLength);
+    updateSplitGrade(secondAsset, secondGeometryLength);
+    updateSplitDepth(firstAsset);
+    updateSplitDepth(secondAsset);
+  }
+
+  function updateSplitGrade(assetNode, geometryLength) {
+    if (!(geometryLength > 0)) return;
+    const us = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const ds = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    if (us === null || ds === null) return;
+    ["pipegrade", "grade", "averagegrade"].some((key) => {
+      if (!findAssetFieldElement(assetNode, key)) return false;
+      setAssetNumericValue(assetNode, key, (us - ds) / geometryLength * 100);
+      return true;
+    });
+  }
+
+  function updateSplitDepth(assetNode) {
+    const depthElement = findAssetFieldElement(assetNode, "depthm");
+    if (!depthElement) return;
+    const usSurface = getAssetNumericValue(assetNode, "ussurfacelevelm");
+    const dsSurface = getAssetNumericValue(assetNode, "dssurfacelevelm");
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    if ([usSurface, dsSurface, usInvert, dsInvert].every((value) => value !== null)) {
+      setAssetNumericValue(assetNode, "depthm", ((usSurface - usInvert) + (dsSurface - dsInvert)) / 2);
+    }
+  }
+
+  function findAssetFieldElement(assetNode, normalizedName) {
+    return Array.from(assetNode?.querySelectorAll?.("*") || []).find((element) => (
+      !elementChildren(element).length
+      && !isElementInsideGeometry(element, assetNode)
+      && normalizeDetailKey(cleanName(element.tagName)) === normalizedName
+    )) || null;
+  }
+
+  function setAssetNumericValue(assetNode, normalizedName, value) {
+    const element = findAssetFieldElement(assetNode, normalizedName);
+    if (!element || !Number.isFinite(Number(value))) return;
+    removeXmlNilAttribute(element);
+    element.textContent = formatEditorCalculatedValue(Number(value));
   }
 
   async function duplicateSelectedAsset() {
@@ -8961,6 +9485,292 @@
     };
   }
 
+  function chooseSplitVertex(vertexIndex) {
+    const session = state.splitSession;
+    const context = getSplitSourceContext();
+    const eligibility = getSplitAssetEligibility(context?.feature, context?.record);
+    if (!session || session.targetMode !== "vertex" || !eligibility.eligible) return;
+    if (!Number.isInteger(vertexIndex) || vertexIndex <= 0 || vertexIndex >= eligibility.geometry.points.length - 1) {
+      state.editorFeedback = { fileId: session.sourceFileId, tone: "warning", message: "Choose an internal vertex rather than either line endpoint." };
+      renderDetails();
+      return;
+    }
+    const points = eligibility.geometry.points;
+    const chainage = getPolylineLength(points.slice(0, vertexIndex + 1));
+    setSplitProposal({
+      kind: "vertex",
+      targetLabel: `Existing vertex ${vertexIndex + 1}`,
+      referencePoint: { ...points[vertexIndex] },
+      projectedPoint: { ...points[vertexIndex] },
+      splitPoint: { ...points[vertexIndex] },
+      segmentIndex: vertexIndex - 1,
+      fraction: 1,
+      existingVertexIndex: vertexIndex,
+      chainage,
+      ratio: chainage / eligibility.geometry.horizontalLength,
+      offset: 0,
+      hasReferenceZ: false,
+      warnings: getSplitReferenceWarnings(context.feature),
+      sourcePoints: points.map((point) => ({ ...point })),
+    });
+  }
+
+  function getSplitSourceContext() {
+    const session = state.splitSession;
+    if (!session) return null;
+    const feature = state.features.find((item) => item.uid === session.sourceUid);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    return feature && record ? { feature, record } : null;
+  }
+
+  function updateSplitTargetHover(canvasPoint) {
+    const session = state.splitSession;
+    if (!session || session.stage !== "picking") return;
+    let hover = null;
+    if (session.targetMode === "vertex") {
+      hover = findSplitVertexAtCanvasPoint(canvasPoint);
+    } else if (session.targetMode === "asset") {
+      const feature = findFeatureAtCanvasPoint(canvasPoint);
+      if (feature?.geometryKind === "Point" && feature.sourceFileId === session.sourceFileId && feature.uid !== session.sourceUid) {
+        hover = { kind: "asset", feature };
+      }
+    } else if (session.targetMode === "cad") {
+      hover = findDxfGeometryAtCanvasPoint(canvasPoint);
+    }
+    const previousKey = getSplitHoverKey(session.hover);
+    const nextKey = getSplitHoverKey(hover);
+    if (previousKey === nextKey) return;
+    session.hover = hover;
+    drawMap();
+  }
+
+  function getSplitHoverKey(hover) {
+    if (!hover) return "";
+    if (hover.kind === "vertex") return `vertex:${hover.vertexIndex}`;
+    if (hover.kind === "asset") return `asset:${hover.feature?.uid || ""}`;
+    return `cad:${getDxfSnapTargetKey(hover)}`;
+  }
+
+  function findSplitVertexAtCanvasPoint(canvasPoint) {
+    const context = getSplitSourceContext();
+    const eligibility = getSplitAssetEligibility(context?.feature, context?.record);
+    const transform = getCurrentMapTransform();
+    if (!eligibility.eligible || !transform) return null;
+    let best = null;
+    eligibility.geometry.points.slice(1, -1).forEach((point, offset) => {
+      const screenPoint = projectFeaturePoint(point, transform);
+      if (!screenPoint) return;
+      const distancePixels = distanceBetween(canvasPoint, screenPoint);
+      if (distancePixels <= 13 && (!best || distancePixels < best.distancePixels)) {
+        best = { kind: "vertex", vertexIndex: offset + 1, point, distancePixels };
+      }
+    });
+    return best;
+  }
+
+  function chooseSplitTargetAtCanvasPoint(canvasPoint) {
+    const session = state.splitSession;
+    if (!session || session.stage !== "picking") return;
+    if (session.targetMode === "vertex") {
+      const target = findSplitVertexAtCanvasPoint(canvasPoint);
+      if (target) chooseSplitVertex(target.vertexIndex);
+      else setSplitPickingWarning("No internal vertex was found there. Choose one of the highlighted vertex handles.");
+      return;
+    }
+    if (session.targetMode === "asset") {
+      const feature = findFeatureAtCanvasPoint(canvasPoint);
+      if (!feature || feature.geometryKind !== "Point" || feature.sourceFileId !== session.sourceFileId || feature.uid === session.sourceUid) {
+        setSplitPickingWarning("Choose a point asset from the same XML file. Line, polygon, overlay, and other-file assets are reference-only for this operation.");
+        return;
+      }
+      chooseSplitReferencePoint(feature.points[0], `XML point asset ${feature.id}`, { kind: "asset", feature });
+      return;
+    }
+    const target = findDxfGeometryAtCanvasPoint(canvasPoint);
+    if (!target) {
+      setSplitPickingWarning("No visible DXF geometry was found there. Click a DXF point or line, or press Esc to cancel.");
+      return;
+    }
+    chooseSplitDxfTarget(target);
+  }
+
+  function setSplitPickingWarning(message) {
+    const session = state.splitSession;
+    if (!session) return;
+    state.editorFeedback = { fileId: session.sourceFileId, tone: "warning", message };
+    renderDetails();
+  }
+
+  function chooseSplitReferencePoint(referencePoint, targetLabel, target = null) {
+    const context = getSplitSourceContext();
+    const eligibility = getSplitAssetEligibility(context?.feature, context?.record);
+    if (!eligibility.eligible || !referencePoint) return;
+    const projection = projectPointOntoPolyline(referencePoint, eligibility.geometry.points);
+    if (!projection || projection.ratio <= 1e-7 || projection.ratio >= 1 - 1e-7) {
+      setSplitPickingWarning("The chosen target resolves to a line endpoint. A split point must be inside the line.");
+      return;
+    }
+    const referenceZ = Number(referencePoint.z);
+    const proposal = {
+      kind: target?.kind || "reference",
+      target,
+      targetLabel,
+      referencePoint: { x: referencePoint.x, y: referencePoint.y, z: Number.isFinite(referenceZ) ? referenceZ : null },
+      projectedPoint: projection.point,
+      splitPoint: { ...projection.point },
+      segmentIndex: projection.segmentIndex,
+      fraction: projection.fraction,
+      existingVertexIndex: null,
+      chainage: projection.chainage,
+      ratio: projection.ratio,
+      offset: projection.distance,
+      hasReferenceZ: Number.isFinite(referenceZ),
+      warnings: getSplitReferenceWarnings(context.feature),
+      sourcePoints: eligibility.geometry.points.map((point) => ({ ...point })),
+    };
+    setSplitProposal(proposal);
+    if (target?.feature?.id) suggestEndpointSplitIds(target.feature.id);
+  }
+
+  function chooseSplitDxfTarget(target) {
+    const context = getSplitSourceContext();
+    const eligibility = getSplitAssetEligibility(context?.feature, context?.record);
+    if (!eligibility.eligible) return;
+    const targetLabel = `${target.reference.name} / ${target.layer}${target.sourceType ? ` ${target.sourceType}` : ""}`;
+    if (target.kind === "point") {
+      chooseSplitReferencePoint(target.point, targetLabel, { kind: "cad", dxf: target });
+      return;
+    }
+    const relation = getPolylineToSegmentSplitRelation(eligibility.geometry.points, target.start, target.end);
+    if (!relation) {
+      setSplitPickingWarning("A usable split position could not be calculated from that DXF segment.");
+      return;
+    }
+    chooseSplitReferencePoint(relation.referencePoint, targetLabel, { kind: "cad", dxf: target });
+  }
+
+  function setSplitProposal(proposal) {
+    const session = state.splitSession;
+    if (!session || !proposal) return;
+    session.proposal = proposal;
+    session.stage = "preview";
+    session.hover = null;
+    session.coordinateSource = proposal.offset <= 0.001 ? "reference" : "projected";
+    session.useReferenceZ = false;
+    state.editorFeedback = null;
+    refreshSplitProposalResolvedPoint();
+    setStatus("Review the proposed split, resulting IDs, and dependent-field warning before applying it.", false);
+  }
+
+  function suggestEndpointSplitIds(targetId) {
+    const session = state.splitSession;
+    const match = String(session?.sourceId || "").match(/^(.+?)\s+-\s+(.+)$/);
+    const middle = String(targetId || "").trim();
+    if (!session || !match || !middle) return;
+    const first = `${match[1].trim()} - ${middle}`;
+    const second = `${middle} - ${match[2].trim()}`;
+    const existing = new Set(state.features.filter((feature) => feature.sourceFileId === session.sourceFileId && feature.uid !== session.sourceUid).map((feature) => String(feature.id || "").toLowerCase()));
+    if (!existing.has(first.toLowerCase()) && !existing.has(second.toLowerCase())) {
+      session.part1Id = first;
+      session.part2Id = second;
+      renderDetails();
+    }
+  }
+
+  function projectPointOntoPolyline(referencePoint, points) {
+    if (!referencePoint || !Array.isArray(points) || points.length < 2) return null;
+    const totalLength = getPolylineLength(points);
+    if (!(totalLength > 0)) return null;
+    let priorLength = 0;
+    let best = null;
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const start = points[index];
+      const end = points[index + 1];
+      const segmentLength = Math.hypot(end.x - start.x, end.y - start.y);
+      if (!(segmentLength > 0)) continue;
+      const nearest = getNearestPointOnSegment(referencePoint, start, end);
+      const fraction = clamp(Math.hypot(nearest.x - start.x, nearest.y - start.y) / segmentLength, 0, 1);
+      nearest.z = interpolateSplitZ(start.z, end.z, fraction);
+      const distance = Math.hypot(referencePoint.x - nearest.x, referencePoint.y - nearest.y);
+      if (!best || distance < best.distance) {
+        const chainage = priorLength + segmentLength * fraction;
+        best = { point: nearest, segmentIndex: index, fraction, distance, chainage, ratio: chainage / totalLength };
+      }
+      priorLength += segmentLength;
+    }
+    return best;
+  }
+
+  function getPolylineToSegmentSplitRelation(points, segmentStart, segmentEnd) {
+    const intersections = [];
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const intersection = getSegmentIntersection(points[index], points[index + 1], segmentStart, segmentEnd);
+      if (intersection) intersections.push(intersection);
+    }
+    if (intersections.length) return { referencePoint: intersections[0] };
+    const candidates = [];
+    points.forEach((point) => {
+      const referencePoint = getNearestPointOnSegment(point, segmentStart, segmentEnd);
+      candidates.push({ referencePoint, distance: Math.hypot(point.x - referencePoint.x, point.y - referencePoint.y) });
+    });
+    [segmentStart, segmentEnd].forEach((referencePoint) => {
+      const projection = projectPointOntoPolyline(referencePoint, points);
+      if (projection) candidates.push({ referencePoint, distance: projection.distance });
+    });
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates[0] || null;
+  }
+
+  function getSegmentIntersection(a, b, c, d) {
+    const denominator = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+    if (Math.abs(denominator) < 1e-12) return null;
+    const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / denominator;
+    const u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / denominator;
+    if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: interpolateSplitZ(a.z, b.z, t) };
+  }
+
+  function interpolateSplitZ(startZ, endZ, fraction) {
+    const start = Number(startZ);
+    const end = Number(endZ);
+    if (Number.isFinite(start) && Number.isFinite(end)) return start + (end - start) * fraction;
+    if (Number.isFinite(start)) return start;
+    if (Number.isFinite(end)) return end;
+    return null;
+  }
+
+  function getPolylineLength(points) {
+    return (points || []).slice(1).reduce((total, point, index) => total + Math.hypot(point.x - points[index].x, point.y - points[index].y), 0);
+  }
+
+  function getSplitPointArrays(proposal, splitPoint = proposal?.splitPoint) {
+    if (!proposal || !splitPoint) return { first: [], second: [] };
+    const points = proposal.sourcePoints.map((point) => ({ ...point }));
+    if (Number.isInteger(proposal.existingVertexIndex)) {
+      return {
+        first: points.slice(0, proposal.existingVertexIndex + 1),
+        second: points.slice(proposal.existingVertexIndex),
+      };
+    }
+    return {
+      first: [...points.slice(0, proposal.segmentIndex + 1), { ...splitPoint }],
+      second: [{ ...splitPoint }, ...points.slice(proposal.segmentIndex + 1)],
+    };
+  }
+
+  function getSplitPreviewLengths(proposal, splitPoint) {
+    const paths = getSplitPointArrays(proposal, splitPoint);
+    return { first: getPolylineLength(paths.first), second: getPolylineLength(paths.second) };
+  }
+
+  function getSplitReferenceWarnings(feature) {
+    const referenceKeys = new Set(["fromfeatureid", "tofeatureid", "dsmhid", "usmhid", "fromassetid", "toassetid", "upstreamid", "downstreamid"]);
+    const fields = (feature.editableFields || []).filter((field) => referenceKeys.has(normalizeDetailKey(field.name)) && !field.nil && String(field.value || "").trim());
+    return fields.length
+      ? [`Review copied endpoint references after splitting: ${formatList(uniqueValues(fields.map((field) => formatDetailLabel(field.name))))}.`]
+      : [];
+  }
+
   function getVertexCoordinates(vertex) {
     const read = (name) => {
       const element = elementChildren(vertex).find((child) => cleanName(child.tagName).toLowerCase() === name);
@@ -9408,7 +10218,7 @@
       record.historyFuture.push(change.afterXmlText);
       applyKnownValidXmlSnapshot(record, change.beforeXmlText, change.selectedLocator);
     });
-    restoreTransactionSelection(transaction.selectedIds);
+    restoreTransactionSelection(transaction.beforeSelectedIds || transaction.selectedIds);
     const message = formatBulkTransactionHistoryMessage(transaction, "Undid");
     state.editorFeedback = { bulk: true, tone: "success", message };
     renderDetails();
@@ -9427,7 +10237,7 @@
       if (record.historyFuture[record.historyFuture.length - 1] === change.afterXmlText) record.historyFuture.pop();
       applyKnownValidXmlSnapshot(record, change.afterXmlText, change.selectedLocator);
     });
-    restoreTransactionSelection(transaction.selectedIds);
+    restoreTransactionSelection(transaction.afterSelectedIds || transaction.selectedIds);
     const message = formatBulkTransactionHistoryMessage(transaction, "Redid");
     state.editorFeedback = { bulk: true, tone: "success", message };
     renderDetails();
@@ -9456,6 +10266,9 @@
     }
     if (transaction.kind === "duplicate") {
       return `${verb} duplication of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
+    if (transaction.kind === "split") {
+      return `${verb} split of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
     }
     return `${verb} the bulk ${transaction.label} change for ${transaction.assetCount} assets.`;
   }
@@ -10041,6 +10854,7 @@
       reference.visible && reference.layers.some((layer) => layer.visible)
     ));
     if (!feature?.points?.[pointIndex] || !hasVisibleDxfGeometry || state.editorBusy) return;
+    if (state.splitSession) cancelSplitAsset({ silent: true });
     if (state.dxfSnapSelection?.featureUid === featureUid && state.dxfSnapSelection?.pointIndex === pointIndex) {
       cancelDxfGeometrySnapSelection();
       return;
@@ -10490,6 +11304,7 @@
     getFeaturesForMapDrawing(features).forEach((feature) => {
       drawAssetFeature(feature, transform);
     });
+    drawSplitOverlay(transform);
     drawMeasurementOverlay(transform);
     renderMeasurementUi();
   }
@@ -10600,6 +11415,87 @@
       }
     }
     ctx.restore();
+  }
+
+  function drawSplitOverlay(transform) {
+    const session = state.splitSession;
+    const context = getSplitSourceContext();
+    if (!session || !context?.feature || !transform) return;
+    ctx.save();
+    if (session.stage === "picking" && session.targetMode === "vertex") {
+      const eligibility = getSplitAssetEligibility(context.feature, context.record);
+      if (eligibility.eligible) {
+        eligibility.geometry.points.slice(1, -1).forEach((point, offset) => {
+          const screenPoint = projectFeaturePoint(point, transform);
+          if (!screenPoint) return;
+          const hovered = session.hover?.kind === "vertex" && session.hover.vertexIndex === offset + 1;
+          ctx.fillStyle = hovered ? "#ffd24a" : "#ffffff";
+          ctx.strokeStyle = "#0b1f3a";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(screenPoint.x, screenPoint.y, hovered ? 7 : 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+    }
+    if (session.stage === "picking" && session.hover?.kind === "asset") {
+      const point = projectFeaturePoint(session.hover.feature?.points?.[0], transform);
+      if (point) drawSplitTargetMarker(point, "#ffd24a");
+    }
+    if (session.stage === "picking" && session.targetMode === "cad" && session.hover) {
+      const target = session.hover;
+      if (target.kind === "point") {
+        const point = projectFeaturePoint(target.point, transform);
+        if (point) drawSplitTargetMarker(point, "#ffd24a");
+      } else if (target.start && target.end) {
+        const points = [target.start, target.end].map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+        if (points.length === 2) {
+          drawStyledScreenPath(points, { lineWidth: 7, stroke: "rgba(11, 31, 58, 0.9)" });
+          drawStyledScreenPath(points, { lineWidth: 3, stroke: "#ffd24a" });
+        }
+      }
+    }
+    if (session.proposal?.splitPoint) {
+      const paths = getSplitPointArrays(session.proposal, session.proposal.splitPoint);
+      const first = paths.first.map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+      const second = paths.second.map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+      if (first.length > 1) {
+        drawStyledScreenPath(first, { lineWidth: 8, stroke: "rgba(11, 31, 58, 0.86)" });
+        drawStyledScreenPath(first, { lineWidth: 4, stroke: "#2f80ed" });
+      }
+      if (second.length > 1) {
+        drawStyledScreenPath(second, { lineWidth: 8, stroke: "rgba(11, 31, 58, 0.86)" });
+        drawStyledScreenPath(second, { lineWidth: 4, stroke: "#d97822" });
+      }
+      const splitScreenPoint = projectFeaturePoint(session.proposal.splitPoint, transform);
+      if (splitScreenPoint) drawSplitTargetMarker(splitScreenPoint, "#ffd24a");
+      if (session.proposal.offset > 0.001) {
+        const projected = projectFeaturePoint(session.proposal.projectedPoint, transform);
+        const reference = projectFeaturePoint(session.proposal.referencePoint, transform);
+        if (projected && reference) {
+          ctx.setLineDash([4, 3]);
+          ctx.strokeStyle = "rgba(11, 31, 58, 0.72)";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(projected.x, projected.y);
+          ctx.lineTo(reference.x, reference.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawSplitTargetMarker(point, fill) {
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = "#0b1f3a";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
   function getMutedDxfColor(value) {
@@ -15465,6 +16361,7 @@
     els.canvas.dataset.measurementMode = state.measurement.mode;
     els.canvas.classList.toggle("is-measuring", isMeasurementActive());
     els.canvas.classList.toggle("is-dxf-snap-picking", Boolean(state.dxfSnapSelection));
+    els.canvas.classList.toggle("is-split-picking", isSplitTargetPicking());
   }
 
   function escapeHtml(value) {
