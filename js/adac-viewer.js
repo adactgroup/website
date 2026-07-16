@@ -1109,6 +1109,8 @@
     editorInputTimer: null,
     deleteConfirmation: null,
     splitSession: null,
+    mergeSession: null,
+    mergePreview: null,
     bulkHistoryPast: [],
     bulkHistoryFuture: [],
     filters: {
@@ -1156,6 +1158,13 @@
     checkList: root.querySelector("[data-role='check-list']"),
     repairedXmlDownloadButton: root.querySelector("[data-role='download-repaired-xml']"),
     editedXmlDownloadButton: root.querySelector("[data-role='download-edited-xml']"),
+    mergedXmlDownloadButton: root.querySelector("[data-role='download-merged-xml']"),
+    mergeButton: root.querySelector("[data-role='merge-xml-button']"),
+    mergeButtonLabel: root.querySelector("[data-role='merge-xml-button-label']"),
+    mergeModal: document.querySelector("[data-role='merge-modal']"),
+    mergeModalContent: document.querySelector("[data-role='merge-modal-content']"),
+    mergeModalStatus: document.querySelector("[data-role='merge-modal-status']"),
+    buildMergedXmlButton: document.querySelector("[data-role='build-merged-xml']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1225,6 +1234,10 @@
     }
     if (els.termsModal) {
       els.termsModal.addEventListener("click", handleClick);
+    }
+    if (els.mergeModal) {
+      els.mergeModal.addEventListener("click", handleClick);
+      els.mergeModal.addEventListener("change", handleChange);
     }
     if (els.dropzone && els.dropTarget) {
       let dragDepth = 0;
@@ -1390,6 +1403,11 @@
   }
 
   function handleChange(event) {
+    const mergeControl = event.target.closest("[data-merge-control]");
+    if (mergeControl) {
+      updateMergeSessionControl(mergeControl);
+      return;
+    }
     const splitIdField = event.target.closest("[data-split-id]");
     if (splitIdField) {
       updateSplitSessionId(splitIdField.dataset.splitId, splitIdField.value);
@@ -1517,6 +1535,14 @@
       loadSampleXml("v501");
     } else if (action === "load-sample-v600") {
       loadSampleXml("v600");
+    } else if (action === "open-merge-xml") {
+      handleMergeXmlButton();
+    } else if (action === "close-merge-xml") {
+      closeMergeXmlModal();
+    } else if (action === "build-merged-xml") {
+      buildMergedXmlPreview();
+    } else if (action === "download-merged-xml") {
+      downloadMergedXml();
     } else if (action === "toggle-label-menu") {
       toggleLabelMenu();
     } else if (action === "set-label-simple") {
@@ -1620,6 +1646,10 @@
       return;
     }
     if (event.key === "Escape") {
+      if (isMergeXmlModalOpen()) {
+        closeMergeXmlModal();
+        return;
+      }
       if (state.splitSession) {
         cancelSplitAsset();
         return;
@@ -1639,6 +1669,7 @@
     if (except !== "label") closeLabelMenu();
     if (except !== "measurement") closeMeasurementMenu();
     if (except !== "selection") closeSelectionMenu();
+    if (except !== "merge") closeMergeXmlModal();
     if (except !== "terms") closeTermsModal();
     if (except !== "suggestions") closeSuggestions();
   }
@@ -1738,6 +1769,592 @@
     return Boolean(els.sampleMenu && !els.sampleMenu.hidden);
   }
 
+  function handleMergeXmlButton() {
+    if (state.mergePreview?.active) {
+      restoreMergeSourceFiles();
+      return;
+    }
+    openMergeXmlModal();
+  }
+
+  function openMergeXmlModal() {
+    if (!els.mergeModal) return;
+    if (state.loadedFiles.length < 2) {
+      setStatus("Load at least two schema-valid ADAC XML files before merging.", true);
+      return;
+    }
+    closeTransientUi("merge");
+    const baseFileId = state.loadedFiles[0]?.id || "";
+    state.mergeSession = {
+      baseFileId,
+      sourceFileIds: new Set(state.loadedFiles.filter((file) => file.id !== baseFileId).map((file) => file.id)),
+      scope: "all",
+      assetPaths: new Set(),
+      typeSelectionInitialized: false,
+      conflictPolicy: "keep",
+      conflictResolutions: new Map(),
+      busy: false,
+      error: "",
+    };
+    els.mergeModal.hidden = false;
+    els.mergeButton?.setAttribute("aria-expanded", "true");
+    renderMergeXmlModal();
+  }
+
+  function closeMergeXmlModal() {
+    if (!els.mergeModal) return;
+    els.mergeModal.hidden = true;
+    els.mergeButton?.setAttribute("aria-expanded", "false");
+    if (!state.mergeSession?.busy) state.mergeSession = null;
+  }
+
+  function isMergeXmlModalOpen() {
+    return Boolean(els.mergeModal && !els.mergeModal.hidden);
+  }
+
+  function updateMergeSessionControl(control) {
+    const session = state.mergeSession;
+    if (!session || session.busy) return;
+    const kind = control.dataset.mergeControl;
+    if (kind === "base") {
+      session.baseFileId = control.value;
+      session.sourceFileIds = new Set(state.loadedFiles.filter((file) => file.id !== session.baseFileId).map((file) => file.id));
+      session.assetPaths = new Set();
+      session.typeSelectionInitialized = false;
+      session.conflictResolutions.clear();
+    } else if (kind === "source") {
+      const fileId = control.dataset.mergeFileId || "";
+      if (control.checked) session.sourceFileIds.add(fileId);
+      else session.sourceFileIds.delete(fileId);
+      session.assetPaths = new Set();
+      session.typeSelectionInitialized = false;
+      session.conflictResolutions.clear();
+    } else if (kind === "scope") {
+      session.scope = control.value;
+      session.conflictResolutions.clear();
+    } else if (kind === "type") {
+      const assetPath = control.dataset.mergeAssetPath || "";
+      session.typeSelectionInitialized = true;
+      if (control.checked) session.assetPaths.add(assetPath);
+      else session.assetPaths.delete(assetPath);
+      session.conflictResolutions.clear();
+    } else if (kind === "policy") {
+      session.conflictPolicy = control.value;
+      session.conflictResolutions.clear();
+    } else if (kind === "conflict") {
+      const conflictKey = control.dataset.mergeConflictKey || "";
+      if (control.value) session.conflictResolutions.set(conflictKey, control.value);
+      else session.conflictResolutions.delete(conflictKey);
+    }
+    session.error = "";
+    renderMergeXmlModal();
+  }
+
+  function renderMergeXmlModal() {
+    const session = state.mergeSession;
+    if (!els.mergeModalContent || !session) return;
+    const analysis = buildMergeAnalysis(session);
+    session.analysis = analysis;
+    const selectedIncomingCount = state.features.filter((feature) => (
+      session.sourceFileIds.has(feature.sourceFileId) && state.selectedIds.has(feature.uid)
+    )).length;
+    const notices = [
+      ...analysis.errors.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
+      ...analysis.warnings.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
+    ].join("");
+    const conflictRows = analysis.conflicts.map((conflict) => {
+      const resolution = getMergeConflictResolution(session, conflict);
+      const typeText = conflict.typeMismatch
+        ? `${getSelectionAssetClassLabel(conflict.existingFeature)} conflicts with ${getSelectionAssetClassLabel(conflict.incomingFeature)}`
+        : `${getSelectionAssetClassLabel(conflict.incomingFeature)} differs from the base asset`;
+      return `
+        <label class="viewer-merge-conflict">
+          <strong>${escapeHtml(conflict.assetId)}</strong>
+          <span>${escapeHtml(typeText)}<br>${escapeHtml(conflict.incomingFeature.sourceFile || "Incoming XML")}</span>
+          <select data-merge-control="conflict" data-merge-conflict-key="${escapeHtml(conflict.key)}" aria-label="Resolve duplicate ${escapeHtml(conflict.assetId)}">
+            <option value="" ${resolution ? "" : "selected"}>Choose action</option>
+            <option value="keep" ${resolution === "keep" ? "selected" : ""}>Keep base asset</option>
+            <option value="replace" ${resolution === "replace" ? "selected" : ""}>Use incoming asset</option>
+          </select>
+        </label>
+      `;
+    }).join("");
+    els.mergeModalContent.innerHTML = `
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>1. Files</strong><span>Current validated working copies are used</span></span>
+        <div class="viewer-merge-grid">
+          <label class="viewer-merge-field">
+            <span>Base XML</span>
+            <select data-merge-control="base" aria-label="Base XML file">
+              ${state.loadedFiles.map((file) => `<option value="${escapeHtml(file.id)}" ${file.id === session.baseFileId ? "selected" : ""}>${escapeHtml(`${file.name} (${file.assetCount} assets)`)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="viewer-merge-field">
+            <span>Duplicate policy</span>
+            <select data-merge-control="policy" aria-label="Duplicate asset policy">
+              <option value="keep" ${session.conflictPolicy === "keep" ? "selected" : ""}>Keep base assets by default</option>
+              <option value="replace" ${session.conflictPolicy === "replace" ? "selected" : ""}>Use incoming assets by default</option>
+              <option value="review" ${session.conflictPolicy === "review" ? "selected" : ""}>Review every changed duplicate</option>
+            </select>
+          </label>
+        </div>
+        <div class="viewer-merge-file-list">
+          ${state.loadedFiles.filter((file) => file.id !== session.baseFileId).map((file) => `
+            <label class="viewer-merge-check">
+              <input type="checkbox" data-merge-control="source" data-merge-file-id="${escapeHtml(file.id)}" ${session.sourceFileIds.has(file.id) ? "checked" : ""} />
+              <span>${escapeHtml(file.name)}</span>
+              <small>${file.assetCount} assets</small>
+            </label>
+          `).join("")}
+        </div>
+      </section>
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>2. Assets</strong><span>${analysis.candidateCount} incoming assets in scope</span></span>
+        <div class="viewer-merge-scope" role="radiogroup" aria-label="Merge asset scope">
+          <label><input type="radio" name="merge-scope" value="all" data-merge-control="scope" ${session.scope === "all" ? "checked" : ""} /><span>All source assets</span></label>
+          <label><input type="radio" name="merge-scope" value="selected" data-merge-control="scope" ${session.scope === "selected" ? "checked" : ""} ${selectedIncomingCount ? "" : "disabled"} /><span>Current selection (${selectedIncomingCount})</span></label>
+          <label><input type="radio" name="merge-scope" value="types" data-merge-control="scope" ${session.scope === "types" ? "checked" : ""} /><span>Selected asset types</span></label>
+        </div>
+        ${session.scope === "types" ? `
+          <div class="viewer-merge-type-list">
+            ${analysis.typeOptions.map((option) => `
+              <label class="viewer-merge-check">
+                <input type="checkbox" data-merge-control="type" data-merge-asset-path="${escapeHtml(option.key)}" ${session.assetPaths.has(option.key) ? "checked" : ""} />
+                <span>${escapeHtml(option.label)}</span>
+                <small>${option.count}</small>
+              </label>
+            `).join("")}
+          </div>
+        ` : ""}
+      </section>
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>3. Review</strong><span>${analysis.unresolvedCount ? `${analysis.unresolvedCount} decisions required` : "Ready for validation"}</span></span>
+        <div class="viewer-merge-summary">
+          <span><strong>${analysis.addCount}</strong><small>Add</small></span>
+          <span><strong>${analysis.replaceCount}</strong><small>Replace</small></span>
+          <span><strong>${analysis.skipCount}</strong><small>Skip</small></span>
+          <span><strong>${analysis.conflicts.length}</strong><small>Conflicts</small></span>
+        </div>
+        ${notices}
+        ${analysis.conflicts.length ? `<div class="viewer-merge-conflicts">${conflictRows}</div>` : `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>No changed duplicate IDs require review. Identical duplicates will be skipped automatically.</span></span>`}
+      </section>
+    `;
+    const ready = !session.busy && !analysis.errors.length && analysis.candidateCount > 0 && analysis.unresolvedCount === 0;
+    if (els.buildMergedXmlButton) els.buildMergedXmlButton.disabled = !ready;
+    if (els.mergeModalStatus) {
+      els.mergeModalStatus.textContent = session.busy
+        ? "Validating the merged XML against the ADAC schema..."
+        : session.error
+          ? session.error
+          : ready
+            ? `${analysis.addCount + analysis.replaceCount} incoming assets will be applied.`
+            : analysis.unresolvedCount
+              ? `Resolve ${analysis.unresolvedCount} duplicate conflict${analysis.unresolvedCount === 1 ? "" : "s"}.`
+              : "Choose compatible source files and at least one incoming asset.";
+    }
+  }
+
+  function buildMergeAnalysis(session) {
+    const baseFile = state.loadedFiles.find((file) => file.id === session.baseFileId) || null;
+    const baseRecord = baseFile ? state.documents.get(baseFile.id) : null;
+    const sourceFiles = state.loadedFiles.filter((file) => session.sourceFileIds.has(file.id) && file.id !== session.baseFileId);
+    const errors = [];
+    const warnings = [];
+    if (!baseRecord?.workingDocument || !baseRecord.validation?.valid) errors.push("Choose a schema-valid base XML file.");
+    if (!sourceFiles.length) errors.push("Choose at least one source XML file.");
+    sourceFiles.forEach((file) => {
+      const record = state.documents.get(file.id);
+      if (!record?.workingDocument || !record.validation?.valid) {
+        errors.push(`${file.name} does not have a schema-valid working copy.`);
+        return;
+      }
+      if (baseRecord && record.schemaKey !== baseRecord.schemaKey) {
+        errors.push(`${file.name} uses ${schemaLabel(record.schemaVersion)}, while the base uses ${schemaLabel(baseRecord.schemaVersion)}. Different ADAC versions cannot be merged.`);
+      }
+    });
+    if (baseRecord) compareMergeProjectMetadata(baseRecord, sourceFiles, errors, warnings);
+
+    const sourceFeatures = state.features.filter((feature) => session.sourceFileIds.has(feature.sourceFileId));
+    const typeCounts = new Map();
+    sourceFeatures.forEach((feature) => {
+      const key = getSelectionAssetClassKey(feature);
+      if (!typeCounts.has(key)) typeCounts.set(key, { key, label: getSelectionAssetClassLabel(feature), count: 0 });
+      typeCounts.get(key).count += 1;
+    });
+    const typeOptions = Array.from(typeCounts.values()).sort((a, b) => naturalCompare(a.label, b.label));
+    if (session.scope === "types" && !session.typeSelectionInitialized) {
+      session.assetPaths = new Set(typeOptions.map((option) => option.key));
+      session.typeSelectionInitialized = true;
+    }
+    let candidates = sourceFeatures;
+    if (session.scope === "selected") candidates = candidates.filter((feature) => state.selectedIds.has(feature.uid));
+    if (session.scope === "types") candidates = candidates.filter((feature) => session.assetPaths.has(getSelectionAssetClassKey(feature)));
+    if (!candidates.length && sourceFiles.length) errors.push("The selected merge scope does not contain any incoming assets.");
+
+    const targetById = new Map();
+    state.features.filter((feature) => feature.sourceFileId === session.baseFileId).forEach((feature) => {
+      const record = state.documents.get(feature.sourceFileId);
+      const node = record?.workingDocument ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator) : null;
+      const assetId = getMergeAssetId(node, feature);
+      if (assetId) targetById.set(normalizeMergeAssetId(assetId), { feature, fingerprint: getMergeAssetFingerprint(node) });
+    });
+    const conflicts = [];
+    let addCount = 0;
+    let replaceCount = 0;
+    let skipCount = 0;
+    let identicalCount = 0;
+    candidates.forEach((feature) => {
+      const record = state.documents.get(feature.sourceFileId);
+      const node = record?.workingDocument ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator) : null;
+      const assetId = getMergeAssetId(node, feature);
+      const idKey = normalizeMergeAssetId(assetId);
+      const fingerprint = getMergeAssetFingerprint(node);
+      const existing = idKey ? targetById.get(idKey) : null;
+      if (!existing) {
+        addCount += 1;
+        if (idKey) targetById.set(idKey, { feature, fingerprint });
+        return;
+      }
+      if (existing.feature.assetPath === feature.assetPath && existing.fingerprint === fingerprint) {
+        identicalCount += 1;
+        skipCount += 1;
+        return;
+      }
+      const conflict = {
+        key: `${feature.sourceFileId}|${feature.xmlLocator}|${idKey}`,
+        assetId: assetId || feature.id || "Unnamed asset",
+        existingFeature: existing.feature,
+        incomingFeature: feature,
+        typeMismatch: existing.feature.assetPath !== feature.assetPath,
+      };
+      conflicts.push(conflict);
+      const resolution = getMergeConflictResolution(session, conflict);
+      if (resolution === "replace") {
+        replaceCount += 1;
+        targetById.set(idKey, { feature, fingerprint });
+      } else if (resolution === "keep") {
+        skipCount += 1;
+      }
+    });
+    const unresolvedCount = conflicts.filter((conflict) => !getMergeConflictResolution(session, conflict)).length;
+    if (identicalCount) warnings.push(`${identicalCount} identical duplicate asset${identicalCount === 1 ? " was" : "s were"} found and will be skipped automatically.`);
+    const missingReferenceCount = countMissingMergeReferences(candidates, targetById);
+    if (missingReferenceCount) warnings.push(`${missingReferenceCount} selected asset reference${missingReferenceCount === 1 ? " points" : "s point"} to an ID not present in the planned merged result. Review connectivity after merging.`);
+    return {
+      baseFile,
+      baseRecord,
+      sourceFiles,
+      typeOptions,
+      candidates,
+      candidateCount: candidates.length,
+      conflicts,
+      addCount,
+      replaceCount,
+      skipCount,
+      identicalCount,
+      unresolvedCount,
+      errors: uniqueValues(errors),
+      warnings: uniqueValues(warnings),
+    };
+  }
+
+  function getMergeConflictResolution(session, conflict) {
+    const explicit = session.conflictResolutions.get(conflict.key);
+    if (["keep", "replace"].includes(explicit)) return explicit;
+    if (conflict.typeMismatch || session.conflictPolicy === "review") return "";
+    return session.conflictPolicy === "replace" ? "replace" : "keep";
+  }
+
+  function compareMergeProjectMetadata(baseRecord, sourceFiles, errors, warnings) {
+    const baseMetadata = extractReportBundle(baseRecord.workingDocument, baseRecord.name).metadata || {};
+    const baseCoordinate = baseMetadata.coordinateSystem || {};
+    sourceFiles.forEach((file) => {
+      const record = state.documents.get(file.id);
+      if (!record?.workingDocument) return;
+      const metadata = extractReportBundle(record.workingDocument, record.name).metadata || {};
+      const coordinate = metadata.coordinateSystem || {};
+      [
+        ["horizontal coordinate system", baseCoordinate.horizontalCoordinateSystem, coordinate.horizontalCoordinateSystem],
+        ["horizontal datum", baseCoordinate.horizontalDatum, coordinate.horizontalDatum],
+        ["vertical datum", baseCoordinate.verticalDatum, coordinate.verticalDatum],
+      ].forEach(([label, baseValue, sourceValue]) => {
+        if (baseValue && sourceValue && normalizeDetailValue(baseValue) !== normalizeDetailValue(sourceValue)) {
+          errors.push(`${file.name} has a different ${label} (${sourceValue}) from the base (${baseValue}).`);
+        }
+      });
+      [
+        ["Receiver", baseMetadata.receiver, metadata.receiver],
+        ["project name", baseMetadata.name, metadata.name],
+        ["works approval ID", baseMetadata.worksApprovalId, metadata.worksApprovalId],
+        ["drawing number", baseMetadata.drawingNumber, metadata.drawingNumber],
+      ].forEach(([label, baseValue, sourceValue]) => {
+        if (baseValue && sourceValue && normalizeDetailValue(baseValue) !== normalizeDetailValue(sourceValue)) {
+          warnings.push(`${file.name} has a different ${label}. The merged XML will retain the base value '${baseValue}'.`);
+        }
+      });
+    });
+  }
+
+  function normalizeMergeAssetId(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function getMergeAssetId(node, feature) {
+    const idElement = node ? findAssetIdentityElement(node, "adacid") : null;
+    return String(idElement?.textContent || feature?.id || "").trim();
+  }
+
+  function getMergeAssetFingerprint(node) {
+    if (!node) return "";
+    return new XMLSerializer().serializeToString(node)
+      .replace(/>\s+</g, "><")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function countMissingMergeReferences(candidates, plannedTargets) {
+    const referenceNames = new Set(["dsmhid", "pumptoid", "linetoid"]);
+    let count = 0;
+    candidates.forEach((feature) => {
+      (feature.editableFields || []).forEach((field) => {
+        if (!referenceNames.has(normalizeDetailKey(field.name)) || field.nil) return;
+        const reference = normalizeMergeAssetId(field.value);
+        if (reference && !plannedTargets.has(reference)) count += 1;
+      });
+    });
+    return count;
+  }
+
+  async function buildMergedXmlPreview() {
+    const session = state.mergeSession;
+    if (!session || session.busy) return;
+    const analysis = buildMergeAnalysis(session);
+    if (analysis.errors.length || analysis.unresolvedCount || !analysis.candidateCount) {
+      session.error = analysis.errors[0] || "Resolve the remaining duplicate conflicts before building the merged XML.";
+      renderMergeXmlModal();
+      return;
+    }
+    const candidateDoc = parseXmlDocument(analysis.baseRecord.workingXmlText);
+    if (!candidateDoc) {
+      session.error = "The base working XML could not be prepared for merging.";
+      renderMergeXmlModal();
+      return;
+    }
+    const targetById = new Map();
+    extractFeatures(candidateDoc, { schemaKey: analysis.baseRecord.schemaKey }).forEach((feature) => {
+      const node = findXmlElementByLocator(candidateDoc, feature.xmlLocator);
+      const assetId = getMergeAssetId(node, feature);
+      if (assetId) targetById.set(normalizeMergeAssetId(assetId), { feature, node, fingerprint: getMergeAssetFingerprint(node) });
+    });
+    let appliedCount = 0;
+    let replacedCount = 0;
+    let skippedCount = 0;
+    for (const feature of analysis.candidates) {
+      const sourceRecord = state.documents.get(feature.sourceFileId);
+      const sourceNode = sourceRecord?.workingDocument ? findXmlElementByLocator(sourceRecord.workingDocument, feature.xmlLocator) : null;
+      if (!sourceNode) {
+        session.error = `${feature.id || "An incoming asset"} could not be located in ${feature.sourceFile || "the source XML"}.`;
+        renderMergeXmlModal();
+        return;
+      }
+      const assetId = getMergeAssetId(sourceNode, feature);
+      const idKey = normalizeMergeAssetId(assetId);
+      const fingerprint = getMergeAssetFingerprint(sourceNode);
+      const existing = idKey ? targetById.get(idKey) : null;
+      if (existing && existing.feature.assetPath === feature.assetPath && existing.fingerprint === fingerprint) {
+        skippedCount += 1;
+        continue;
+      }
+      if (existing) {
+        const conflict = analysis.conflicts.find((item) => item.key === `${feature.sourceFileId}|${feature.xmlLocator}|${idKey}`);
+        const resolution = conflict ? getMergeConflictResolution(session, conflict) : "keep";
+        if (resolution !== "replace") {
+          skippedCount += 1;
+          continue;
+        }
+        existing.node?.parentNode?.removeChild(existing.node);
+        replacedCount += 1;
+      }
+      const destination = findMergeDestinationParent(candidateDoc, feature.assetPath);
+      if (!destination) {
+        session.error = `The ${getSelectionAssetClassLabel(feature)} container could not be found in the base XML.`;
+        renderMergeXmlModal();
+        return;
+      }
+      const importedNode = candidateDoc.importNode(sourceNode, true);
+      destination.appendChild(importedNode);
+      appliedCount += 1;
+      if (idKey) targetById.set(idKey, { feature, node: importedNode, fingerprint });
+    }
+    updateMergedDrawingExtents(candidateDoc, analysis.baseRecord.schemaKey);
+    const mergedXmlText = serializeXmlDocument(candidateDoc);
+    const mergedFileName = buildMergedXmlFileName(analysis.baseRecord.name);
+    session.busy = true;
+    session.error = "";
+    renderMergeXmlModal();
+    const revision = ++state.editorRevision;
+    const validation = await validateAdacSchema(mergedXmlText, mergedFileName, candidateDoc);
+    if (revision !== state.editorRevision || state.mergeSession !== session) return;
+    session.busy = false;
+    if (!validation.valid) {
+      const firstError = normalizeValidationErrors(validation.errors)[0];
+      const details = formatValidationErrorDetails(firstError);
+      session.error = `The merged XML was not opened. ${details.title}. ${details.suggestion || details.detail || "Review the merge settings."}`;
+      renderMergeXmlModal();
+      return;
+    }
+    const sourceState = captureMergeSourceState();
+    closeMergeXmlModal();
+    clearLoadedFiles(false, { keepDxf: true, keepMergePreview: true });
+    const features = extractFeatures(candidateDoc, { schemaKey: validation.schemaKey });
+    applyParsedFilesToState([{
+      fileName: mergedFileName,
+      xmlText: mergedXmlText,
+      doc: candidateDoc,
+      features,
+      fileMeta: extractFileMeta(candidateDoc),
+      reportBundle: extractReportBundle(candidateDoc, mergedFileName),
+      schemaValidation: validation,
+    }], { replace: false, validationErrorResults: [] });
+    state.mergePreview = {
+      active: true,
+      fileName: mergedFileName,
+      sourceState,
+      appliedCount,
+      replacedCount,
+      skippedCount,
+    };
+    state.mergeSession = null;
+    renderAll();
+    setStatus(`Merged preview created with ${appliedCount} incoming asset${appliedCount === 1 ? "" : "s"}; ${replacedCount} duplicate${replacedCount === 1 ? " was" : "s were"} replaced and ${skippedCount} skipped. Source XMLs remain unchanged.`, false);
+  }
+
+  function findMergeDestinationParent(doc, assetPath) {
+    const projectData = firstElementByName(doc?.documentElement, "ProjectData");
+    if (!projectData) return null;
+    const parts = String(assetPath || "").split("/").filter(Boolean).slice(0, -1);
+    let current = projectData;
+    for (const part of parts) {
+      current = firstDirectChild(current, part);
+      if (!current) return null;
+    }
+    return current;
+  }
+
+  function updateMergedDrawingExtents(doc, schemaKey) {
+    const features = extractFeatures(doc, { schemaKey });
+    const points = features.flatMap((feature) => feature.points || []).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    if (!points.length) return;
+    const project = firstElementByName(doc.documentElement, "Project");
+    const extents = firstDirectChild(project, "DrawingExtents");
+    const southWest = firstDirectChild(extents, "SouthWest");
+    const northEast = firstDirectChild(extents, "NorthEast");
+    if (!southWest || !northEast) return;
+    setMergeDirectChildText(southWest, "X", Math.min(...points.map((point) => point.x)));
+    setMergeDirectChildText(southWest, "Y", Math.min(...points.map((point) => point.y)));
+    setMergeDirectChildText(northEast, "X", Math.max(...points.map((point) => point.x)));
+    setMergeDirectChildText(northEast, "Y", Math.max(...points.map((point) => point.y)));
+  }
+
+  function setMergeDirectChildText(parent, name, value) {
+    const element = firstDirectChild(parent, name);
+    if (element && Number.isFinite(Number(value))) element.textContent = String(round(Number(value), 3));
+  }
+
+  function captureMergeSourceState() {
+    return {
+      features: state.features,
+      selectedId: state.selectedId,
+      selectedIds: new Set(state.selectedIds),
+      multiSelectMode: state.multiSelectMode,
+      selectionBuilder: { ...state.selectionBuilder },
+      fileMeta: state.fileMeta,
+      fileMetas: state.fileMetas,
+      loadedFiles: state.loadedFiles,
+      documents: state.documents,
+      reportBundles: state.reportBundles,
+      schemaValidationResults: state.schemaValidationResults,
+      validationErrorResults: state.validationErrorResults,
+      repairPreview: state.repairPreview,
+      assetKinds: state.assetKinds,
+      fileName: state.fileName,
+      coordinateZone: state.coordinateZone,
+      mapMode: state.mapMode,
+      zoom: state.zoom,
+      pan: { ...state.pan },
+      filters: { ...state.filters },
+      labelMode: state.labelMode,
+      editMode: state.editMode,
+      showAllDetails: state.showAllDetails,
+      projectDetailsOpen: state.projectDetailsOpen,
+      geometryEditorOpen: state.geometryEditorOpen,
+      bulkHistoryPast: state.bulkHistoryPast,
+      bulkHistoryFuture: state.bulkHistoryFuture,
+      layerState: captureViewerLayerState(),
+      dxfFitReferenceId: state.dxfFitReferenceId,
+    };
+  }
+
+  function restoreMergeSourceFiles() {
+    const snapshot = state.mergePreview?.sourceState;
+    if (!snapshot) return;
+    clearLoadedFiles(false, { keepDxf: true, keepMergePreview: true });
+    state.features = snapshot.features;
+    state.selectedId = snapshot.selectedId;
+    state.selectedIds = new Set(snapshot.selectedIds);
+    state.multiSelectMode = snapshot.multiSelectMode;
+    state.selectionBuilder = { ...snapshot.selectionBuilder };
+    state.fileMeta = snapshot.fileMeta;
+    state.fileMetas = snapshot.fileMetas;
+    state.loadedFiles = snapshot.loadedFiles;
+    state.documents = snapshot.documents;
+    state.reportBundles = snapshot.reportBundles;
+    state.schemaValidationResults = snapshot.schemaValidationResults;
+    state.validationErrorResults = snapshot.validationErrorResults;
+    state.repairPreview = snapshot.repairPreview;
+    state.assetKinds = snapshot.assetKinds;
+    state.fileName = snapshot.fileName;
+    state.coordinateZone = snapshot.coordinateZone;
+    state.mapMode = snapshot.mapMode;
+    state.zoom = snapshot.zoom;
+    state.pan = { ...snapshot.pan };
+    state.filters = { ...snapshot.filters };
+    state.labelMode = snapshot.labelMode;
+    state.editMode = snapshot.editMode;
+    state.showAllDetails = snapshot.showAllDetails;
+    state.projectDetailsOpen = snapshot.projectDetailsOpen;
+    state.geometryEditorOpen = snapshot.geometryEditorOpen;
+    state.bulkHistoryPast = snapshot.bulkHistoryPast;
+    state.bulkHistoryFuture = snapshot.bulkHistoryFuture;
+    state.dxfFitReferenceId = snapshot.dxfFitReferenceId;
+    state.mergePreview = null;
+    state.mergeSession = null;
+    state.editorFeedback = null;
+    state.editorRevision += 1;
+    buildLayers();
+    restoreViewerLayerState(snapshot.layerState);
+    renderFilterOptions();
+    updateFilteredFeatures();
+    renderAll();
+    runReceiverLocationCheck();
+    setStatus(`Returned to ${state.loadedFiles.length} source XML working copies. The merged preview was not added to the originals.`, false);
+  }
+
+  function downloadMergedXml() {
+    if (!state.mergePreview?.active) return;
+    const file = state.loadedFiles[0];
+    const record = file ? state.documents.get(file.id) : null;
+    if (!record?.workingXmlText) return;
+    const fileName = state.mergePreview.fileName || buildMergedXmlFileName(record.name);
+    downloadBlob(new Blob([record.workingXmlText], { type: "application/xml;charset=utf-8" }), fileName);
+    setStatus(`Downloaded ${fileName} from the current merged working copy.`, false);
+  }
+
+  function buildMergedXmlFileName(fileName) {
+    const cleanNameValue = String(fileName || "ADAC.xml").replace(/(?:_edited|_merged)?\.xml$/i, "");
+    return `${cleanNameValue}_merged.xml`;
+  }
+
   async function loadSampleXml(sampleKey) {
     const sample = sampleXmlConfigs[sampleKey];
     if (!sample) return;
@@ -1748,7 +2365,7 @@
       const response = await fetch(sample.url, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const xmlText = await response.text();
-      await loadXmlFiles([{ xmlText, fileName: sample.fileName }], { replace: true });
+      await loadXmlFiles([{ xmlText, fileName: sample.fileName }], { replace: !state.loadedFiles.length });
     } catch (error) {
       console.error(`Could not load ${sample.label}:`, error);
       setStatus(`The ${sample.label} could not be loaded.`, true);
@@ -3155,6 +3772,7 @@
   }
 
   async function loadXmlFiles(files, options = { replace: false }) {
+    if (state.mergePreview?.active) restoreMergeSourceFiles();
     const replace = Boolean(options.replace);
     const parsedFiles = [];
     const parseErrors = [];
@@ -4190,6 +4808,12 @@
 
   function clearLoadedFiles(shouldRender = true, options = {}) {
     const keepDxf = Boolean(options.keepDxf);
+    const keepMergePreview = Boolean(options.keepMergePreview);
+    if (!keepMergePreview) {
+      state.mergeSession = null;
+      state.mergePreview = null;
+      closeMergeXmlModal();
+    }
     state.features = [];
     state.filteredFeatures = [];
     state.layers = new Map();
@@ -5773,6 +6397,7 @@
     renderDetails();
     renderValidationPanel();
     renderRepairPreviewBanner();
+    if (isMergeXmlModalOpen()) renderMergeXmlModal();
     drawMap();
   }
 
@@ -5786,6 +6411,20 @@
     if (els.fileName) els.fileName.textContent = state.fileName || "No file loaded";
     if (els.exportReportButton) els.exportReportButton.hidden = !state.loadedFiles.length;
     if (els.repairedXmlDownloadButton) els.repairedXmlDownloadButton.hidden = !state.repairPreview?.repairedXmlText;
+    if (els.mergeButton) {
+      const isMergedPreview = Boolean(state.mergePreview?.active);
+      els.mergeButton.hidden = !isMergedPreview && state.loadedFiles.length < 2;
+      els.mergeButton.setAttribute("aria-label", isMergedPreview ? "Return to source XML files" : "Merge loaded XML files");
+      els.mergeButton.title = isMergedPreview ? "Return to source XML files" : "Merge loaded XML files";
+      const icon = els.mergeButton.querySelector("i");
+      if (icon) icon.className = `fa-solid ${isMergedPreview ? "fa-arrow-left" : "fa-layer-group"}`;
+      if (els.mergeButtonLabel) els.mergeButtonLabel.textContent = isMergedPreview ? "Return to source XMLs" : "Merge XMLs";
+    }
+    if (els.mergedXmlDownloadButton) {
+      const canDownloadMerged = Boolean(state.mergePreview?.active && state.loadedFiles[0] && state.documents.get(state.loadedFiles[0].id)?.workingXmlText);
+      els.mergedXmlDownloadButton.hidden = !canDownloadMerged;
+      els.mergedXmlDownloadButton.disabled = !canDownloadMerged || state.editorBusy;
+    }
     renderEditedXmlDownloadButton();
     if (state.reportBundles.length < 2) closeReportExportMenu();
     if (els.visibleLayerCount) els.visibleLayerCount.textContent = `${visibleLayers} visible`;
@@ -10399,7 +11038,7 @@
   function renderEditedXmlDownloadButton() {
     if (!els.editedXmlDownloadButton) return;
     const context = getSelectedEditorContext();
-    const canDownload = Boolean(context?.record?.dirty && context.record.workingXmlText);
+    const canDownload = Boolean(!state.mergePreview?.active && context?.record?.dirty && context.record.workingXmlText);
     els.editedXmlDownloadButton.hidden = !canDownload;
     els.editedXmlDownloadButton.disabled = !canDownload || state.editorBusy;
     if (canDownload) {
@@ -11118,6 +11757,13 @@
     const unknownLayers = state.features.filter((feature) => feature.layer === "Other").length;
 
     checks.push({ tone: "good", icon: "fa-check", text: "XML parsed successfully in browser." });
+    if (state.mergePreview?.active) {
+      checks.push({
+        tone: "good",
+        icon: "fa-code-merge",
+        text: `Merged working copy passed schema validation. ${state.mergePreview.appliedCount || 0} incoming asset${state.mergePreview.appliedCount === 1 ? " was" : "s were"} applied; the source XML files remain unchanged.`,
+      });
+    }
     if (state.repairPreview?.active) {
       checks.push({
         tone: "warn",
