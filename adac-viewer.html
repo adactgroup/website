@@ -148,7 +148,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260720f" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260720g" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -615,6 +615,33 @@
         </div>
       </div>
 
+      <div class="viewer-merge-modal viewer-engineering-modal" data-role="engineering-modal" role="dialog" aria-modal="true" aria-labelledby="engineering-title" hidden>
+        <div class="viewer-merge-modal__backdrop" data-action="close-engineering-resolution"></div>
+        <div class="viewer-merge-modal__panel">
+          <div class="viewer-merge-modal__header">
+            <div>
+              <span>Engineering consistency</span>
+              <h2 id="engineering-title">Review recalculated values</h2>
+              <p>Only the temporary working XML copies will change. Every result is schema-validated and can be undone.</p>
+            </div>
+            <button type="button" data-action="close-engineering-resolution" aria-label="Close engineering resolution">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="viewer-merge-modal__body" data-role="engineering-modal-content"></div>
+          <div class="viewer-merge-modal__footer">
+            <span data-role="engineering-modal-status">Review the proposed recalculations.</span>
+            <div>
+              <button type="button" data-action="close-engineering-resolution">Cancel</button>
+              <button type="button" class="viewer-merge-modal__build" data-action="apply-engineering-resolution" data-role="apply-engineering-resolution">
+                <i class="fa-solid fa-calculator" aria-hidden="true"></i>
+                <span>Apply recalculations</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="viewer-terms-modal" data-role="terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title" hidden>
         <div class="viewer-terms-modal__backdrop" data-action="close-terms"></div>
         <div class="viewer-terms-modal__panel">
@@ -682,7 +709,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260720p"></script>
+  <script src="js/adac-viewer.js?v=20260720s"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
 </body>
 

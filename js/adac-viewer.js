@@ -1129,6 +1129,7 @@
     mergeSession: null,
     mergePreview: null,
     transformSession: null,
+    engineeringResolution: null,
     bulkHistoryPast: [],
     bulkHistoryFuture: [],
     filters: {
@@ -1190,6 +1191,10 @@
     applyTransformXmlButton: document.querySelector("[data-role='apply-transform-xml']"),
     transformPickHint: root.querySelector("[data-role='transform-pick-hint']"),
     transformPickHintText: root.querySelector("[data-role='transform-pick-hint-text']"),
+    engineeringModal: document.querySelector("[data-role='engineering-modal']"),
+    engineeringModalContent: document.querySelector("[data-role='engineering-modal-content']"),
+    engineeringModalStatus: document.querySelector("[data-role='engineering-modal-status']"),
+    applyEngineeringResolutionButton: document.querySelector("[data-role='apply-engineering-resolution']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1267,6 +1272,9 @@
       els.transformModal.addEventListener("click", handleClick);
       els.transformModal.addEventListener("change", handleChange);
       els.transformModal.addEventListener("input", handleTransformInput);
+    }
+    if (els.engineeringModal) {
+      els.engineeringModal.addEventListener("click", handleClick);
     }
     if (els.dropzone && els.dropTarget) {
       let dragDepth = 0;
@@ -1529,6 +1537,14 @@
       clearFeatureSelection();
     } else if (action === "focus-engineering-check") {
       focusEngineeringCheck(control?.dataset.featureUid);
+    } else if (action === "resolve-engineering-check") {
+      openEngineeringResolution(control?.dataset.engineeringIssueKey || "");
+    } else if (action === "resolve-all-engineering-checks") {
+      openEngineeringResolution("");
+    } else if (action === "close-engineering-resolution") {
+      closeEngineeringResolution();
+    } else if (action === "apply-engineering-resolution") {
+      applyEngineeringResolution();
     } else if (action === "export-report-pdf") {
       handleReportExportRequest();
     } else if (action === "export-combined-report-pdf") {
@@ -1680,6 +1696,10 @@
         closeTransformXmlModal();
         return;
       }
+      if (isEngineeringResolutionOpen()) {
+        closeEngineeringResolution();
+        return;
+      }
       if (isMergeXmlModalOpen()) {
         closeMergeXmlModal();
         return;
@@ -1705,6 +1725,7 @@
     if (except !== "selection") closeSelectionMenu();
     if (except !== "merge") closeMergeXmlModal();
     if (except !== "transform" && !isTransformPointPicking()) closeTransformXmlModal();
+    if (except !== "engineering") closeEngineeringResolution();
     if (except !== "terms") closeTermsModal();
     if (except !== "suggestions") closeSuggestions();
   }
@@ -5592,6 +5613,8 @@
     }
     state.transformSession = null;
     closeTransformXmlModal();
+    state.engineeringResolution = null;
+    closeEngineeringResolution();
     state.features = [];
     state.filteredFeatures = [];
     state.layers = new Map();
@@ -8903,9 +8926,29 @@
       const item = document.createElement("li");
       item.className = `viewer-checks__item viewer-checks__item--${check.tone}`;
       const content = `<i class="fa-solid ${check.icon}" aria-hidden="true"></i><span>${escapeHtml(check.text)}</span>`;
-      item.innerHTML = check.featureUid
-        ? `<button type="button" data-action="focus-engineering-check" data-feature-uid="${escapeHtml(check.featureUid)}" title="Select this asset">${content}</button>`
-        : content;
+      if (check.engineeringResolveAll) {
+        item.classList.add("viewer-checks__item--engineering-summary");
+        item.innerHTML = `
+          <span class="viewer-checks__content">${content}</span>
+          <button type="button" class="viewer-checks__resolve-all" data-action="resolve-all-engineering-checks" ${state.editorBusy ? "disabled" : ""}>
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            <span>Resolve all safe issues</span>
+          </button>
+        `;
+      } else if (check.featureUid) {
+        item.classList.add("viewer-checks__item--engineering-issue");
+        item.innerHTML = `
+          <button type="button" class="viewer-checks__focus" data-action="focus-engineering-check" data-feature-uid="${escapeHtml(check.featureUid)}" title="Select this asset">${content}</button>
+          ${check.engineeringRepairable ? `
+            <button type="button" class="viewer-checks__resolve" data-action="resolve-engineering-check" data-engineering-issue-key="${escapeHtml(check.engineeringIssueKey)}" ${state.editorBusy ? "disabled" : ""}>
+              <i class="fa-solid fa-calculator" aria-hidden="true"></i>
+              <span>Resolve</span>
+            </button>
+          ` : `<span class="viewer-checks__manual" title="${escapeHtml(check.engineeringRepairReason || "This issue requires engineering review.")}">Manual review</span>`}
+        `;
+      } else {
+        item.innerHTML = content;
+      }
       els.checkList.appendChild(item);
     });
   }
@@ -8924,6 +8967,393 @@
     if (checksPanel) checksPanel.open = false;
     if (els.details) els.details.scrollTop = 0;
     setStatus(`Selected ${feature.id || feature.assetTag || "asset"} from the engineering consistency checks.`, false);
+  }
+
+  function openEngineeringResolution(issueKey = "") {
+    if (!els.engineeringModal || state.editorBusy) return;
+    const report = analyzeEngineeringConsistency(state.features);
+    const requestedIssues = issueKey
+      ? report.issues.filter((issue) => issue.key === issueKey)
+      : report.issues;
+    if (!requestedIssues.length) {
+      setStatus("That engineering consistency issue is no longer present.", false);
+      renderChecks();
+      return;
+    }
+    closeTransientUi("engineering");
+    state.engineeringResolution = buildEngineeringResolutionPreview(requestedIssues, issueKey ? "single" : "all");
+    els.engineeringModal.hidden = false;
+    renderEngineeringResolutionModal();
+  }
+
+  function closeEngineeringResolution() {
+    if (!els.engineeringModal) return;
+    els.engineeringModal.hidden = true;
+    if (!state.engineeringResolution?.busy) state.engineeringResolution = null;
+  }
+
+  function isEngineeringResolutionOpen() {
+    return Boolean(els.engineeringModal && !els.engineeringModal.hidden);
+  }
+
+  function buildEngineeringResolutionPreview(requestedIssues, scope) {
+    const repairableIssues = requestedIssues.filter((issue) => issue.repair);
+    const manualIssues = requestedIssues.filter((issue) => !issue.repair);
+    const groupedFiles = new Map();
+    repairableIssues.forEach((issue) => {
+      const feature = state.features.find((item) => item.uid === issue.featureUid);
+      const record = feature ? state.documents.get(feature.sourceFileId) : null;
+      if (!feature || !record?.workingXmlText || !record.validation?.valid) {
+        manualIssues.push({ ...issue, repairReason: "The working XML is no longer available or schema-valid." });
+        return;
+      }
+      if (!groupedFiles.has(record.id)) groupedFiles.set(record.id, { record, featureGroups: new Map() });
+      const fileGroup = groupedFiles.get(record.id);
+      if (!fileGroup.featureGroups.has(feature.uid)) fileGroup.featureGroups.set(feature.uid, { feature, issues: [] });
+      fileGroup.featureGroups.get(feature.uid).issues.push(issue);
+    });
+
+    const candidates = [];
+    groupedFiles.forEach(({ record, featureGroups }) => {
+      const doc = parseXmlDocument(record.workingXmlText);
+      if (!doc) return;
+      const changes = new Map();
+      featureGroups.forEach(({ feature, issues }) => {
+        const assetNode = findXmlElementByLocator(doc, feature.xmlLocator);
+        if (!assetNode) return;
+        applyEngineeringIssueGroup(assetNode, feature, issues, changes);
+      });
+      const changeList = Array.from(changes.values()).filter((change) => change.before !== change.after);
+      if (!changeList.length) return;
+      const selectedFeature = Array.from(featureGroups.values()).find((group) => state.selectedIds.has(group.feature.uid))?.feature
+        || Array.from(featureGroups.values())[0]?.feature;
+      candidates.push({
+        record,
+        doc,
+        beforeXmlText: record.workingXmlText,
+        afterXmlText: serializeXmlDocument(doc),
+        selectedLocator: selectedFeature?.xmlLocator || "",
+        changes: changeList,
+      });
+    });
+
+    return {
+      scope,
+      requestedIssues,
+      repairableIssues,
+      manualIssues,
+      candidates,
+      changes: candidates.flatMap((candidate) => candidate.changes),
+      assetCount: uniqueValues(repairableIssues.map((issue) => issue.featureUid)).length,
+      busy: false,
+      error: "",
+    };
+  }
+
+  function applyEngineeringIssueGroup(assetNode, feature, issues, changes) {
+    const kinds = new Set(issues.map((issue) => issue.repair?.kind).filter(Boolean));
+    if (kinds.has("direction")) {
+      applyEngineeringDirectionRepair(assetNode, feature, changes);
+    }
+    const lengthIssue = issues.find((issue) => issue.repair?.kind === "length");
+    if (lengthIssue) {
+      setEngineeringNumericField(assetNode, lengthIssue.repair.fieldKey, lengthIssue.repair.expected, feature, changes);
+      recalculateEngineeringGrade(assetNode, feature, changes);
+    }
+    if (kinds.has("grade") && !kinds.has("direction")) {
+      recalculateEngineeringGrade(assetNode, feature, changes);
+    }
+    if (kinds.has("depth") && !kinds.has("direction")) {
+      recalculateEngineeringDepth(assetNode, feature, changes);
+    }
+    if (!kinds.has("direction")) {
+      issues.filter((issue) => issue.repair?.kind === "endpoint").forEach((issue) => {
+        setEngineeringEndpointZ(assetNode, issue.repair.pointIndex, issue.repair.expected, feature, changes);
+      });
+    }
+  }
+
+  function applyEngineeringDirectionRepair(assetNode, feature, changes) {
+    const geometry = getSimpleDirectionGeometry(assetNode);
+    if (!geometry.supported) return;
+    [
+      ["usinvertlevelm", "dsinvertlevelm"],
+      ["ussurfacelevelm", "dssurfacelevelm"],
+      ["uspipediametermm", "dspipediametermm"],
+    ].forEach(([upstreamKey, downstreamKey]) => {
+      swapEngineeringFieldValues(assetNode, upstreamKey, downstreamKey, feature, changes);
+    });
+    geometry.vertices.slice().reverse().forEach((vertex) => geometry.polySegment.appendChild(vertex));
+    recordEngineeringChange(changes, `${feature.uid}:geometry-direction`, {
+      feature,
+      label: "Geometry direction",
+      before: "Original vertex order",
+      after: "Reversed vertex order",
+    });
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    if (usInvert !== null) setEngineeringEndpointZ(assetNode, 0, usInvert, feature, changes);
+    if (dsInvert !== null) setEngineeringEndpointZ(assetNode, -1, dsInvert, feature, changes);
+    recalculateEngineeringGrade(assetNode, feature, changes);
+    recalculateEngineeringDepth(assetNode, feature, changes);
+  }
+
+  function swapEngineeringFieldValues(assetNode, upstreamKey, downstreamKey, feature, changes) {
+    const upstream = findAssetScalarElement(assetNode, upstreamKey);
+    const downstream = findAssetScalarElement(assetNode, downstreamKey);
+    if (!upstream || !downstream) return;
+    const upstreamSnapshot = { value: String(upstream.textContent || ""), nil: isNilledReportElement(upstream) };
+    const downstreamSnapshot = { value: String(downstream.textContent || ""), nil: isNilledReportElement(downstream) };
+    setXmlElementSnapshot(upstream, downstreamSnapshot);
+    setXmlElementSnapshot(downstream, upstreamSnapshot);
+    recordEngineeringElementChange(changes, upstream, feature, formatDetailLabel(cleanName(upstream.tagName)), upstreamSnapshot);
+    recordEngineeringElementChange(changes, downstream, feature, formatDetailLabel(cleanName(downstream.tagName)), downstreamSnapshot);
+  }
+
+  function setEngineeringNumericField(assetNode, fieldKey, value, feature, changes) {
+    const element = findAssetScalarElement(assetNode, fieldKey);
+    if (!element || !Number.isFinite(Number(value))) return false;
+    const before = { value: String(element.textContent || ""), nil: isNilledReportElement(element) };
+    removeXmlNilAttribute(element);
+    element.textContent = formatEditorCalculatedValue(Number(value));
+    recordEngineeringElementChange(changes, element, feature, formatDetailLabel(cleanName(element.tagName)), before);
+    return true;
+  }
+
+  function recalculateEngineeringGrade(assetNode, feature, changes) {
+    const gradeKey = ["pipegrade", "grade", "averagegrade"].find((key) => findAssetScalarElement(assetNode, key));
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    let length = getAssetNumericValue(assetNode, "lengthm");
+    if (!(length > 0)) {
+      const geometry = getEngineeringGeometryPoints(assetNode);
+      length = geometry.length > 1 ? getPolylineLength(geometry) : null;
+    }
+    if (!gradeKey || usInvert === null || dsInvert === null || !(length > 0) || usInvert < dsInvert) return false;
+    return setEngineeringNumericField(assetNode, gradeKey, (usInvert - dsInvert) / length * 100, feature, changes);
+  }
+
+  function recalculateEngineeringDepth(assetNode, feature, changes) {
+    const depthElement = findAssetScalarElement(assetNode, "depthm");
+    if (!depthElement) return false;
+    const surface = getAssetNumericValue(assetNode, "surfacelevelm");
+    const invert = getAssetNumericValue(assetNode, "invertlevelm");
+    if (surface !== null && invert !== null) {
+      return setEngineeringNumericField(assetNode, "depthm", surface - invert, feature, changes);
+    }
+    const usSurface = getAssetNumericValue(assetNode, "ussurfacelevelm");
+    const dsSurface = getAssetNumericValue(assetNode, "dssurfacelevelm");
+    const usInvert = getAssetNumericValue(assetNode, "usinvertlevelm");
+    const dsInvert = getAssetNumericValue(assetNode, "dsinvertlevelm");
+    if ([usSurface, dsSurface, usInvert, dsInvert].every((value) => value !== null)) {
+      return setEngineeringNumericField(assetNode, "depthm", ((usSurface - usInvert) + (dsSurface - dsInvert)) / 2, feature, changes);
+    }
+    return false;
+  }
+
+  function setEngineeringEndpointZ(assetNode, pointIndex, value, feature, changes) {
+    const groups = getGeometryCoordinateGroups(assetNode);
+    const group = pointIndex === -1 ? groups[groups.length - 1] : groups[pointIndex];
+    const element = group?.elements?.z;
+    if (!element || !Number.isFinite(Number(value))) return false;
+    const before = { value: String(element.textContent || ""), nil: isNilledReportElement(element) };
+    removeXmlNilAttribute(element);
+    element.textContent = formatEditorCalculatedValue(Number(value));
+    const resolvedIndex = pointIndex === -1 ? groups.length - 1 : pointIndex;
+    recordEngineeringElementChange(changes, element, feature, `Geometry ${resolvedIndex + 1} Z`, before);
+    return true;
+  }
+
+  function getEngineeringGeometryPoints(assetNode) {
+    return getGeometryCoordinateGroups(assetNode).map((group) => {
+      const x = Number(String(group.elements.x?.textContent || "").trim());
+      const y = Number(String(group.elements.y?.textContent || "").trim());
+      const z = Number(String(group.elements.z?.textContent || "").trim());
+      return {
+        x,
+        y,
+        ...(Number.isFinite(z) ? { z } : {}),
+      };
+    }).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  }
+
+  function recordEngineeringElementChange(changes, element, feature, label, beforeSnapshot) {
+    const before = beforeSnapshot.nil ? "null" : String(beforeSnapshot.value || "").trim() || "(empty)";
+    const after = isNilledReportElement(element) ? "null" : String(element.textContent || "").trim() || "(empty)";
+    recordEngineeringChange(changes, getXmlElementLocator(element), { feature, label, before, after });
+  }
+
+  function recordEngineeringChange(changes, key, change) {
+    if (!change || change.before === change.after) return;
+    const existing = changes.get(key);
+    if (existing) {
+      existing.after = change.after;
+      if (existing.before === existing.after) changes.delete(key);
+      return;
+    }
+    changes.set(key, {
+      key,
+      featureUid: change.feature.uid,
+      assetId: change.feature.id || change.feature.assetTag || "Unnamed asset",
+      sourceFileId: change.feature.sourceFileId,
+      sourceFile: change.feature.sourceFile || "Loaded XML",
+      label: change.label,
+      before: change.before,
+      after: change.after,
+    });
+  }
+
+  function renderEngineeringResolutionModal() {
+    const session = state.engineeringResolution;
+    if (!session || !els.engineeringModalContent) return;
+    const changeGroups = new Map();
+    session.changes.forEach((change) => {
+      const key = `${change.sourceFileId}|${change.featureUid}`;
+      if (!changeGroups.has(key)) changeGroups.set(key, { change, items: [] });
+      changeGroups.get(key).items.push(change);
+    });
+    const changeRows = Array.from(changeGroups.values()).map(({ change, items }) => `
+      <section class="viewer-engineering-asset">
+        <span class="viewer-engineering-asset__heading">
+          <strong>${escapeHtml(change.assetId)}</strong>
+          <small>${escapeHtml(state.loadedFiles.length > 1 ? change.sourceFile : "")}</small>
+        </span>
+        <dl>
+          ${items.map((item) => `
+            <div>
+              <dt>${escapeHtml(item.label)}</dt>
+              <dd><span>${escapeHtml(item.before)}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>${escapeHtml(item.after)}</strong></dd>
+            </div>
+          `).join("")}
+        </dl>
+      </section>
+    `).join("");
+    const manualRows = session.manualIssues.map((issue) => `
+      <li>
+        <strong>${escapeHtml(issue.text)}</strong>
+        <span>${escapeHtml(issue.repairReason || "This issue requires engineering review.")}</span>
+      </li>
+    `).join("");
+    els.engineeringModalContent.innerHTML = `
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading">
+          <strong>Resolution summary</strong>
+          <span>${session.scope === "single" ? "One selected issue" : `${session.requestedIssues.length} detected issues`}</span>
+        </span>
+        <div class="viewer-engineering-summary">
+          <span><strong>${session.repairableIssues.length}</strong><small>Safe issues</small></span>
+          <span><strong>${session.assetCount}</strong><small>Assets</small></span>
+          <span><strong>${session.changes.length}</strong><small>Changes</small></span>
+          <span><strong>${session.manualIssues.length}</strong><small>Manual review</small></span>
+        </div>
+        <span class="viewer-merge-notice">
+          <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+          <span>Derived values are recalculated from the currently supplied XML levels and mapped geometry. Original uploads remain unchanged.</span>
+        </span>
+      </section>
+      ${changeRows ? `
+        <section class="viewer-merge-section">
+          <span class="viewer-merge-section__heading"><strong>Proposed recalculations</strong><span>Old value to new value</span></span>
+          <div class="viewer-engineering-changes">${changeRows}</div>
+        </section>
+      ` : ""}
+      ${manualRows ? `
+        <section class="viewer-merge-section">
+          <span class="viewer-merge-section__heading"><strong>Manual review required</strong><span>Not changed automatically</span></span>
+          <ul class="viewer-engineering-manual">${manualRows}</ul>
+        </section>
+      ` : ""}
+    `;
+    const canApply = Boolean(session.candidates.length && session.changes.length && !session.busy);
+    if (els.applyEngineeringResolutionButton) {
+      els.applyEngineeringResolutionButton.disabled = !canApply;
+      const label = els.applyEngineeringResolutionButton.querySelector("span");
+      if (label) label.textContent = session.busy
+        ? "Validating recalculations..."
+        : `Apply ${session.changes.length} recalculation${session.changes.length === 1 ? "" : "s"}`;
+    }
+    if (els.engineeringModalStatus) {
+      els.engineeringModalStatus.textContent = session.busy
+        ? "Validating every affected working XML against its ADAC schema..."
+        : session.error
+          ? session.error
+          : canApply
+            ? `${session.repairableIssues.length} issue${session.repairableIssues.length === 1 ? "" : "s"} can be resolved automatically.`
+            : "No safe automatic recalculations are available for this selection.";
+    }
+  }
+
+  async function applyEngineeringResolution() {
+    const session = state.engineeringResolution;
+    if (!session || session.busy || !session.candidates.length || !session.changes.length) return;
+    if (session.candidates.some((candidate) => candidate.record.workingXmlText !== candidate.beforeXmlText)) {
+      session.error = "A working XML changed after this preview was prepared. Close this window and review the refreshed issues.";
+      renderEngineeringResolutionModal();
+      return;
+    }
+    const revision = ++state.editorRevision;
+    session.busy = true;
+    session.error = "";
+    state.editorBusy = true;
+    renderEngineeringResolutionModal();
+    renderChecks();
+    const validations = await Promise.all(session.candidates.map((candidate) => (
+      validateAdacSchema(candidate.afterXmlText, candidate.record.name, candidate.doc)
+    )));
+    if (revision !== state.editorRevision || state.engineeringResolution !== session) return;
+    session.busy = false;
+    state.editorBusy = false;
+    const invalidIndex = validations.findIndex((validation) => !validation.valid);
+    if (invalidIndex >= 0) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validations[invalidIndex].errors)[0]);
+      session.error = `${session.candidates[invalidIndex].record.name}: ${details.title}. ${details.suggestion || details.detail || "No recalculations were applied."}`;
+      renderEngineeringResolutionModal();
+      renderChecks();
+      return;
+    }
+
+    const selectedIds = Array.from(state.selectedIds);
+    const transaction = {
+      kind: "engineering",
+      label: "engineering consistency recalculation",
+      assetCount: session.assetCount,
+      issueCount: session.repairableIssues.length,
+      selectedIds,
+      beforeSelectedIds: selectedIds,
+      afterSelectedIds: selectedIds,
+      documents: session.candidates.map((candidate, index) => ({
+        fileId: candidate.record.id,
+        beforeXmlText: candidate.beforeXmlText,
+        afterXmlText: candidate.afterXmlText,
+        selectedLocator: candidate.selectedLocator,
+        validation: validations[index],
+      })),
+    };
+    transaction.documents.forEach((change) => {
+      const record = state.documents.get(change.fileId);
+      pushXmlHistory(record, change.beforeXmlText);
+      record.historyFuture = [];
+    });
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    transaction.documents.forEach((change, index) => {
+      const candidate = session.candidates[index];
+      applyValidatedWorkingDocument(candidate.record, change.afterXmlText, candidate.doc, validations[index], change.selectedLocator);
+    });
+    restoreTransactionSelection(selectedIds);
+    const remainingReport = analyzeEngineeringConsistency(state.features);
+    const remainingKeys = new Set(remainingReport.issues.map((issue) => issue.key));
+    const resolvedCount = session.repairableIssues.filter((issue) => !remainingKeys.has(issue.key)).length;
+    const manualSuffix = session.manualIssues.length
+      ? ` ${session.manualIssues.length} selected issue${session.manualIssues.length === 1 ? " still requires" : "s still require"} manual review.`
+      : "";
+    const message = `Resolved ${resolvedCount} engineering consistency issue${resolvedCount === 1 ? "" : "s"} with ${session.changes.length} schema-valid recalculation${session.changes.length === 1 ? "" : "s"}.${manualSuffix}`;
+    state.engineeringResolution = null;
+    els.engineeringModal.hidden = true;
+    state.editorFeedback = { bulk: true, tone: session.manualIssues.length ? "warning" : "success", message: `${message} Use Undo to reverse the complete operation.` };
+    renderAll();
+    setStatus(message, false);
   }
 
   function renderDetails() {
@@ -12199,6 +12629,9 @@
       }
       return `${verb} XML position shift across ${transform.fileCount || transaction.documents.length} file${(transform.fileCount || transaction.documents.length) === 1 ? "" : "s"} (${formatTransformDeltaSummary(transform)}).`;
     }
+    if (transaction.kind === "engineering") {
+      return `${verb} engineering consistency recalculations for ${transaction.issueCount || 0} issue${transaction.issueCount === 1 ? "" : "s"} across ${transaction.assetCount || 0} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
     return `${verb} the bulk ${transaction.label} change for ${transaction.assetCount} assets.`;
   }
 
@@ -13281,6 +13714,7 @@
       tone: "warn",
       icon: "fa-triangle-exclamation",
       text: `Engineering consistency found ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"} while checking ${scope}. Select an issue below to inspect its asset.`,
+      engineeringResolveAll: report.issues.some((issue) => issue.repair),
     }, getEngineeringToleranceCheck()];
     report.issues.forEach((issue) => {
       checks.push({
@@ -13288,6 +13722,9 @@
         icon: getEngineeringIssueIcon(issue.type),
         text: issue.text,
         featureUid: issue.featureUid,
+        engineeringIssueKey: issue.key,
+        engineeringRepairable: Boolean(issue.repair),
+        engineeringRepairReason: issue.repairReason,
       });
     });
     return checks;
@@ -13304,13 +13741,19 @@
   function analyzeEngineeringConsistency(features) {
     const metrics = { length: 0, grade: 0, depth: 0, endpoint: 0 };
     const issues = [];
-    const addIssue = (feature, type, message) => {
+    const addIssue = (feature, type, message, options = {}) => {
       const filePrefix = state.loadedFiles.length > 1 && feature.sourceFile ? `${feature.sourceFile} · ` : "";
       const assetLabel = feature.id || feature.assetTag || "Unnamed asset";
+      const target = options.target || type;
       issues.push({
+        key: `${feature.uid}::${type}::${target}`,
         featureUid: feature.uid,
+        sourceFileId: feature.sourceFileId,
+        xmlLocator: feature.xmlLocator,
         type,
         text: `${filePrefix}${assetLabel}: ${message}`,
+        repair: options.repair || null,
+        repairReason: options.repairReason || "",
       });
     };
 
@@ -13320,17 +13763,23 @@
         : null;
       const length = getEngineeringNumericField(feature, "lengthm");
       if (length.present && geometryLength > 0) {
+        const lengthRepair = {
+          kind: "length",
+          fieldKey: "lengthm",
+          expected: geometryLength,
+          description: `Set ${length.field.name} from mapped geometry`,
+        };
         metrics.length += 1;
         if (!length.supplied) {
-          addIssue(feature, "length", `Length_m is null; mapped geometry measures ${formatEngineeringValue(geometryLength)} m.`);
+          addIssue(feature, "length", `Length_m is null; mapped geometry measures ${formatEngineeringValue(geometryLength)} m.`, { repair: lengthRepair });
         } else if (!(length.value > 0)) {
-          addIssue(feature, "length", `Length_m must be greater than zero; supplied value is ${formatEngineeringValue(length.value)} m.`);
+          addIssue(feature, "length", `Length_m must be greater than zero; supplied value is ${formatEngineeringValue(length.value)} m.`, { repair: lengthRepair });
         } else {
           const difference = Math.abs(length.value - geometryLength);
           const tolerance = Math.max(0.05, geometryLength * 0.01);
           if (difference > tolerance) {
             const percentage = geometryLength > 0 ? difference / geometryLength * 100 : 0;
-            addIssue(feature, "length", `Length_m ${formatEngineeringValue(length.value)} m differs from mapped geometry ${formatEngineeringValue(geometryLength)} m by ${formatEngineeringValue(difference)} m (${formatEngineeringValue(percentage, 1)}%).`);
+            addIssue(feature, "length", `Length_m ${formatEngineeringValue(length.value)} m differs from mapped geometry ${formatEngineeringValue(geometryLength)} m by ${formatEngineeringValue(difference)} m (${formatEngineeringValue(percentage, 1)}%).`, { repair: lengthRepair });
           }
         }
       }
@@ -13340,18 +13789,42 @@
       const grade = getFirstEngineeringNumericField(feature, ["pipegrade", "grade", "averagegrade"]);
       const calculationLength = length.supplied && length.value > 0 ? length.value : geometryLength;
       if (upstreamInvert.supplied && downstreamInvert.supplied && upstreamInvert.value < downstreamInvert.value - 0.05) {
-        addIssue(feature, "direction", `USIL ${formatEngineeringValue(upstreamInvert.value)} m is below DSIL ${formatEngineeringValue(downstreamInvert.value)} m; review the asset direction.`);
+        const directionAnalysis = getEngineeringDirectionRepairAnalysis(feature);
+        addIssue(feature, "direction", `USIL ${formatEngineeringValue(upstreamInvert.value)} m is below DSIL ${formatEngineeringValue(downstreamInvert.value)} m; review the asset direction.`, {
+          repair: directionAnalysis?.supported ? {
+            kind: "direction",
+            description: "Swap upstream/downstream fields, reverse geometry and recalculate derived values",
+          } : null,
+          repairReason: directionAnalysis?.reason || "The direction must be reviewed manually.",
+        });
       }
       if (grade.present && upstreamInvert.supplied && downstreamInvert.supplied && calculationLength > 0) {
         metrics.grade += 1;
         const calculatedGrade = (upstreamInvert.value - downstreamInvert.value) / calculationLength * 100;
+        const gradeRepair = calculatedGrade >= 0 ? {
+          kind: "grade",
+          fieldKey: normalizeDetailKey(grade.field.name),
+          expected: calculatedGrade,
+          description: `Recalculate ${grade.field.name} from invert levels and length`,
+        } : null;
+        const gradeRepairReason = calculatedGrade < 0
+          ? "Resolve or review the upstream/downstream direction before recalculating grade."
+          : "";
         if (!grade.supplied) {
-          addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} is null; invert levels and length calculate to ${formatEngineeringValue(calculatedGrade)}%.`);
+          addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} is null; invert levels and length calculate to ${formatEngineeringValue(calculatedGrade)}%.`, {
+            repair: gradeRepair,
+            repairReason: gradeRepairReason,
+            target: normalizeDetailKey(grade.field.name),
+          });
         } else {
           const difference = Math.abs(grade.value - calculatedGrade);
           const tolerance = Math.max(0.1, Math.abs(calculatedGrade) * 0.05);
           if (difference > tolerance) {
-            addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} ${formatEngineeringValue(grade.value)}% differs from the invert-level calculation ${formatEngineeringValue(calculatedGrade)}% by ${formatEngineeringValue(difference)} percentage points.`);
+            addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} ${formatEngineeringValue(grade.value)}% differs from the invert-level calculation ${formatEngineeringValue(calculatedGrade)}% by ${formatEngineeringValue(difference)} percentage points.`, {
+              repair: gradeRepair,
+              repairReason: gradeRepairReason,
+              target: normalizeDetailKey(grade.field.name),
+            });
           }
         }
       }
@@ -13361,16 +13834,39 @@
       if (depth.present && expectedDepth !== null) {
         metrics.depth += 1;
         if (expectedDepth < -0.001) {
-          addIssue(feature, "depth", `The supplied surface and invert levels calculate a negative depth of ${formatEngineeringValue(expectedDepth)} m.`);
+          addIssue(feature, "depth", `The supplied surface and invert levels calculate a negative depth of ${formatEngineeringValue(expectedDepth)} m.`, {
+            repairReason: "Surface and invert levels conflict; choose the correct engineering levels before recalculating depth.",
+          });
         } else if (!depth.supplied) {
-          addIssue(feature, "depth", `Depth_m is null; supplied levels calculate to ${formatEngineeringValue(expectedDepth)} m.`);
+          addIssue(feature, "depth", `Depth_m is null; supplied levels calculate to ${formatEngineeringValue(expectedDepth)} m.`, {
+            repair: {
+              kind: "depth",
+              fieldKey: "depthm",
+              expected: expectedDepth,
+              description: "Recalculate Depth_m from surface and invert levels",
+            },
+          });
         } else if (depth.value < 0) {
-          addIssue(feature, "depth", `Depth_m cannot be negative; supplied value is ${formatEngineeringValue(depth.value)} m.`);
+          addIssue(feature, "depth", `Depth_m cannot be negative; supplied value is ${formatEngineeringValue(depth.value)} m.`, {
+            repair: {
+              kind: "depth",
+              fieldKey: "depthm",
+              expected: expectedDepth,
+              description: "Recalculate Depth_m from surface and invert levels",
+            },
+          });
         } else {
           const difference = Math.abs(depth.value - expectedDepth);
           const tolerance = Math.max(0.02, Math.abs(expectedDepth) * 0.01);
           if (difference > tolerance) {
-            addIssue(feature, "depth", `Depth_m ${formatEngineeringValue(depth.value)} m differs from the level calculation ${formatEngineeringValue(expectedDepth)} m by ${formatEngineeringValue(difference)} m.`);
+            addIssue(feature, "depth", `Depth_m ${formatEngineeringValue(depth.value)} m differs from the level calculation ${formatEngineeringValue(expectedDepth)} m by ${formatEngineeringValue(difference)} m.`, {
+              repair: {
+                kind: "depth",
+                fieldKey: "depthm",
+                expected: expectedDepth,
+                description: "Recalculate Depth_m from surface and invert levels",
+              },
+            });
           }
         }
       }
@@ -13382,20 +13878,44 @@
           metrics.endpoint += 1;
           const difference = Math.abs(firstZ - upstreamInvert.value);
           if (difference > 0.02) {
-            addIssue(feature, "endpoint", `geometry start Z ${formatEngineeringValue(firstZ)} m differs from USIL ${formatEngineeringValue(upstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`);
+            addIssue(feature, "endpoint", `Geometry start Z ${formatEngineeringValue(firstZ)} m differs from USIL ${formatEngineeringValue(upstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`, {
+              repair: {
+                kind: "endpoint",
+                pointIndex: 0,
+                expected: upstreamInvert.value,
+                description: "Set start geometry Z from USIL",
+              },
+              target: "start",
+            });
           }
         }
         if (Number.isFinite(lastZ)) {
           metrics.endpoint += 1;
           const difference = Math.abs(lastZ - downstreamInvert.value);
           if (difference > 0.02) {
-            addIssue(feature, "endpoint", `geometry end Z ${formatEngineeringValue(lastZ)} m differs from DSIL ${formatEngineeringValue(downstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`);
+            addIssue(feature, "endpoint", `Geometry end Z ${formatEngineeringValue(lastZ)} m differs from DSIL ${formatEngineeringValue(downstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`, {
+              repair: {
+                kind: "endpoint",
+                pointIndex: -1,
+                expected: downstreamInvert.value,
+                description: "Set end geometry Z from DSIL",
+              },
+              target: "end",
+            });
           }
         }
       }
     });
     const comparisonCount = Object.values(metrics).reduce((total, count) => total + count, 0);
     return { metrics, issues, comparisonCount };
+  }
+
+  function getEngineeringDirectionRepairAnalysis(feature) {
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    if (!record?.workingXmlText || !record.validation?.valid) {
+      return { supported: false, reason: "A schema-valid working XML copy is required." };
+    }
+    return getEditorDirectionFlipAnalysis(feature, "US_InvertLevel_m", record.workingXmlText);
   }
 
   function getEngineeringNumericField(feature, key) {

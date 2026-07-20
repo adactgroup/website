@@ -2734,7 +2734,8 @@ h3,
     line-height: 1.38;
 }
 
-.viewer-checks__item > button {
+.viewer-checks__item > button,
+.viewer-checks__focus {
     display: grid;
     grid-column: 1 / -1;
     grid-template-columns: 18px minmax(0, 1fr);
@@ -2753,9 +2754,84 @@ h3,
 }
 
 .viewer-checks__item > button:hover,
-.viewer-checks__item > button:focus-visible {
+.viewer-checks__item > button:focus-visible,
+.viewer-checks__focus:hover,
+.viewer-checks__focus:focus-visible {
     background: #f2f7fc;
     outline: none;
+}
+
+.viewer-checks__item--engineering-summary,
+.viewer-checks__item--engineering-issue {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.viewer-checks__content,
+.viewer-checks__focus {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+}
+
+.viewer-checks__item--engineering-summary .viewer-checks__content {
+    grid-column: auto;
+}
+
+.viewer-checks__item .viewer-checks__resolve-all,
+.viewer-checks__item .viewer-checks__resolve {
+    display: inline-flex;
+    width: auto;
+    min-height: 32px;
+    grid-column: auto;
+    grid-template-columns: none;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin: 0;
+    padding: 6px 9px;
+    border: 1px solid #b9c9dc;
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-navy);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.viewer-checks__item .viewer-checks__resolve-all {
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+.viewer-checks__item .viewer-checks__resolve-all:hover,
+.viewer-checks__item .viewer-checks__resolve-all:focus-visible {
+    background: #08264c;
+}
+
+.viewer-checks__item .viewer-checks__resolve:hover,
+.viewer-checks__item .viewer-checks__resolve:focus-visible {
+    border-color: var(--mockup-blue);
+    background: #f2f7fc;
+}
+
+.viewer-checks__manual {
+    color: #765014;
+    font-size: 0.68rem;
+    font-weight: 750;
+    line-height: 1.25;
+    text-align: right;
+}
+
+.viewer-checks__item button:disabled {
+    cursor: default;
+    opacity: 0.48;
 }
 
 .viewer-checks__item--good i {
@@ -3581,6 +3657,160 @@ h3,
     text-transform: uppercase;
 }
 
+.viewer-engineering-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #f8fbfe;
+}
+
+.viewer-engineering-summary > span {
+    display: grid;
+    gap: 2px;
+    padding: 10px;
+    border-right: 1px solid var(--mockup-line);
+}
+
+.viewer-engineering-summary > span:last-child {
+    border-right: 0;
+}
+
+.viewer-engineering-summary strong {
+    color: var(--mockup-ink);
+    font-size: 1rem;
+    font-weight: 850;
+}
+
+.viewer-engineering-summary small {
+    color: #65758a;
+    font-size: 0.64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.viewer-engineering-changes {
+    display: grid;
+}
+
+.viewer-engineering-asset {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.32fr) minmax(0, 1fr);
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-engineering-asset:first-child {
+    padding-top: 2px;
+}
+
+.viewer-engineering-asset:last-child {
+    padding-bottom: 2px;
+    border-bottom: 0;
+}
+
+.viewer-engineering-asset__heading {
+    display: grid;
+    align-content: start;
+    gap: 3px;
+}
+
+.viewer-engineering-asset__heading strong {
+    overflow-wrap: anywhere;
+    color: var(--mockup-ink);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 850;
+}
+
+.viewer-engineering-asset__heading small {
+    overflow-wrap: anywhere;
+    color: #65758a;
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.viewer-engineering-asset dl {
+    display: grid;
+    gap: 7px;
+    margin: 0;
+}
+
+.viewer-engineering-asset dl > div {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.3fr);
+    gap: 12px;
+    align-items: center;
+}
+
+.viewer-engineering-asset dt {
+    color: #526276;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.viewer-engineering-asset dd {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    margin: 0;
+    color: #65758a;
+    font-size: 0.74rem;
+}
+
+.viewer-engineering-asset dd span,
+.viewer-engineering-asset dd strong {
+    overflow-wrap: anywhere;
+}
+
+.viewer-engineering-asset dd i {
+    color: #8a98a9;
+    font-size: 0.62rem;
+    text-align: center;
+}
+
+.viewer-engineering-asset dd strong {
+    color: var(--mockup-ink);
+    font-weight: 800;
+}
+
+.viewer-engineering-manual {
+    display: grid;
+    gap: 9px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.viewer-engineering-manual li {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.75fr) minmax(0, 1.25fr);
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-engineering-manual li:last-child {
+    border-bottom: 0;
+}
+
+.viewer-engineering-manual strong {
+    color: var(--mockup-ink);
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.viewer-engineering-manual span {
+    color: #765014;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
 .viewer-merge-conflicts {
     max-height: 230px;
     overflow: auto;
@@ -3943,12 +4173,31 @@ h3,
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .viewer-engineering-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .viewer-merge-summary span:nth-child(2) {
+        border-right: 0;
+    }
+
+    .viewer-engineering-summary > span:nth-child(2) {
         border-right: 0;
     }
 
     .viewer-merge-summary span:nth-child(-n + 2) {
         border-bottom: 1px solid var(--mockup-line);
+    }
+
+    .viewer-engineering-summary > span:nth-child(-n + 2) {
+        border-bottom: 1px solid var(--mockup-line);
+    }
+
+    .viewer-engineering-asset,
+    .viewer-engineering-asset dl > div,
+    .viewer-engineering-manual li {
+        grid-template-columns: 1fr;
+        gap: 6px;
     }
 
     .viewer-merge-conflict {
