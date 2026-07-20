@@ -5248,6 +5248,7 @@
 
   function buildSchemaValueLookup(files) {
     const parser = new DOMParser();
+    const schemaDocs = files.map((file) => parser.parseFromString(file.contents, "application/xml"));
     const typeValues = new Map();
     const typeRules = new Map();
     const elementTypes = new Map();
@@ -5255,16 +5256,22 @@
     const contextElementTypes = new Map();
     const contextElementRules = new Map();
     const complexTypeAssetNames = new Map();
+    const schemaGroups = new Map();
 
-    files.forEach((file) => {
-      const doc = parser.parseFromString(file.contents, "application/xml");
+    schemaDocs.forEach((doc) => {
+      Array.from(doc.getElementsByTagNameNS("*", "group")).forEach((group) => {
+        const groupName = group.getAttribute("name");
+        if (groupName) schemaGroups.set(normalizeSchemaTypeKey(groupName), group);
+      });
       Array.from(doc.getElementsByTagNameNS("*", "element")).forEach((element) => {
         const elementName = element.getAttribute("name");
         const typeName = element.getAttribute("type");
         if (!elementName || !typeName) return;
         addSchemaContextType(complexTypeAssetNames, typeName, elementName);
       });
+    });
 
+    schemaDocs.forEach((doc) => {
       Array.from(doc.getElementsByTagNameNS("*", "simpleType")).forEach((simpleType) => {
         const typeName = simpleType.getAttribute("name");
         if (!typeName) return;
@@ -5295,12 +5302,11 @@
           ...(complexTypeAssetNames.get(normalizeSchemaTypeKey(complexTypeName)) || []),
         ]);
         if (!contextNames.length) return;
-        Array.from(complexType.getElementsByTagNameNS("*", "element")).forEach((element) => {
+        const addContextElement = (element, relativePath) => {
           const elementName = element.getAttribute("name");
           const typeName = element.getAttribute("type");
           if (!elementName) return;
           const elementRule = parseSchemaElementRule(element);
-          const relativePath = getSchemaElementRelativePath(element, complexType);
           contextNames.forEach((contextName) => {
             const contextPath = `${contextName}/${relativePath || elementName}`;
             if (typeName) addSchemaContextType(contextElementTypes, contextPath, typeName);
@@ -5314,6 +5320,17 @@
               if (typeName) addSchemaContextType(contextElementTypes, domainPath, typeName);
               addSchemaElementRule(contextElementRules, domainPath, elementRule);
             });
+          });
+        };
+        Array.from(complexType.getElementsByTagNameNS("*", "element")).forEach((element) => {
+          addContextElement(element, getSchemaElementRelativePath(element, complexType));
+        });
+        Array.from(complexType.getElementsByTagNameNS("*", "group")).forEach((groupReference) => {
+          const groupName = formatXmlToken(groupReference.getAttribute("ref") || "");
+          if (!groupName) return;
+          const parentPath = getSchemaGroupReferenceParentPath(groupReference, complexType);
+          getSchemaGroupElementEntries(groupName, schemaGroups).forEach((entry) => {
+            addContextElement(entry.element, [parentPath, entry.path].filter(Boolean).join("/"));
           });
         });
       });
@@ -5380,6 +5397,50 @@
       current = current.parentElement;
     }
     return names.filter(Boolean).join("/");
+  }
+
+  function getSchemaGroupReferenceParentPath(groupReference, complexType) {
+    const names = [];
+    let current = groupReference.parentElement;
+    while (current && current !== complexType) {
+      if (cleanName(current.tagName).toLowerCase() === "element" && current.getAttribute("name")) {
+        names.unshift(current.getAttribute("name"));
+      }
+      current = current.parentElement;
+    }
+    return names.filter(Boolean).join("/");
+  }
+
+  function getSchemaGroupElementEntries(groupName, schemaGroups, seen = new Set()) {
+    const groupKey = normalizeSchemaTypeKey(groupName);
+    const group = schemaGroups.get(groupKey);
+    if (!group || seen.has(groupKey)) return [];
+    const nextSeen = new Set(seen);
+    nextSeen.add(groupKey);
+    const entries = [];
+
+    const visit = (node, parentPath = "") => {
+      Array.from(node.children || []).forEach((child) => {
+        const childType = cleanName(child.tagName).toLowerCase();
+        if (childType === "annotation") return;
+        if (childType === "group" && child.getAttribute("ref")) {
+          getSchemaGroupElementEntries(child.getAttribute("ref"), schemaGroups, nextSeen).forEach((entry) => {
+            entries.push({ ...entry, path: [parentPath, entry.path].filter(Boolean).join("/") });
+          });
+          return;
+        }
+        if (childType === "element" && child.getAttribute("name")) {
+          const elementPath = [parentPath, child.getAttribute("name")].filter(Boolean).join("/");
+          entries.push({ element: child, path: elementPath });
+          visit(child, elementPath);
+          return;
+        }
+        visit(child, parentPath);
+      });
+    };
+
+    visit(group);
+    return entries;
   }
 
   function addSchemaElementRule(map, key, rule) {
