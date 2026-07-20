@@ -1058,6 +1058,7 @@
     hasDraggedMap: false,
     panStart: { x: 0, y: 0 },
     pointerStart: { x: 0, y: 0 },
+    selectionBox: null,
     labelMode: "off",
     labelHitBoxes: [],
     labelHitBoxesByGroup: new Map(),
@@ -2388,7 +2389,9 @@
     const selectedFeature = state.features.find((feature) => feature.uid === state.selectedId);
     const selectedPoint = selectedFeature?.points?.[0];
     state.transformSession = {
+      scope: "files",
       fileIds: new Set(state.loadedFiles.map((file) => file.id)),
+      assetIds: new Set(state.selectedIds),
       method: "offset",
       delta: { x: "0", y: "0", z: "0" },
       from: {
@@ -2433,7 +2436,9 @@
     const session = state.transformSession;
     if (!session || session.busy) return;
     const kind = control.dataset.transformControl;
-    if (kind === "file") {
+    if (kind === "scope") {
+      session.scope = control.value === "selected" ? "selected" : "files";
+    } else if (kind === "file") {
       const fileId = control.dataset.transformFileId || "";
       if (control.checked) session.fileIds.add(fileId);
       else session.fileIds.delete(fileId);
@@ -2490,16 +2495,27 @@
     `;
     els.transformModalContent.innerHTML = `
       <section class="viewer-merge-section">
-        <span class="viewer-merge-section__heading"><strong>1. XML files</strong><span>${analysis.files.length} selected</span></span>
-        <div class="viewer-merge-file-list">
-          ${state.loadedFiles.map((file) => `
-            <label class="viewer-merge-check">
-              <input type="checkbox" data-transform-control="file" data-transform-file-id="${escapeHtml(file.id)}" ${session.fileIds.has(file.id) ? "checked" : ""} />
-              <span>${escapeHtml(file.name)}</span>
-              <small>${file.assetCount} assets</small>
-            </label>
-          `).join("")}
+        <span class="viewer-merge-section__heading"><strong>1. Shift scope</strong><span>${analysis.scope === "selected" ? `${analysis.assetCount} assets` : `${analysis.files.length} XML files`}</span></span>
+        <div class="viewer-merge-scope viewer-transform-method" role="radiogroup" aria-label="Position shift scope">
+          <label><input type="radio" name="transform-scope" value="files" data-transform-control="scope" ${session.scope === "files" ? "checked" : ""} /><span>Entire XML working copies</span></label>
+          <label><input type="radio" name="transform-scope" value="selected" data-transform-control="scope" ${session.scope === "selected" ? "checked" : ""} ${session.assetIds.size ? "" : "disabled"} /><span>Selected assets (${session.assetIds.size})</span></label>
         </div>
+        ${session.scope === "files" ? `
+          <div class="viewer-merge-file-list">
+            ${state.loadedFiles.map((file) => `
+              <label class="viewer-merge-check">
+                <input type="checkbox" data-transform-control="file" data-transform-file-id="${escapeHtml(file.id)}" ${session.fileIds.has(file.id) ? "checked" : ""} />
+                <span>${escapeHtml(file.name)}</span>
+                <small>${file.assetCount} assets</small>
+              </label>
+            `).join("")}
+          </div>
+        ` : `
+          <span class="viewer-merge-notice">
+            <i class="fa-solid fa-object-group" aria-hidden="true"></i>
+            <span>${analysis.assetCount} selected asset${analysis.assetCount === 1 ? "" : "s"} across ${analysis.files.length} XML working ${analysis.files.length === 1 ? "copy" : "copies"}. The selection was captured when this tool opened.</span>
+          </span>
+        `}
       </section>
       <section class="viewer-merge-section">
         <span class="viewer-merge-section__heading"><strong>2. Translation</strong><span>Coordinate system and units remain unchanged</span></span>
@@ -2526,7 +2542,7 @@
       <section class="viewer-merge-section">
         <span class="viewer-merge-section__heading"><strong>3. Preview</strong><span>Schema validation runs before applying</span></span>
         <div class="viewer-merge-summary viewer-transform-summary">
-          <span><strong data-transform-output="files">${analysis.files.length}</strong><small>Files</small></span>
+          <span><strong data-transform-output="scope-count">${analysis.scope === "selected" ? analysis.assetCount : analysis.files.length}</strong><small>${analysis.scope === "selected" ? "Assets" : "Files"}</small></span>
           <span><strong data-transform-output="vertices">${analysis.vertexCount}</strong><small>XY vertices</small></span>
           <span><strong data-transform-output="z-count">${analysis.zCount}</strong><small>Z values</small></span>
           <span><strong data-transform-output="level-count">${analysis.levelCount}</strong><small>Level values</small></span>
@@ -2546,7 +2562,7 @@
     setTransformOutputText("dx", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dx : Number.NaN));
     setTransformOutputText("dy", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dy : Number.NaN));
     setTransformOutputText("dz", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dz : Number.NaN));
-    setTransformOutputText("files", currentAnalysis.files.length);
+    setTransformOutputText("scope-count", currentAnalysis.scope === "selected" ? currentAnalysis.assetCount : currentAnalysis.files.length);
     setTransformOutputText("vertices", currentAnalysis.vertexCount);
     setTransformOutputText("z-count", currentAnalysis.zCount);
     setTransformOutputText("level-count", currentAnalysis.levelCount);
@@ -2558,7 +2574,7 @@
     if (els.applyTransformXmlButton) els.applyTransformXmlButton.disabled = !ready;
     if (els.transformModalStatus) {
       els.transformModalStatus.textContent = session.busy
-        ? `Validating ${currentAnalysis.files.length} translated XML working ${currentAnalysis.files.length === 1 ? "copy" : "copies"}...`
+        ? `Validating ${currentAnalysis.scope === "selected" ? `${currentAnalysis.assetCount} shifted asset${currentAnalysis.assetCount === 1 ? "" : "s"}` : `${currentAnalysis.files.length} translated XML working ${currentAnalysis.files.length === 1 ? "copy" : "copies"}`}...`
         : session.error
           ? session.error
           : ready
@@ -2588,14 +2604,23 @@
       ...analysis.errors.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
       ...analysis.warnings.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
     ].join("");
-    return notices || `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>The selected working copies are ready to translate and validate.</span></span>`;
+    const targetLabel = analysis.scope === "selected" ? "selected assets" : "selected working copies";
+    return notices || `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>The ${targetLabel} are ready to translate and validate.</span></span>`;
   }
 
   function buildTransformAnalysis(session) {
     const errors = [];
     const warnings = [];
-    const files = state.loadedFiles.filter((file) => session.fileIds.has(file.id));
-    if (!files.length) errors.push("Choose at least one XML working copy.");
+    const scope = session.scope === "selected" ? "selected" : "files";
+    const targetFeatures = scope === "selected"
+      ? state.features.filter((feature) => session.assetIds.has(feature.uid))
+      : [];
+    const targetFileIds = scope === "selected"
+      ? new Set(targetFeatures.map((feature) => feature.sourceFileId))
+      : session.fileIds;
+    const files = state.loadedFiles.filter((file) => targetFileIds.has(file.id));
+    if (scope === "selected" && !targetFeatures.length) errors.push("Select at least one XML asset before opening the position shift tool.");
+    if (!files.length) errors.push(scope === "selected" ? "The selected assets are not available in a loaded XML working copy." : "Choose at least one XML working copy.");
     files.forEach((file) => {
       const record = state.documents.get(file.id);
       if (!record?.workingDocument || !record.validation?.valid) errors.push(`${file.name} does not have a schema-valid working copy.`);
@@ -2611,6 +2636,12 @@
     if (!deltaResult.errors.length && Math.abs(dz) > 1e-12 && !session.shiftLevels) {
       warnings.push("Geometry Z values will move without their absolute level attributes. This may leave invert, surface and elevation values inconsistent.");
     }
+    if (scope === "selected" && !deltaResult.errors.length) {
+      warnings.push("Only the selected asset geometry and its own absolute level attributes will move. Unselected connected assets and shared endpoints will remain in place.");
+      if (Math.abs(dx) > 1e-12 || Math.abs(dy) > 1e-12) {
+        warnings.push("Review cadastral, frontage, water-meter and house-connection offsets where the moved assets depend on unselected boundaries.");
+      }
+    }
 
     let vertexCount = 0;
     let zCount = 0;
@@ -2619,17 +2650,27 @@
     files.forEach((file) => {
       const record = state.documents.get(file.id);
       if (!record?.workingDocument) return;
-      const stats = session.documentStats?.get(file.id) || getTransformDocumentStats(record.workingDocument);
+      const assetLocators = targetFeatures
+        .filter((feature) => feature.sourceFileId === file.id)
+        .map((feature) => feature.xmlLocator);
+      const stats = scope === "selected"
+        ? getTransformAssetStats(record.workingDocument, assetLocators)
+        : session.documentStats?.get(file.id) || getTransformDocumentStats(record.workingDocument);
       vertexCount += stats.vertexCount;
       zCount += stats.zCount;
       levelCount += Math.abs(dz) > 1e-12 && session.shiftLevels ? stats.levelCount : 0;
       allPoints.push(...stats.points);
     });
-    if (files.length && !vertexCount) errors.push("No numeric ADAC geometry coordinates were found in the selected files.");
+    if (files.length && !vertexCount) errors.push(`No numeric ADAC geometry coordinates were found in the selected ${scope === "selected" ? "assets" : "files"}.`);
     if (Math.abs(dz) > 1e-12 && !zCount && !levelCount) warnings.push("No numeric geometry Z or supported absolute level values were found to shift.");
     const extents = deltaResult.errors.length ? null : getTransformExtentPreview(allPoints, dx, dy);
     return {
+      scope,
       files,
+      targetFeatures,
+      assetCount: scope === "selected"
+        ? targetFeatures.length
+        : state.features.filter((feature) => targetFileIds.has(feature.sourceFileId)).length,
       dx,
       dy,
       dz,
@@ -2680,7 +2721,18 @@
   }
 
   function getTransformDocumentStats(doc) {
-    const groups = getGeometryCoordinateGroups(doc?.documentElement);
+    return getTransformRootStats(doc?.documentElement ? [doc.documentElement] : []);
+  }
+
+  function getTransformAssetStats(doc, assetLocators) {
+    const roots = uniqueValues(assetLocators || [])
+      .map((locator) => findXmlElementByLocator(doc, locator))
+      .filter(Boolean);
+    return getTransformRootStats(roots);
+  }
+
+  function getTransformRootStats(roots) {
+    const groups = roots.flatMap((root) => getGeometryCoordinateGroups(root));
     const points = [];
     let zCount = 0;
     groups.forEach((group) => {
@@ -2693,7 +2745,7 @@
       const zText = String(group.elements.z?.textContent || "").trim();
       if (group.elements.z && isTransformNumericText(zText)) zCount += 1;
     });
-    const levelCount = Array.from(doc?.documentElement?.querySelectorAll("*") || [])
+    const levelCount = roots.flatMap((root) => Array.from(root.querySelectorAll("*")))
       .filter((element) => transformAbsoluteLevelNames.has(normalizeDetailKey(cleanName(element.tagName))))
       .filter((element) => isTransformNumericText(element.textContent))
       .length;
@@ -2726,15 +2778,22 @@
     const candidates = analysis.files.map((file) => {
       const record = state.documents.get(file.id);
       const doc = parseXmlDocument(record?.workingXmlText);
-      const selectedFeature = state.features.find((feature) => feature.sourceFileId === file.id && state.selectedIds.has(feature.uid))
+      const targetFeatures = analysis.scope === "selected"
+        ? analysis.targetFeatures.filter((feature) => feature.sourceFileId === file.id)
+        : [];
+      const assetLocators = targetFeatures.map((feature) => feature.xmlLocator);
+      const selectedFeature = targetFeatures[0]
+        || state.features.find((feature) => feature.sourceFileId === file.id && state.selectedIds.has(feature.uid))
         || state.features.find((feature) => feature.sourceFileId === file.id);
       if (!record || !doc) return null;
-      const counts = translateAdacDocument(doc, analysis, session.shiftLevels);
+      const counts = translateAdacDocument(doc, analysis, session.shiftLevels, analysis.scope === "selected" ? assetLocators : null);
+      if (analysis.scope === "selected" && counts.assetCount !== assetLocators.length) return null;
       updateTransformDrawingExtents(doc);
       return {
         record,
         doc,
         counts,
+        assetLocators,
         beforeXmlText: record.workingXmlText,
         afterXmlText: serializeXmlDocument(doc),
         selectedLocator: selectedFeature?.xmlLocator || "",
@@ -2770,12 +2829,19 @@
     const selectedIds = Array.from(state.selectedIds);
     const transaction = {
       kind: "translate",
-      label: "XML position shift",
-      assetCount: state.features.filter((feature) => session.fileIds.has(feature.sourceFileId)).length,
+      label: analysis.scope === "selected" ? "selected asset position shift" : "XML position shift",
+      assetCount: analysis.assetCount,
       selectedIds,
       beforeSelectedIds: selectedIds,
       afterSelectedIds: selectedIds,
-      transform: { dx: analysis.dx, dy: analysis.dy, dz: analysis.dz, fileCount: candidates.length },
+      transform: {
+        dx: analysis.dx,
+        dy: analysis.dy,
+        dz: analysis.dz,
+        scope: analysis.scope,
+        assetCount: analysis.assetCount,
+        fileCount: candidates.length,
+      },
       documents: candidates.map((candidate, index) => ({
         fileId: candidate.record.id,
         beforeXmlText: candidate.beforeXmlText,
@@ -2796,7 +2862,10 @@
       const candidate = candidates[index];
       applyValidatedWorkingDocument(candidate.record, change.afterXmlText, candidate.doc, validations[index], change.selectedLocator);
     });
-    const message = `Shifted ${candidates.length} XML working ${candidates.length === 1 ? "copy" : "copies"} by ${formatTransformDeltaSummary(analysis)}. Original uploads were not changed.`;
+    const targetMessage = analysis.scope === "selected"
+      ? `${analysis.assetCount} selected asset${analysis.assetCount === 1 ? "" : "s"} across ${candidates.length} XML working ${candidates.length === 1 ? "copy" : "copies"}`
+      : `${candidates.length} XML working ${candidates.length === 1 ? "copy" : "copies"}`;
+    const message = `Shifted ${targetMessage} by ${formatTransformDeltaSummary(analysis)}. Original uploads were not changed.`;
     state.transformSession = null;
     els.transformModal.hidden = true;
     els.transformButton?.setAttribute("aria-expanded", "false");
@@ -2809,11 +2878,14 @@
     setStatus(message, false);
   }
 
-  function translateAdacDocument(doc, analysis, shiftLevels) {
+  function translateAdacDocument(doc, analysis, shiftLevels, assetLocators = null) {
     let vertexCount = 0;
     let zCount = 0;
     let levelCount = 0;
-    getGeometryCoordinateGroups(doc?.documentElement).forEach((group) => {
+    const roots = Array.isArray(assetLocators)
+      ? uniqueValues(assetLocators).map((locator) => findXmlElementByLocator(doc, locator)).filter(Boolean)
+      : doc?.documentElement ? [doc.documentElement] : [];
+    roots.flatMap((root) => getGeometryCoordinateGroups(root)).forEach((group) => {
       const xText = String(group.elements.x?.textContent || "").trim();
       const yText = String(group.elements.y?.textContent || "").trim();
       if (!isTransformNumericText(xText) || !isTransformNumericText(yText)) return;
@@ -2827,7 +2899,7 @@
       }
     });
     if (shiftLevels && Math.abs(analysis.dz) > 1e-12) {
-      Array.from(doc?.documentElement?.querySelectorAll("*") || []).forEach((element) => {
+      roots.flatMap((root) => Array.from(root.querySelectorAll("*"))).forEach((element) => {
         if (!transformAbsoluteLevelNames.has(normalizeDetailKey(cleanName(element.tagName)))) return;
         const value = String(element.textContent || "").trim();
         if (!isTransformNumericText(value)) return;
@@ -2835,7 +2907,7 @@
         levelCount += 1;
       });
     }
-    return { vertexCount, zCount, levelCount };
+    return { assetCount: roots.length, vertexCount, zCount, levelCount };
   }
 
   function updateTransformDrawingExtents(doc) {
@@ -4091,6 +4163,13 @@
       x: event.clientX,
       y: event.clientY,
     };
+    state.selectionBox = isBoxSelectionAvailable()
+      ? {
+        start: getCanvasPoint(event),
+        current: getCanvasPoint(event),
+        active: false,
+      }
+      : null;
     els.canvas.setPointerCapture(event.pointerId);
   }
 
@@ -4115,6 +4194,15 @@
     const dy = event.clientY - state.panStart.y;
     const totalDx = event.clientX - state.pointerStart.x;
     const totalDy = event.clientY - state.pointerStart.y;
+
+    if (state.selectionBox) {
+      if (!state.selectionBox.active && Math.hypot(totalDx, totalDy) < 5) return;
+      state.selectionBox.active = true;
+      state.selectionBox.current = getCanvasPoint(event);
+      state.hasDraggedMap = true;
+      drawMap();
+      return;
+    }
 
     if (!state.isPanning && Math.hypot(totalDx, totalDy) < 5) return;
 
@@ -4142,9 +4230,11 @@
       return;
     }
     const wasDragging = state.hasDraggedMap;
+    const selectionBox = state.selectionBox;
     state.isPointerDown = false;
     state.isPanning = false;
     state.hasDraggedMap = false;
+    state.selectionBox = null;
     els.canvas.classList.remove("is-panning");
     if (els.canvas.hasPointerCapture && els.canvas.hasPointerCapture(event.pointerId)) {
       els.canvas.releasePointerCapture(event.pointerId);
@@ -4158,6 +4248,12 @@
         resetDxfSnapHoverState();
         drawMap();
       }
+      if (selectionBox?.active) drawMap();
+      return;
+    }
+    if (selectionBox?.active) {
+      selectionBox.current = getCanvasPoint(event);
+      applyBoxSelection(selectionBox);
       return;
     }
     if (!wasDragging) {
@@ -5487,6 +5583,7 @@
     state.selectedId = null;
     state.selectedIds = new Set();
     state.multiSelectMode = false;
+    state.selectionBox = null;
     state.selectionBuilder = {
       scope: "all",
       assetClass: "",
@@ -6562,6 +6659,86 @@
     return Boolean(state.multiSelectMode || event?.shiftKey || event?.metaKey || event?.ctrlKey);
   }
 
+  function isBoxSelectionAvailable() {
+    return Boolean(
+      state.multiSelectMode
+      && !isTransformPointPicking()
+      && !isSplitTargetPicking()
+      && !state.dxfSnapSelection
+      && !isMeasurementActive()
+    );
+  }
+
+  function getSelectionBoxRect(selectionBox) {
+    if (!selectionBox?.start || !selectionBox?.current) return null;
+    const x = Math.min(selectionBox.start.x, selectionBox.current.x);
+    const y = Math.min(selectionBox.start.y, selectionBox.current.y);
+    return {
+      x,
+      y,
+      width: Math.abs(selectionBox.current.x - selectionBox.start.x),
+      height: Math.abs(selectionBox.current.y - selectionBox.start.y),
+    };
+  }
+
+  function getFeaturesInSelectionBox(selectionBox) {
+    const rect = getSelectionBoxRect(selectionBox);
+    if (!rect || rect.width < 5 || rect.height < 5 || !state.filteredFeatures.length) return [];
+    const width = els.canvas.clientWidth || els.canvas.width;
+    const height = els.canvas.clientHeight || els.canvas.height;
+    const transform = getActiveMapTransform(state.filteredFeatures, width, height);
+    return state.filteredFeatures.filter((feature) => {
+      const pointPairs = getProjectedFeatureScreenPairs(feature, transform);
+      const points = pointPairs.map((pair) => pair.screenPoint);
+      if (!points.length) return false;
+      if (feature.geometryKind === "Point") {
+        const style = getPlanStyleForFeature(feature);
+        return pointPairs.some(({ sourcePoint, screenPoint }) => {
+          const symbolSize = getPointHitSymbolSize(feature, style, transform, sourcePoint);
+          const radiusX = Math.max(5, Number(symbolSize?.radiusX) || 0);
+          const radiusY = Math.max(5, Number(symbolSize?.radiusY) || radiusX);
+          return rectsOverlap(rect, {
+            x: screenPoint.x - radiusX,
+            y: screenPoint.y - radiusY,
+            width: radiusX * 2,
+            height: radiusY * 2,
+          });
+        });
+      }
+      if (pathIntersectsRect(points, rect, feature.geometryKind === "Polygon")) return true;
+      return feature.geometryKind === "Polygon"
+        && points.length > 2
+        && getRectCorners(rect).some((corner) => isPointInPolygon(corner, points));
+    });
+  }
+
+  function applyBoxSelection(selectionBox) {
+    const matches = getFeaturesInSelectionBox(selectionBox);
+    if (!matches.length) {
+      drawMap();
+      setStatus("No visible XML assets intersected the selection rectangle.", false);
+      return;
+    }
+    const nextSelectedIds = new Set(state.selectedIds || []);
+    const previousCount = nextSelectedIds.size;
+    matches.forEach((feature) => nextSelectedIds.add(feature.uid));
+    const addedCount = nextSelectedIds.size - previousCount;
+    state.selectedIds = nextSelectedIds;
+    state.selectedId = matches[matches.length - 1]?.uid || state.selectedId;
+    state.selectedOverlayFeature = null;
+    state.editMode = false;
+    state.geometryEditorOpen = false;
+    state.editorFeedback = null;
+    state.deleteConfirmation = null;
+    state.drawOrderCache = null;
+    renderDetails();
+    drawMap();
+    setStatus(
+      `Selection rectangle matched ${matches.length} asset${matches.length === 1 ? "" : "s"} and added ${addedCount}. ${nextSelectedIds.size} selected.`,
+      false
+    );
+  }
+
   function getSelectedFeatures() {
     const selectedIds = state.selectedIds instanceof Set ? state.selectedIds : new Set();
     return state.features.filter((feature) => selectedIds.has(feature.uid));
@@ -6614,6 +6791,7 @@
 
   function toggleMultiSelectMode() {
     state.multiSelectMode = !state.multiSelectMode;
+    state.selectionBox = null;
     if (!state.multiSelectMode && state.selectedIds.size > 1) {
       state.selectedIds = new Set(state.selectedId ? [state.selectedId] : []);
       state.editMode = false;
@@ -6624,7 +6802,7 @@
     renderDetails();
     drawMap();
     setStatus(state.multiSelectMode
-      ? "Multi-select is on. Click assets to add or remove them from the selection."
+      ? "Multi-select is on. Click assets to add or remove them, or drag a rectangle to select visible assets."
       : "Multi-select is off. Click an asset to select it.", false);
   }
 
@@ -6633,7 +6811,7 @@
     if (!button) return;
     button.classList.toggle("is-active", state.multiSelectMode);
     button.setAttribute("aria-pressed", String(state.multiSelectMode));
-    button.title = state.multiSelectMode ? "Finish selecting multiple assets" : "Select multiple assets";
+    button.title = state.multiSelectMode ? "Finish selecting multiple assets" : "Select multiple assets by click or rectangle";
   }
 
   function toggleSelectionMenu() {
@@ -6692,6 +6870,14 @@
       return state.features.filter((feature) => feature.sourceFileId === fileId);
     }
     return state.features;
+  }
+
+  const SELECTION_ALL_ASSETS = "__all_assets__";
+
+  function getSelectionBuilderAllAssetsLabel(scope, count) {
+    if (scope.startsWith("file:")) return `All assets in this XML (${count})`;
+    if (scope === "visible") return `All visible assets (${count})`;
+    return `All assets in loaded XMLs (${count})`;
   }
 
   function getSelectionBuilderClassOptions(features, fieldKey = "") {
@@ -6820,19 +7006,28 @@
   function renderSelectionBuilder() {
     if (!els.selectionMenuContent) return;
     const scopeFeatures = getSelectionBuilderScopeFeatures();
+    let selectsAllAssets = state.selectionBuilder.assetClass === SELECTION_ALL_ASSETS;
     let classOptions = getSelectionBuilderClassOptions(scopeFeatures, state.selectionBuilder.field);
-    if (state.selectionBuilder.assetClass && !classOptions.some((option) => option.key === state.selectionBuilder.assetClass)) {
+    if (state.selectionBuilder.assetClass && !selectsAllAssets && !classOptions.some((option) => option.key === state.selectionBuilder.assetClass)) {
       state.selectionBuilder.assetClass = "";
       state.selectionBuilder.value = "";
     }
-    let fieldOptions = getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
+    if (selectsAllAssets && state.selectionBuilder.field) {
+      state.selectionBuilder.field = "";
+      state.selectionBuilder.operator = "equals";
+      state.selectionBuilder.value = "";
+    }
+    selectsAllAssets = state.selectionBuilder.assetClass === SELECTION_ALL_ASSETS;
+    let fieldOptions = selectsAllAssets ? [] : getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
     if (state.selectionBuilder.field && !fieldOptions.some((option) => option.key === state.selectionBuilder.field)) {
       state.selectionBuilder.field = "";
       state.selectionBuilder.value = "";
       classOptions = getSelectionBuilderClassOptions(scopeFeatures);
-      fieldOptions = getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
+      fieldOptions = selectsAllAssets ? [] : getSelectionBuilderFieldOptions(scopeFeatures, state.selectionBuilder.assetClass);
     }
-    const fieldInfo = getSelectionBuilderFieldInfo(scopeFeatures, state.selectionBuilder.assetClass, state.selectionBuilder.field);
+    const fieldInfo = selectsAllAssets
+      ? null
+      : getSelectionBuilderFieldInfo(scopeFeatures, state.selectionBuilder.assetClass, state.selectionBuilder.field);
     const operators = getSelectionBuilderOperators(fieldInfo);
     if (!operators.some((operator) => operator.value === state.selectionBuilder.operator)) {
       state.selectionBuilder.operator = "equals";
@@ -6860,19 +7055,24 @@
         <span>Asset class</span>
         <select data-selection-builder="assetClass">
           <option value="">Choose asset class</option>
+          ${!state.selectionBuilder.field ? `<option value="${SELECTION_ALL_ASSETS}" ${selectsAllAssets ? "selected" : ""}>${escapeHtml(getSelectionBuilderAllAssetsLabel(state.selectionBuilder.scope, scopeFeatures.length))}</option>` : ""}
           ${classOptions.map((option) => `<option value="${escapeHtml(option.key)}" ${option.key === state.selectionBuilder.assetClass ? "selected" : ""}>${escapeHtml(`${option.label} (${option.count})`)}</option>`).join("")}
         </select>
       </label>
-      <label class="viewer-selection-field">
-        <span>Attribute</span>
-        <select data-selection-builder="field">
-          <option value="">Any attribute</option>
-          ${fieldOptions.map((option) => {
-            const context = state.selectionBuilder.assetClass ? `${option.count} assets` : `${option.classCount} classes`;
-            return `<option value="${escapeHtml(option.key)}" ${option.key === state.selectionBuilder.field ? "selected" : ""}>${escapeHtml(`${option.label} (${context})`)}</option>`;
-          }).join("")}
-        </select>
-      </label>
+      ${selectsAllAssets ? `
+        <span class="viewer-selection-menu__notice"><i class="fa-solid fa-file-circle-check" aria-hidden="true"></i><span>Every asset in the selected scope will be included.</span></span>
+      ` : `
+        <label class="viewer-selection-field">
+          <span>Attribute</span>
+          <select data-selection-builder="field">
+            <option value="">Any attribute</option>
+            ${fieldOptions.map((option) => {
+              const context = state.selectionBuilder.assetClass ? `${option.count} assets` : `${option.classCount} classes`;
+              return `<option value="${escapeHtml(option.key)}" ${option.key === state.selectionBuilder.field ? "selected" : ""}>${escapeHtml(`${option.label} (${context})`)}</option>`;
+            }).join("")}
+          </select>
+        </label>
+      `}
       ${state.selectionBuilder.field && !state.selectionBuilder.assetClass ? `
         <span class="viewer-selection-menu__notice"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Choose an asset class to set the condition.</span></span>
       ` : ""}
@@ -6915,6 +7115,9 @@
       state.selectionBuilder.value = "";
       state.selectionBuilder.operator = "equals";
     }
+    if (key === "assetClass" && control.value === SELECTION_ALL_ASSETS) {
+      state.selectionBuilder.field = "";
+    }
     renderSelectionBuilder();
   }
 
@@ -6935,7 +7138,9 @@
   function getSelectionBuilderMatches() {
     const { assetClass, field: fieldKey, operator, value } = state.selectionBuilder;
     if (!assetClass) return [];
-    return getSelectionBuilderScopeFeatures().filter((feature) => {
+    const scopeFeatures = getSelectionBuilderScopeFeatures();
+    if (assetClass === SELECTION_ALL_ASSETS) return scopeFeatures;
+    return scopeFeatures.filter((feature) => {
       if (getSelectionAssetClassKey(feature) !== assetClass) return false;
       if (!fieldKey) return true;
       const field = (feature.editableFields || []).find((item) => getSelectionFieldKey(feature, item) === fieldKey);
@@ -6989,6 +7194,7 @@
     const hiddenCount = matches.filter((feature) => !visibleIds.has(feature.uid)).length;
     const valueRequired = Boolean(
       state.selectionBuilder.assetClass
+      && state.selectionBuilder.assetClass !== SELECTION_ALL_ASSETS
       && state.selectionBuilder.field
       && selectionOperatorNeedsValue()
       && !String(state.selectionBuilder.value || "").trim()
@@ -7034,7 +7240,10 @@
     renderDetails();
     drawMap();
     const action = state.selectionBuilder.mode === "add" ? "Added" : state.selectionBuilder.mode === "remove" ? "Removed" : "Selected";
-    setStatus(`${action} ${matches.length} matching asset${matches.length === 1 ? "" : "s"}.`, false);
+    const matchDescription = state.selectionBuilder.assetClass === SELECTION_ALL_ASSETS
+      ? `asset${matches.length === 1 ? "" : "s"} in the selected XML scope`
+      : `matching asset${matches.length === 1 ? "" : "s"}`;
+    setStatus(`${action} ${matches.length} ${matchDescription}.`, false);
   }
 
   function selectOverlayFeature(selection) {
@@ -11597,6 +11806,9 @@
     }
     if (transaction.kind === "translate") {
       const transform = transaction.transform || {};
+      if (transform.scope === "selected") {
+        return `${verb} position shift for ${transform.assetCount || transaction.assetCount} selected asset${(transform.assetCount || transaction.assetCount) === 1 ? "" : "s"} across ${transform.fileCount || transaction.documents.length} file${(transform.fileCount || transaction.documents.length) === 1 ? "" : "s"} (${formatTransformDeltaSummary(transform)}).`;
+      }
       return `${verb} XML position shift across ${transform.fileCount || transaction.documents.length} file${(transform.fileCount || transaction.documents.length) === 1 ? "" : "s"} (${formatTransformDeltaSummary(transform)}).`;
     }
     return `${verb} the bulk ${transaction.label} change for ${transaction.assetCount} assets.`;
@@ -12642,7 +12854,21 @@
     });
     drawSplitOverlay(transform);
     drawMeasurementOverlay(transform);
+    drawSelectionBoxOverlay();
     renderMeasurementUi();
+  }
+
+  function drawSelectionBoxOverlay() {
+    const rect = getSelectionBoxRect(state.selectionBox);
+    if (!state.selectionBox?.active || !rect) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(23, 105, 194, 0.12)";
+    ctx.strokeStyle = "#1769c2";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.restore();
   }
 
   function getMapExtentFeatures(xmlFeatures) {
@@ -17698,6 +17924,8 @@
     els.canvas.classList.toggle("is-measuring", isMeasurementActive());
     els.canvas.classList.toggle("is-dxf-snap-picking", Boolean(state.dxfSnapSelection));
     els.canvas.classList.toggle("is-split-picking", isSplitTargetPicking());
+    els.canvas.classList.toggle("is-multi-select", isBoxSelectionAvailable());
+    els.canvas.classList.toggle("is-box-selecting", Boolean(state.selectionBox?.active));
   }
 
   function escapeHtml(value) {

@@ -4374,6 +4374,11 @@ h3,
     cursor: crosshair;
 }
 
+#adac-map-canvas.is-multi-select,
+#adac-map-canvas.is-box-selecting {
+    cursor: crosshair;
+}
+
 .viewer-measure-readout {
     position: absolute;
     right: 12px;
