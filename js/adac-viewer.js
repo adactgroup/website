@@ -89,6 +89,22 @@
     },
   };
 
+  const transformAbsoluteLevelNames = new Set([
+    "surfacelevelm",
+    "invertlevelm",
+    "usinvertlevelm",
+    "dsinvertlevelm",
+    "ussurfacelevelm",
+    "dssurfacelevelm",
+    "structurelevelm",
+    "cleanoutlevelm",
+    "minsurfacelevelm",
+    "permanentpondlevelm",
+    "outletlevelm",
+    "elevationm",
+    "crestelevationm",
+  ]);
+
   const layerPalette = {
     Water: "#1268c4",
     Sewer: "#6f42c1",
@@ -1110,6 +1126,7 @@
     splitSession: null,
     mergeSession: null,
     mergePreview: null,
+    transformSession: null,
     bulkHistoryPast: [],
     bulkHistoryFuture: [],
     filters: {
@@ -1164,6 +1181,13 @@
     mergeModalContent: document.querySelector("[data-role='merge-modal-content']"),
     mergeModalStatus: document.querySelector("[data-role='merge-modal-status']"),
     buildMergedXmlButton: document.querySelector("[data-role='build-merged-xml']"),
+    transformButton: root.querySelector("[data-role='transform-xml-button']"),
+    transformModal: document.querySelector("[data-role='transform-modal']"),
+    transformModalContent: document.querySelector("[data-role='transform-modal-content']"),
+    transformModalStatus: document.querySelector("[data-role='transform-modal-status']"),
+    applyTransformXmlButton: document.querySelector("[data-role='apply-transform-xml']"),
+    transformPickHint: root.querySelector("[data-role='transform-pick-hint']"),
+    transformPickHintText: root.querySelector("[data-role='transform-pick-hint-text']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1236,6 +1260,11 @@
     if (els.mergeModal) {
       els.mergeModal.addEventListener("click", handleClick);
       els.mergeModal.addEventListener("change", handleChange);
+    }
+    if (els.transformModal) {
+      els.transformModal.addEventListener("click", handleClick);
+      els.transformModal.addEventListener("change", handleChange);
+      els.transformModal.addEventListener("input", handleTransformInput);
     }
     if (els.dropzone && els.dropTarget) {
       let dragDepth = 0;
@@ -1401,6 +1430,11 @@
   }
 
   function handleChange(event) {
+    const transformControl = event.target.closest("[data-transform-control]");
+    if (transformControl) {
+      updateTransformSessionControl(transformControl, true);
+      return;
+    }
     const mergeControl = event.target.closest("[data-merge-control]");
     if (mergeControl) {
       updateMergeSessionControl(mergeControl);
@@ -1517,6 +1551,14 @@
       buildMergedXmlPreview();
     } else if (action === "download-merged-xml") {
       downloadMergedXml();
+    } else if (action === "open-transform-xml") {
+      openTransformXmlModal();
+    } else if (action === "close-transform-xml") {
+      closeTransformXmlModal();
+    } else if (action === "apply-transform-xml") {
+      applyTransformXml();
+    } else if (action === "pick-transform-point") {
+      beginTransformPointPick(control?.dataset.transformPointRole);
     } else if (action === "toggle-label-menu") {
       toggleLabelMenu();
     } else if (action === "set-label-simple") {
@@ -1616,6 +1658,14 @@
       return;
     }
     if (event.key === "Escape") {
+      if (isTransformPointPicking()) {
+        cancelTransformPointPick();
+        return;
+      }
+      if (isTransformXmlModalOpen()) {
+        closeTransformXmlModal();
+        return;
+      }
       if (isMergeXmlModalOpen()) {
         closeMergeXmlModal();
         return;
@@ -1640,6 +1690,7 @@
     if (except !== "measurement") closeMeasurementMenu();
     if (except !== "selection") closeSelectionMenu();
     if (except !== "merge") closeMergeXmlModal();
+    if (except !== "transform" && !isTransformPointPicking()) closeTransformXmlModal();
     if (except !== "terms") closeTermsModal();
     if (except !== "suggestions") closeSuggestions();
   }
@@ -2323,6 +2374,646 @@
   function buildMergedXmlFileName(fileName) {
     const cleanNameValue = String(fileName || "ADAC.xml").replace(/(?:_edited|_merged)?\.xml$/i, "");
     return `${cleanNameValue}_merged.xml`;
+  }
+
+  function handleTransformInput(event) {
+    const control = event.target.closest?.("[data-transform-control]");
+    if (!control || !["delta", "point"].includes(control.dataset.transformControl)) return;
+    updateTransformSessionControl(control, false);
+  }
+
+  function openTransformXmlModal() {
+    if (!els.transformModal || state.editorBusy || !state.loadedFiles.length) return;
+    closeTransientUi("transform");
+    const selectedFeature = state.features.find((feature) => feature.uid === state.selectedId);
+    const selectedPoint = selectedFeature?.points?.[0];
+    state.transformSession = {
+      fileIds: new Set(state.loadedFiles.map((file) => file.id)),
+      method: "offset",
+      delta: { x: "0", y: "0", z: "0" },
+      from: {
+        x: Number.isFinite(selectedPoint?.x) ? formatTransformDisplayNumber(selectedPoint.x) : "",
+        y: Number.isFinite(selectedPoint?.y) ? formatTransformDisplayNumber(selectedPoint.y) : "",
+        z: Number.isFinite(selectedPoint?.z) ? formatTransformDisplayNumber(selectedPoint.z) : "",
+        label: selectedPoint ? `${selectedFeature.id} point 1` : "",
+      },
+      to: { x: "", y: "", z: "", label: "" },
+      shiftLevels: true,
+      picking: "",
+      busy: false,
+      error: "",
+      documentStats: new Map(state.loadedFiles.map((file) => {
+        const record = state.documents.get(file.id);
+        return [file.id, getTransformDocumentStats(record?.workingDocument)];
+      })),
+    };
+    els.transformModal.hidden = false;
+    els.transformButton?.setAttribute("aria-expanded", "true");
+    renderTransformXmlModal();
+  }
+
+  function closeTransformXmlModal() {
+    if (!els.transformModal) return;
+    els.transformModal.hidden = true;
+    els.transformButton?.setAttribute("aria-expanded", "false");
+    els.canvas?.classList.remove("is-transform-picking");
+    if (els.transformPickHint) els.transformPickHint.hidden = true;
+    if (!state.transformSession?.busy) state.transformSession = null;
+  }
+
+  function isTransformXmlModalOpen() {
+    return Boolean(els.transformModal && !els.transformModal.hidden);
+  }
+
+  function isTransformPointPicking() {
+    return Boolean(state.transformSession?.picking);
+  }
+
+  function updateTransformSessionControl(control, shouldRender) {
+    const session = state.transformSession;
+    if (!session || session.busy) return;
+    const kind = control.dataset.transformControl;
+    if (kind === "file") {
+      const fileId = control.dataset.transformFileId || "";
+      if (control.checked) session.fileIds.add(fileId);
+      else session.fileIds.delete(fileId);
+    } else if (kind === "method") {
+      session.method = control.value;
+    } else if (kind === "shift-levels") {
+      session.shiftLevels = control.checked;
+    } else if (kind === "delta") {
+      const axis = String(control.dataset.transformAxis || "").toLowerCase();
+      if (["x", "y", "z"].includes(axis)) session.delta[axis] = control.value;
+    } else if (kind === "point") {
+      const role = control.dataset.transformPointRole;
+      const axis = String(control.dataset.transformAxis || "").toLowerCase();
+      if (["from", "to"].includes(role) && ["x", "y", "z"].includes(axis)) {
+        session[role][axis] = control.value;
+        session[role].label = "";
+      }
+    }
+    session.error = "";
+    if (shouldRender) renderTransformXmlModal();
+    else renderTransformXmlReadiness();
+  }
+
+  function renderTransformXmlModal() {
+    const session = state.transformSession;
+    if (!session || !els.transformModalContent) return;
+    const analysis = buildTransformAnalysis(session);
+    session.analysis = analysis;
+    const deltaFields = ["x", "y", "z"].map((axis) => `
+      <label class="viewer-merge-field">
+        <span>&Delta;${axis.toUpperCase()} (m)</span>
+        <input type="number" step="any" value="${escapeHtml(session.delta[axis])}" data-transform-control="delta" data-transform-axis="${axis}" aria-label="Delta ${axis.toUpperCase()}" />
+      </label>
+    `).join("");
+    const pointPanel = (role, title) => `
+      <div class="viewer-transform-point">
+        <span class="viewer-transform-point__heading">
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(session[role].label || "Typed coordinate")}</small>
+        </span>
+        <div class="viewer-transform-coordinate-grid">
+          ${["x", "y", "z"].map((axis) => `
+            <label class="viewer-merge-field">
+              <span>${axis.toUpperCase()}${axis === "z" ? " (optional)" : ""}</span>
+              <input type="number" step="any" value="${escapeHtml(session[role][axis])}" data-transform-control="point" data-transform-point-role="${role}" data-transform-axis="${axis}" aria-label="${escapeHtml(`${title} ${axis.toUpperCase()}`)}" />
+            </label>
+          `).join("")}
+        </div>
+        <button type="button" class="viewer-transform-pick-button" data-action="pick-transform-point" data-transform-point-role="${role}" aria-label="Pick ${escapeHtml(title)} from XML or DXF">
+          <i class="fa-solid fa-crosshairs" aria-hidden="true"></i>
+          <span>Pick XML or DXF point</span>
+        </button>
+      </div>
+    `;
+    els.transformModalContent.innerHTML = `
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>1. XML files</strong><span>${analysis.files.length} selected</span></span>
+        <div class="viewer-merge-file-list">
+          ${state.loadedFiles.map((file) => `
+            <label class="viewer-merge-check">
+              <input type="checkbox" data-transform-control="file" data-transform-file-id="${escapeHtml(file.id)}" ${session.fileIds.has(file.id) ? "checked" : ""} />
+              <span>${escapeHtml(file.name)}</span>
+              <small>${file.assetCount} assets</small>
+            </label>
+          `).join("")}
+        </div>
+      </section>
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>2. Translation</strong><span>Coordinate system and units remain unchanged</span></span>
+        <div class="viewer-merge-scope viewer-transform-method" role="radiogroup" aria-label="Translation method">
+          <label><input type="radio" name="transform-method" value="offset" data-transform-control="method" ${session.method === "offset" ? "checked" : ""} /><span>Enter offsets</span></label>
+          <label><input type="radio" name="transform-method" value="base" data-transform-control="method" ${session.method === "base" ? "checked" : ""} /><span>From / To base points</span></label>
+        </div>
+        ${session.method === "offset"
+          ? `<div class="viewer-transform-coordinate-grid">${deltaFields}</div>`
+          : `<div class="viewer-transform-point-grid">${pointPanel("from", "From point")}${pointPanel("to", "To point")}</div>`}
+        ${session.method === "base" ? `
+          <div class="viewer-transform-calculated">
+            <span>Calculated shift</span>
+            <strong>&Delta;X <b data-transform-output="dx">${escapeHtml(formatTransformSignedNumber(analysis.validDelta ? analysis.dx : Number.NaN))}</b></strong>
+            <strong>&Delta;Y <b data-transform-output="dy">${escapeHtml(formatTransformSignedNumber(analysis.validDelta ? analysis.dy : Number.NaN))}</b></strong>
+            <strong>&Delta;Z <b data-transform-output="dz">${escapeHtml(formatTransformSignedNumber(analysis.validDelta ? analysis.dz : Number.NaN))}</b></strong>
+          </div>
+        ` : ""}
+        <label class="viewer-transform-level-toggle">
+          <input type="checkbox" data-transform-control="shift-levels" ${session.shiftLevels ? "checked" : ""} />
+          <span><strong>Shift absolute level attributes with &Delta;Z</strong><small>Recommended: keeps geometry Z, invert, surface, structure and elevation values aligned.</small></span>
+        </label>
+      </section>
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading"><strong>3. Preview</strong><span>Schema validation runs before applying</span></span>
+        <div class="viewer-merge-summary viewer-transform-summary">
+          <span><strong data-transform-output="files">${analysis.files.length}</strong><small>Files</small></span>
+          <span><strong data-transform-output="vertices">${analysis.vertexCount}</strong><small>XY vertices</small></span>
+          <span><strong data-transform-output="z-count">${analysis.zCount}</strong><small>Z values</small></span>
+          <span><strong data-transform-output="level-count">${analysis.levelCount}</strong><small>Level values</small></span>
+        </div>
+        <div data-role="transform-extents-output">${getTransformExtentsHtml(analysis)}</div>
+        <div class="viewer-transform-notices" data-role="transform-notices">${getTransformNoticesHtml(analysis)}</div>
+      </section>
+    `;
+    renderTransformXmlReadiness(analysis);
+  }
+
+  function renderTransformXmlReadiness(analysis = null) {
+    const session = state.transformSession;
+    if (!session) return;
+    const currentAnalysis = analysis || buildTransformAnalysis(session);
+    session.analysis = currentAnalysis;
+    setTransformOutputText("dx", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dx : Number.NaN));
+    setTransformOutputText("dy", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dy : Number.NaN));
+    setTransformOutputText("dz", formatTransformSignedNumber(currentAnalysis.validDelta ? currentAnalysis.dz : Number.NaN));
+    setTransformOutputText("files", currentAnalysis.files.length);
+    setTransformOutputText("vertices", currentAnalysis.vertexCount);
+    setTransformOutputText("z-count", currentAnalysis.zCount);
+    setTransformOutputText("level-count", currentAnalysis.levelCount);
+    const extentsOutput = els.transformModalContent?.querySelector("[data-role='transform-extents-output']");
+    if (extentsOutput) extentsOutput.innerHTML = getTransformExtentsHtml(currentAnalysis);
+    const noticesOutput = els.transformModalContent?.querySelector("[data-role='transform-notices']");
+    if (noticesOutput) noticesOutput.innerHTML = getTransformNoticesHtml(currentAnalysis);
+    const ready = !session.busy && !currentAnalysis.errors.length;
+    if (els.applyTransformXmlButton) els.applyTransformXmlButton.disabled = !ready;
+    if (els.transformModalStatus) {
+      els.transformModalStatus.textContent = session.busy
+        ? `Validating ${currentAnalysis.files.length} translated XML working ${currentAnalysis.files.length === 1 ? "copy" : "copies"}...`
+        : session.error
+          ? session.error
+          : ready
+            ? `Ready to apply ${formatTransformDeltaSummary(currentAnalysis)}.`
+            : currentAnalysis.errors[0] || "Choose files and enter a translation.";
+    }
+  }
+
+  function setTransformOutputText(name, value) {
+    const output = els.transformModalContent?.querySelector(`[data-transform-output="${name}"]`);
+    if (output) output.textContent = String(value);
+  }
+
+  function getTransformExtentsHtml(analysis) {
+    if (!analysis.extents) return "";
+    return `
+      <div class="viewer-transform-extents">
+        <span><strong>Current extent</strong><small>SW ${escapeHtml(formatTransformPoint(analysis.extents.currentSouthWest))}<br>NE ${escapeHtml(formatTransformPoint(analysis.extents.currentNorthEast))}</small></span>
+        <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        <span><strong>Shifted extent</strong><small>SW ${escapeHtml(formatTransformPoint(analysis.extents.shiftedSouthWest))}<br>NE ${escapeHtml(formatTransformPoint(analysis.extents.shiftedNorthEast))}</small></span>
+      </div>
+    `;
+  }
+
+  function getTransformNoticesHtml(analysis) {
+    const notices = [
+      ...analysis.errors.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
+      ...analysis.warnings.map((message) => `<span class="viewer-merge-notice viewer-merge-notice--warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(message)}</span></span>`),
+    ].join("");
+    return notices || `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>The selected working copies are ready to translate and validate.</span></span>`;
+  }
+
+  function buildTransformAnalysis(session) {
+    const errors = [];
+    const warnings = [];
+    const files = state.loadedFiles.filter((file) => session.fileIds.has(file.id));
+    if (!files.length) errors.push("Choose at least one XML working copy.");
+    files.forEach((file) => {
+      const record = state.documents.get(file.id);
+      if (!record?.workingDocument || !record.validation?.valid) errors.push(`${file.name} does not have a schema-valid working copy.`);
+    });
+    const deltaResult = getTransformDeltas(session);
+    errors.push(...deltaResult.errors);
+    const { dx, dy, dz } = deltaResult;
+    if (!deltaResult.errors.length && Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12 && Math.abs(dz) < 1e-12) {
+      errors.push("Enter a non-zero X, Y or Z translation.");
+    }
+    if (!deltaResult.errors.length && (Math.abs(dx) > 100000 || Math.abs(dy) > 100000)) warnings.push("This horizontal shift exceeds 100 km. Confirm the coordinate system and units before applying it.");
+    if (!deltaResult.errors.length && Math.abs(dz) > 1000) warnings.push("This vertical shift exceeds 1,000 m. Confirm the vertical datum and units before applying it.");
+    if (!deltaResult.errors.length && Math.abs(dz) > 1e-12 && !session.shiftLevels) {
+      warnings.push("Geometry Z values will move without their absolute level attributes. This may leave invert, surface and elevation values inconsistent.");
+    }
+
+    let vertexCount = 0;
+    let zCount = 0;
+    let levelCount = 0;
+    const allPoints = [];
+    files.forEach((file) => {
+      const record = state.documents.get(file.id);
+      if (!record?.workingDocument) return;
+      const stats = session.documentStats?.get(file.id) || getTransformDocumentStats(record.workingDocument);
+      vertexCount += stats.vertexCount;
+      zCount += stats.zCount;
+      levelCount += Math.abs(dz) > 1e-12 && session.shiftLevels ? stats.levelCount : 0;
+      allPoints.push(...stats.points);
+    });
+    if (files.length && !vertexCount) errors.push("No numeric ADAC geometry coordinates were found in the selected files.");
+    if (Math.abs(dz) > 1e-12 && !zCount && !levelCount) warnings.push("No numeric geometry Z or supported absolute level values were found to shift.");
+    const extents = deltaResult.errors.length ? null : getTransformExtentPreview(allPoints, dx, dy);
+    return {
+      files,
+      dx,
+      dy,
+      dz,
+      validDelta: !deltaResult.errors.length,
+      vertexCount,
+      zCount: Math.abs(dz) > 1e-12 ? zCount : 0,
+      levelCount,
+      extents,
+      errors: uniqueValues(errors),
+      warnings: uniqueValues(warnings),
+    };
+  }
+
+  function getTransformDeltas(session) {
+    const errors = [];
+    if (session.method === "offset") {
+      const values = ["x", "y", "z"].map((axis) => {
+        const text = String(session.delta[axis] ?? "").trim();
+        if (!text) return 0;
+        const value = Number(text);
+        if (!Number.isFinite(value)) errors.push(`Delta ${axis.toUpperCase()} must be a valid number.`);
+        return value;
+      });
+      return { dx: values[0], dy: values[1], dz: values[2], errors };
+    }
+    const readRequired = (role, axis) => {
+      const text = String(session[role][axis] ?? "").trim();
+      if (!text) {
+        errors.push(`${role === "from" ? "From" : "To"} ${axis.toUpperCase()} is required.`);
+        return 0;
+      }
+      const value = Number(text);
+      if (!Number.isFinite(value)) errors.push(`${role === "from" ? "From" : "To"} ${axis.toUpperCase()} must be a valid number.`);
+      return value;
+    };
+    const fromX = readRequired("from", "x");
+    const fromY = readRequired("from", "y");
+    const toX = readRequired("to", "x");
+    const toY = readRequired("to", "y");
+    const fromZText = String(session.from.z ?? "").trim();
+    const toZText = String(session.to.z ?? "").trim();
+    if (Boolean(fromZText) !== Boolean(toZText)) errors.push("Enter both From Z and To Z, or leave both blank.");
+    const fromZ = fromZText ? Number(fromZText) : 0;
+    const toZ = toZText ? Number(toZText) : 0;
+    if (fromZText && !Number.isFinite(fromZ)) errors.push("From Z must be a valid number.");
+    if (toZText && !Number.isFinite(toZ)) errors.push("To Z must be a valid number.");
+    return { dx: toX - fromX, dy: toY - fromY, dz: toZ - fromZ, errors };
+  }
+
+  function getTransformDocumentStats(doc) {
+    const groups = getGeometryCoordinateGroups(doc?.documentElement);
+    const points = [];
+    let zCount = 0;
+    groups.forEach((group) => {
+      const xText = String(group.elements.x?.textContent || "").trim();
+      const yText = String(group.elements.y?.textContent || "").trim();
+      if (!isTransformNumericText(xText) || !isTransformNumericText(yText)) return;
+      const x = Number(xText);
+      const y = Number(yText);
+      points.push({ x, y });
+      const zText = String(group.elements.z?.textContent || "").trim();
+      if (group.elements.z && isTransformNumericText(zText)) zCount += 1;
+    });
+    const levelCount = Array.from(doc?.documentElement?.querySelectorAll("*") || [])
+      .filter((element) => transformAbsoluteLevelNames.has(normalizeDetailKey(cleanName(element.tagName))))
+      .filter((element) => isTransformNumericText(element.textContent))
+      .length;
+    return { vertexCount: points.length, zCount, levelCount, points };
+  }
+
+  function getTransformExtentPreview(points, dx, dy) {
+    if (!points.length || !Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const currentSouthWest = { x: Math.min(...xs), y: Math.min(...ys) };
+    const currentNorthEast = { x: Math.max(...xs), y: Math.max(...ys) };
+    return {
+      currentSouthWest,
+      currentNorthEast,
+      shiftedSouthWest: { x: currentSouthWest.x + dx, y: currentSouthWest.y + dy },
+      shiftedNorthEast: { x: currentNorthEast.x + dx, y: currentNorthEast.y + dy },
+    };
+  }
+
+  async function applyTransformXml() {
+    const session = state.transformSession;
+    if (!session || session.busy || isTransformPointPicking()) return;
+    const analysis = buildTransformAnalysis(session);
+    if (analysis.errors.length) {
+      session.error = analysis.errors[0];
+      renderTransformXmlModal();
+      return;
+    }
+    const candidates = analysis.files.map((file) => {
+      const record = state.documents.get(file.id);
+      const doc = parseXmlDocument(record?.workingXmlText);
+      const selectedFeature = state.features.find((feature) => feature.sourceFileId === file.id && state.selectedIds.has(feature.uid))
+        || state.features.find((feature) => feature.sourceFileId === file.id);
+      if (!record || !doc) return null;
+      const counts = translateAdacDocument(doc, analysis, session.shiftLevels);
+      updateTransformDrawingExtents(doc);
+      return {
+        record,
+        doc,
+        counts,
+        beforeXmlText: record.workingXmlText,
+        afterXmlText: serializeXmlDocument(doc),
+        selectedLocator: selectedFeature?.xmlLocator || "",
+      };
+    });
+    if (candidates.some((candidate) => !candidate)) {
+      session.error = "One or more XML working copies could not be prepared. Nothing was changed.";
+      renderTransformXmlModal();
+      return;
+    }
+    const revision = ++state.editorRevision;
+    session.busy = true;
+    session.error = "";
+    state.editorBusy = true;
+    renderTransformXmlModal();
+    const validations = await Promise.all(candidates.map((candidate) => (
+      validateAdacSchema(candidate.afterXmlText, candidate.record.name, candidate.doc)
+    )));
+    if (revision !== state.editorRevision || state.transformSession !== session) return;
+    session.busy = false;
+    state.editorBusy = false;
+    const invalidIndex = validations.findIndex((validation) => !validation.valid);
+    if (invalidIndex >= 0) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validations[invalidIndex].errors)[0]);
+      session.error = [
+        `${candidates[invalidIndex].record.name}: ${details.title}.`,
+        details.detail,
+        details.suggestion || "The position shift was not applied.",
+      ].filter(Boolean).join(" ");
+      renderTransformXmlModal();
+      return;
+    }
+    const selectedIds = Array.from(state.selectedIds);
+    const transaction = {
+      kind: "translate",
+      label: "XML position shift",
+      assetCount: state.features.filter((feature) => session.fileIds.has(feature.sourceFileId)).length,
+      selectedIds,
+      beforeSelectedIds: selectedIds,
+      afterSelectedIds: selectedIds,
+      transform: { dx: analysis.dx, dy: analysis.dy, dz: analysis.dz, fileCount: candidates.length },
+      documents: candidates.map((candidate, index) => ({
+        fileId: candidate.record.id,
+        beforeXmlText: candidate.beforeXmlText,
+        afterXmlText: candidate.afterXmlText,
+        selectedLocator: candidate.selectedLocator,
+        validation: validations[index],
+      })),
+    };
+    transaction.documents.forEach((change) => {
+      const record = state.documents.get(change.fileId);
+      pushXmlHistory(record, change.beforeXmlText);
+      record.historyFuture = [];
+    });
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    transaction.documents.forEach((change, index) => {
+      const candidate = candidates[index];
+      applyValidatedWorkingDocument(candidate.record, change.afterXmlText, candidate.doc, validations[index], change.selectedLocator);
+    });
+    const message = `Shifted ${candidates.length} XML working ${candidates.length === 1 ? "copy" : "copies"} by ${formatTransformDeltaSummary(analysis)}. Original uploads were not changed.`;
+    state.transformSession = null;
+    els.transformModal.hidden = true;
+    els.transformButton?.setAttribute("aria-expanded", "false");
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    state.editorFeedback = { bulk: true, tone: "success", message: `${message} Use Undo to reverse the complete shift.` };
+    updateDxfReferenceAlignment();
+    renderAll();
+    runReceiverLocationCheck();
+    setStatus(message, false);
+  }
+
+  function translateAdacDocument(doc, analysis, shiftLevels) {
+    let vertexCount = 0;
+    let zCount = 0;
+    let levelCount = 0;
+    getGeometryCoordinateGroups(doc?.documentElement).forEach((group) => {
+      const xText = String(group.elements.x?.textContent || "").trim();
+      const yText = String(group.elements.y?.textContent || "").trim();
+      if (!isTransformNumericText(xText) || !isTransformNumericText(yText)) return;
+      group.elements.x.textContent = addTransformDelta(xText, analysis.dx);
+      group.elements.y.textContent = addTransformDelta(yText, analysis.dy);
+      vertexCount += 1;
+      const zText = String(group.elements.z?.textContent || "").trim();
+      if (group.elements.z && isTransformNumericText(zText) && Math.abs(analysis.dz) > 1e-12) {
+        group.elements.z.textContent = addTransformDelta(zText, analysis.dz);
+        zCount += 1;
+      }
+    });
+    if (shiftLevels && Math.abs(analysis.dz) > 1e-12) {
+      Array.from(doc?.documentElement?.querySelectorAll("*") || []).forEach((element) => {
+        if (!transformAbsoluteLevelNames.has(normalizeDetailKey(cleanName(element.tagName)))) return;
+        const value = String(element.textContent || "").trim();
+        if (!isTransformNumericText(value)) return;
+        element.textContent = addTransformDelta(value, analysis.dz);
+        levelCount += 1;
+      });
+    }
+    return { vertexCount, zCount, levelCount };
+  }
+
+  function updateTransformDrawingExtents(doc) {
+    const stats = getTransformDocumentStats(doc);
+    if (!stats.points.length) return;
+    const project = firstElementByName(doc?.documentElement, "Project");
+    const extents = firstDirectChild(project, "DrawingExtents");
+    const southWest = firstDirectChild(extents, "SouthWest");
+    const northEast = firstDirectChild(extents, "NorthEast");
+    if (!southWest || !northEast) return;
+    const xs = stats.points.map((point) => point.x);
+    const ys = stats.points.map((point) => point.y);
+    setTransformDirectChildText(southWest, "X", Math.min(...xs));
+    setTransformDirectChildText(southWest, "Y", Math.min(...ys));
+    setTransformDirectChildText(northEast, "X", Math.max(...xs));
+    setTransformDirectChildText(northEast, "Y", Math.max(...ys));
+  }
+
+  function setTransformDirectChildText(parent, name, value) {
+    const element = firstDirectChild(parent, name);
+    if (!element || !Number.isFinite(value)) return;
+    const current = String(element.textContent || "").trim();
+    element.textContent = formatTransformNumberWithPrecision(value, getTransformDecimalPlaces(current));
+  }
+
+  function addTransformDelta(value, delta) {
+    const current = Number(value);
+    if (!Number.isFinite(current) || !Number.isFinite(delta)) return value;
+    const precision = Math.min(9, Math.max(getTransformDecimalPlaces(value), getTransformDecimalPlaces(String(delta))));
+    return formatTransformNumberWithPrecision(current + delta, precision);
+  }
+
+  function isTransformNumericText(value) {
+    const text = String(value ?? "").trim();
+    return Boolean(text) && Number.isFinite(Number(text));
+  }
+
+  function getTransformDecimalPlaces(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return 0;
+    if (text.includes("e")) {
+      const [coefficient, exponentText] = text.split("e");
+      const coefficientPlaces = (coefficient.split(".")[1] || "").length;
+      return Math.max(0, coefficientPlaces - Number(exponentText || 0));
+    }
+    return (text.split(".")[1] || "").length;
+  }
+
+  function formatTransformNumberWithPrecision(value, precision = 3) {
+    if (!Number.isFinite(Number(value))) return "";
+    const safePrecision = clamp(Number(precision) || 0, 0, 9);
+    const normalized = Math.abs(Number(value)) < 0.5 * 10 ** -safePrecision ? 0 : Number(value);
+    return normalized.toFixed(safePrecision);
+  }
+
+  function formatTransformDisplayNumber(value) {
+    if (!Number.isFinite(Number(value))) return "";
+    return String(Number(Number(value).toFixed(6)));
+  }
+
+  function formatTransformSignedNumber(value) {
+    if (!Number.isFinite(Number(value))) return "—";
+    const number = Number(value);
+    const prefix = number > 0 ? "+" : "";
+    return `${prefix}${formatTransformDisplayNumber(number)} m`;
+  }
+
+  function formatTransformDeltaSummary(analysis) {
+    return `ΔX ${formatTransformSignedNumber(analysis.dx)}, ΔY ${formatTransformSignedNumber(analysis.dy)}, ΔZ ${formatTransformSignedNumber(analysis.dz)}`;
+  }
+
+  function formatTransformPoint(point) {
+    if (!point) return "—";
+    return `X ${formatTransformDisplayNumber(point.x)}, Y ${formatTransformDisplayNumber(point.y)}`;
+  }
+
+  function beginTransformPointPick(role) {
+    const session = state.transformSession;
+    if (!session || session.busy || !["from", "to"].includes(role)) return;
+    session.method = "base";
+    session.picking = role;
+    els.transformModal.hidden = true;
+    els.canvas?.classList.add("is-transform-picking");
+    renderTransformPickUi();
+    setStatus(`Choose the ${role === "from" ? "From" : "To"} base point from an XML vertex or visible DXF point or line.`, false);
+  }
+
+  function cancelTransformPointPick() {
+    const session = state.transformSession;
+    if (!session?.picking) return;
+    session.picking = "";
+    els.canvas?.classList.remove("is-transform-picking");
+    els.transformModal.hidden = false;
+    renderTransformPickUi();
+    renderTransformXmlModal();
+    setStatus("Base-point selection cancelled. No coordinates were changed.", false);
+  }
+
+  function renderTransformPickUi() {
+    const session = state.transformSession;
+    const picking = session?.picking;
+    if (els.transformPickHint) els.transformPickHint.hidden = !picking;
+    if (els.transformPickHintText && picking) {
+      els.transformPickHintText.textContent = `Choose the ${picking === "from" ? "From" : "To"} point from an XML vertex or visible DXF reference.`;
+    }
+    els.canvas?.classList.toggle("is-transform-picking", Boolean(picking));
+  }
+
+  function chooseTransformPointAtCanvasPoint(canvasPoint) {
+    const session = state.transformSession;
+    if (!session?.picking) return;
+    const xmlTarget = findTransformXmlVertexAtCanvasPoint(canvasPoint);
+    const dxfTarget = findDxfGeometryAtCanvasPoint(canvasPoint);
+    let choice = null;
+    if (xmlTarget) choice = { point: xmlTarget.point, label: `${xmlTarget.feature.id} ${xmlTarget.feature.geometryKind === "Point" ? "point" : `vertex ${xmlTarget.pointIndex + 1}`}`, distancePixels: xmlTarget.distancePixels };
+    if (dxfTarget && (!choice || dxfTarget.distancePixels < choice.distancePixels)) {
+      choice = {
+        point: getTransformDxfPointAtCanvasPoint(dxfTarget, canvasPoint),
+        label: `${dxfTarget.reference.name} / ${dxfTarget.layer}${dxfTarget.sourceType ? ` ${dxfTarget.sourceType}` : ""}`,
+        distancePixels: dxfTarget.distancePixels,
+      };
+    }
+    if (!choice?.point) {
+      setStatus("No XML vertex or visible DXF geometry was found there. Choose a visible point or line, or press Esc to cancel.", true);
+      return;
+    }
+    const role = session.picking;
+    session[role] = {
+      x: formatTransformDisplayNumber(choice.point.x),
+      y: formatTransformDisplayNumber(choice.point.y),
+      z: Number.isFinite(Number(choice.point.z)) ? formatTransformDisplayNumber(choice.point.z) : "",
+      label: choice.label,
+    };
+    session.picking = "";
+    session.error = "";
+    els.canvas?.classList.remove("is-transform-picking");
+    els.transformModal.hidden = false;
+    renderTransformPickUi();
+    renderTransformXmlModal();
+    setStatus(`Selected ${choice.label} as the ${role === "from" ? "From" : "To"} base point.`, false);
+  }
+
+  function findTransformXmlVertexAtCanvasPoint(canvasPoint) {
+    const transform = getCurrentMapTransform();
+    if (!transform) return null;
+    let best = null;
+    state.filteredFeatures.forEach((feature) => {
+      feature.points.forEach((point, pointIndex) => {
+        const screenPoint = projectFeaturePoint(point, transform);
+        if (!screenPoint) return;
+        const distancePixels = distanceBetween(canvasPoint, screenPoint);
+        if (distancePixels <= 13 && (!best || distancePixels < best.distancePixels)) {
+          best = { feature, point, pointIndex, distancePixels };
+        }
+      });
+    });
+    return best;
+  }
+
+  function getTransformDxfPointAtCanvasPoint(target, canvasPoint) {
+    if (target.kind === "point") return { ...target.point };
+    const transform = getCurrentMapTransform();
+    const startScreen = transform ? projectFeaturePoint(target.start, transform) : null;
+    const endScreen = transform ? projectFeaturePoint(target.end, transform) : null;
+    if (!startScreen || !endScreen) return getNearestPointOnSegment(target.start, target.start, target.end);
+    const dx = endScreen.x - startScreen.x;
+    const dy = endScreen.y - startScreen.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared > 0
+      ? clamp(((canvasPoint.x - startScreen.x) * dx + (canvasPoint.y - startScreen.y) * dy) / lengthSquared, 0, 1)
+      : 0;
+    const startZ = Number(target.start.z);
+    const endZ = Number(target.end.z);
+    return {
+      x: target.start.x + (target.end.x - target.start.x) * fraction,
+      y: target.start.y + (target.end.y - target.start.y) * fraction,
+      z: Number.isFinite(startZ) && Number.isFinite(endZ) ? startZ + (endZ - startZ) * fraction : null,
+    };
   }
 
   async function loadSampleXml(sampleKey) {
@@ -3471,6 +4162,10 @@
     }
     if (!wasDragging) {
       const canvasPoint = getCanvasPoint(event);
+      if (isTransformPointPicking()) {
+        chooseTransformPointAtCanvasPoint(canvasPoint);
+        return;
+      }
       if (isSplitTargetPicking()) {
         chooseSplitTargetAtCanvasPoint(canvasPoint);
         return;
@@ -4784,6 +5479,8 @@
       state.mergePreview = null;
       closeMergeXmlModal();
     }
+    state.transformSession = null;
+    closeTransformXmlModal();
     state.features = [];
     state.filteredFeatures = [];
     state.layers = new Map();
@@ -6366,6 +7063,8 @@
     renderValidationPanel();
     renderRepairPreviewBanner();
     if (isMergeXmlModalOpen()) renderMergeXmlModal();
+    if (isTransformXmlModalOpen()) renderTransformXmlModal();
+    renderTransformPickUi();
     drawMap();
   }
 
@@ -6392,6 +7091,11 @@
       const canDownloadMerged = Boolean(state.mergePreview?.active && state.loadedFiles[0] && state.documents.get(state.loadedFiles[0].id)?.workingXmlText);
       els.mergedXmlDownloadButton.hidden = !canDownloadMerged;
       els.mergedXmlDownloadButton.disabled = !canDownloadMerged || state.editorBusy;
+    }
+    if (els.transformButton) {
+      const canTransform = state.loadedFiles.length > 0 && !state.editorBusy;
+      els.transformButton.hidden = !state.loadedFiles.length;
+      els.transformButton.disabled = !canTransform;
     }
     renderEditedXmlDownloadButton();
     if (state.reportBundles.length < 2) closeReportExportMenu();
@@ -10828,7 +11532,14 @@
     restoreTransactionSelection(transaction.beforeSelectedIds || transaction.selectedIds);
     const message = formatBulkTransactionHistoryMessage(transaction, "Undid");
     state.editorFeedback = { bulk: true, tone: "success", message };
-    renderDetails();
+    if (transaction.kind === "translate") {
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+      renderAll();
+      runReceiverLocationCheck();
+    } else {
+      renderDetails();
+    }
     setStatus(message, false);
   }
 
@@ -10847,7 +11558,14 @@
     restoreTransactionSelection(transaction.afterSelectedIds || transaction.selectedIds);
     const message = formatBulkTransactionHistoryMessage(transaction, "Redid");
     state.editorFeedback = { bulk: true, tone: "success", message };
-    renderDetails();
+    if (transaction.kind === "translate") {
+      state.zoom = 1;
+      state.pan = { x: 0, y: 0 };
+      renderAll();
+      runReceiverLocationCheck();
+    } else {
+      renderDetails();
+    }
     setStatus(message, false);
   }
 
@@ -10876,6 +11594,10 @@
     }
     if (transaction.kind === "split") {
       return `${verb} split of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
+    if (transaction.kind === "translate") {
+      const transform = transaction.transform || {};
+      return `${verb} XML position shift across ${transform.fileCount || transaction.documents.length} file${(transform.fileCount || transaction.documents.length) === 1 ? "" : "s"} (${formatTransformDeltaSummary(transform)}).`;
     }
     return `${verb} the bulk ${transaction.label} change for ${transaction.assetCount} assets.`;
   }
