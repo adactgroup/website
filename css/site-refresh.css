@@ -2734,6 +2734,30 @@ h3,
     line-height: 1.38;
 }
 
+.viewer-checks__item > button {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    margin: -5px 0;
+    padding: 5px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.viewer-checks__item > button:hover,
+.viewer-checks__item > button:focus-visible {
+    background: #f2f7fc;
+    outline: none;
+}
+
 .viewer-checks__item--good i {
     color: #13a66b;
 }

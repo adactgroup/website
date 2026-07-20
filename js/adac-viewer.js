@@ -1527,6 +1527,8 @@
       clearSelectionBuilderCriteria();
     } else if (action === "clear-feature-selection") {
       clearFeatureSelection();
+    } else if (action === "focus-engineering-check") {
+      focusEngineeringCheck(control?.dataset.featureUid);
     } else if (action === "export-report-pdf") {
       handleReportExportRequest();
     } else if (action === "export-combined-report-pdf") {
@@ -8900,9 +8902,28 @@
     checks.forEach((check) => {
       const item = document.createElement("li");
       item.className = `viewer-checks__item viewer-checks__item--${check.tone}`;
-      item.innerHTML = `<i class="fa-solid ${check.icon}" aria-hidden="true"></i><span>${escapeHtml(check.text)}</span>`;
+      const content = `<i class="fa-solid ${check.icon}" aria-hidden="true"></i><span>${escapeHtml(check.text)}</span>`;
+      item.innerHTML = check.featureUid
+        ? `<button type="button" data-action="focus-engineering-check" data-feature-uid="${escapeHtml(check.featureUid)}" title="Select this asset">${content}</button>`
+        : content;
       els.checkList.appendChild(item);
     });
+  }
+
+  function focusEngineeringCheck(featureUid) {
+    const feature = state.features.find((item) => item.uid === featureUid);
+    if (!feature) {
+      setStatus("That engineering check asset is no longer available.", true);
+      return;
+    }
+    state.editMode = false;
+    state.multiSelectMode = false;
+    updateMultiSelectButton();
+    selectFeature(feature.uid);
+    const checksPanel = els.checkList?.closest("details");
+    if (checksPanel) checksPanel.open = false;
+    if (els.details) els.details.scrollTop = 0;
+    setStatus(`Selected ${feature.id || feature.assetTag || "asset"} from the engineering consistency checks.`, false);
   }
 
   function renderDetails() {
@@ -12349,6 +12370,7 @@
       state.repairPreview.remainingErrors = [];
     }
     refreshDocumentDerivedState(record, selectedLocator);
+    renderChecks();
   }
 
   function refreshDocumentDerivedState(record, selectedLocator) {
@@ -13225,8 +13247,200 @@
     if (!missingIds && !singlePointLines) {
       checks.push({ tone: "good", icon: "fa-check", text: "Asset IDs and geometry passed the quick checks." });
     }
+    checks.push(...buildEngineeringConsistencyChecks());
 
     return checks;
+  }
+
+  function buildEngineeringConsistencyChecks() {
+    const report = analyzeEngineeringConsistency(state.features);
+    if (!report.comparisonCount) {
+      return [{
+        tone: "muted",
+        icon: "fa-calculator",
+        text: "Engineering consistency: no comparable length, grade, depth or endpoint-level relationships were found.",
+      }];
+    }
+    const scope = [
+      report.metrics.length ? `${report.metrics.length} length${report.metrics.length === 1 ? "" : "s"}` : "",
+      report.metrics.grade ? `${report.metrics.grade} grade${report.metrics.grade === 1 ? "" : "s"}` : "",
+      report.metrics.depth ? `${report.metrics.depth} depth${report.metrics.depth === 1 ? "" : "s"}` : "",
+      report.metrics.endpoint ? `${report.metrics.endpoint} endpoint level${report.metrics.endpoint === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ");
+    if (!report.issues.length) {
+      return [
+        {
+          tone: "good",
+          icon: "fa-calculator",
+          text: `Engineering consistency passed for ${scope}. Related XML values agree within the viewer tolerances; design suitability is not certified.`,
+        },
+        getEngineeringToleranceCheck(),
+      ];
+    }
+    const checks = [{
+      tone: "warn",
+      icon: "fa-triangle-exclamation",
+      text: `Engineering consistency found ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"} while checking ${scope}. Select an issue below to inspect its asset.`,
+    }, getEngineeringToleranceCheck()];
+    report.issues.forEach((issue) => {
+      checks.push({
+        tone: "warn",
+        icon: getEngineeringIssueIcon(issue.type),
+        text: issue.text,
+        featureUid: issue.featureUid,
+      });
+    });
+    return checks;
+  }
+
+  function getEngineeringToleranceCheck() {
+    return {
+      tone: "muted",
+      icon: "fa-circle-info",
+      text: "Engineering tolerances: length greater of 0.05 m or 1%; grade greater of 0.10 percentage points or 5%; depth greater of 0.02 m or 1%; endpoint Z 0.02 m.",
+    };
+  }
+
+  function analyzeEngineeringConsistency(features) {
+    const metrics = { length: 0, grade: 0, depth: 0, endpoint: 0 };
+    const issues = [];
+    const addIssue = (feature, type, message) => {
+      const filePrefix = state.loadedFiles.length > 1 && feature.sourceFile ? `${feature.sourceFile} · ` : "";
+      const assetLabel = feature.id || feature.assetTag || "Unnamed asset";
+      issues.push({
+        featureUid: feature.uid,
+        type,
+        text: `${filePrefix}${assetLabel}: ${message}`,
+      });
+    };
+
+    (features || []).forEach((feature) => {
+      const geometryLength = feature.geometryKind === "Line" && feature.points?.length > 1
+        ? getPolylineLength(feature.points)
+        : null;
+      const length = getEngineeringNumericField(feature, "lengthm");
+      if (length.present && geometryLength > 0) {
+        metrics.length += 1;
+        if (!length.supplied) {
+          addIssue(feature, "length", `Length_m is null; mapped geometry measures ${formatEngineeringValue(geometryLength)} m.`);
+        } else if (!(length.value > 0)) {
+          addIssue(feature, "length", `Length_m must be greater than zero; supplied value is ${formatEngineeringValue(length.value)} m.`);
+        } else {
+          const difference = Math.abs(length.value - geometryLength);
+          const tolerance = Math.max(0.05, geometryLength * 0.01);
+          if (difference > tolerance) {
+            const percentage = geometryLength > 0 ? difference / geometryLength * 100 : 0;
+            addIssue(feature, "length", `Length_m ${formatEngineeringValue(length.value)} m differs from mapped geometry ${formatEngineeringValue(geometryLength)} m by ${formatEngineeringValue(difference)} m (${formatEngineeringValue(percentage, 1)}%).`);
+          }
+        }
+      }
+
+      const upstreamInvert = getEngineeringNumericField(feature, "usinvertlevelm");
+      const downstreamInvert = getEngineeringNumericField(feature, "dsinvertlevelm");
+      const grade = getFirstEngineeringNumericField(feature, ["pipegrade", "grade", "averagegrade"]);
+      const calculationLength = length.supplied && length.value > 0 ? length.value : geometryLength;
+      if (upstreamInvert.supplied && downstreamInvert.supplied && upstreamInvert.value < downstreamInvert.value - 0.05) {
+        addIssue(feature, "direction", `USIL ${formatEngineeringValue(upstreamInvert.value)} m is below DSIL ${formatEngineeringValue(downstreamInvert.value)} m; review the asset direction.`);
+      }
+      if (grade.present && upstreamInvert.supplied && downstreamInvert.supplied && calculationLength > 0) {
+        metrics.grade += 1;
+        const calculatedGrade = (upstreamInvert.value - downstreamInvert.value) / calculationLength * 100;
+        if (!grade.supplied) {
+          addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} is null; invert levels and length calculate to ${formatEngineeringValue(calculatedGrade)}%.`);
+        } else {
+          const difference = Math.abs(grade.value - calculatedGrade);
+          const tolerance = Math.max(0.1, Math.abs(calculatedGrade) * 0.05);
+          if (difference > tolerance) {
+            addIssue(feature, "grade", `${formatDetailLabel(grade.field.name)} ${formatEngineeringValue(grade.value)}% differs from the invert-level calculation ${formatEngineeringValue(calculatedGrade)}% by ${formatEngineeringValue(difference)} percentage points.`);
+          }
+        }
+      }
+
+      const depth = getEngineeringNumericField(feature, "depthm");
+      const expectedDepth = getExpectedEngineeringDepth(feature);
+      if (depth.present && expectedDepth !== null) {
+        metrics.depth += 1;
+        if (expectedDepth < -0.001) {
+          addIssue(feature, "depth", `The supplied surface and invert levels calculate a negative depth of ${formatEngineeringValue(expectedDepth)} m.`);
+        } else if (!depth.supplied) {
+          addIssue(feature, "depth", `Depth_m is null; supplied levels calculate to ${formatEngineeringValue(expectedDepth)} m.`);
+        } else if (depth.value < 0) {
+          addIssue(feature, "depth", `Depth_m cannot be negative; supplied value is ${formatEngineeringValue(depth.value)} m.`);
+        } else {
+          const difference = Math.abs(depth.value - expectedDepth);
+          const tolerance = Math.max(0.02, Math.abs(expectedDepth) * 0.01);
+          if (difference > tolerance) {
+            addIssue(feature, "depth", `Depth_m ${formatEngineeringValue(depth.value)} m differs from the level calculation ${formatEngineeringValue(expectedDepth)} m by ${formatEngineeringValue(difference)} m.`);
+          }
+        }
+      }
+
+      if (feature.geometryKind === "Line" && feature.points?.length > 1 && upstreamInvert.supplied && downstreamInvert.supplied) {
+        const firstZ = Number(feature.points[0]?.z);
+        const lastZ = Number(feature.points[feature.points.length - 1]?.z);
+        if (Number.isFinite(firstZ)) {
+          metrics.endpoint += 1;
+          const difference = Math.abs(firstZ - upstreamInvert.value);
+          if (difference > 0.02) {
+            addIssue(feature, "endpoint", `geometry start Z ${formatEngineeringValue(firstZ)} m differs from USIL ${formatEngineeringValue(upstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`);
+          }
+        }
+        if (Number.isFinite(lastZ)) {
+          metrics.endpoint += 1;
+          const difference = Math.abs(lastZ - downstreamInvert.value);
+          if (difference > 0.02) {
+            addIssue(feature, "endpoint", `geometry end Z ${formatEngineeringValue(lastZ)} m differs from DSIL ${formatEngineeringValue(downstreamInvert.value)} m by ${formatEngineeringValue(difference)} m.`);
+          }
+        }
+      }
+    });
+    const comparisonCount = Object.values(metrics).reduce((total, count) => total + count, 0);
+    return { metrics, issues, comparisonCount };
+  }
+
+  function getEngineeringNumericField(feature, key) {
+    const field = (feature?.editableFields || []).find((item) => (
+      !item.parent && normalizeDetailKey(item.name) === key
+    )) || null;
+    if (!field) return { present: false, supplied: false, value: null, field: null };
+    if (field.nil || !String(field.value || "").trim()) {
+      return { present: true, supplied: false, value: null, field };
+    }
+    const value = Number(field.value);
+    return { present: true, supplied: Number.isFinite(value), value: Number.isFinite(value) ? value : null, field };
+  }
+
+  function getFirstEngineeringNumericField(feature, keys) {
+    for (const key of keys) {
+      const result = getEngineeringNumericField(feature, key);
+      if (result.present) return result;
+    }
+    return { present: false, supplied: false, value: null, field: null };
+  }
+
+  function getExpectedEngineeringDepth(feature) {
+    const upstreamSurface = getEngineeringNumericField(feature, "ussurfacelevelm");
+    const downstreamSurface = getEngineeringNumericField(feature, "dssurfacelevelm");
+    const upstreamInvert = getEngineeringNumericField(feature, "usinvertlevelm");
+    const downstreamInvert = getEngineeringNumericField(feature, "dsinvertlevelm");
+    if ([upstreamSurface, downstreamSurface, upstreamInvert, downstreamInvert].every((field) => field.supplied)) {
+      return ((upstreamSurface.value - upstreamInvert.value) + (downstreamSurface.value - downstreamInvert.value)) / 2;
+    }
+    const surface = getEngineeringNumericField(feature, "surfacelevelm");
+    const invert = getEngineeringNumericField(feature, "invertlevelm");
+    if (surface.supplied && invert.supplied) return surface.value - invert.value;
+    return null;
+  }
+
+  function formatEngineeringValue(value, decimals = 3) {
+    return formatNumber(Number(value), decimals);
+  }
+
+  function getEngineeringIssueIcon(type) {
+    if (type === "length") return "fa-ruler-horizontal";
+    if (type === "grade" || type === "direction") return "fa-arrow-trend-down";
+    if (type === "depth") return "fa-arrows-down-to-line";
+    return "fa-location-dot";
   }
 
   function buildDxfReferenceChecks() {
