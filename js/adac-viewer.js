@@ -1124,6 +1124,7 @@
     editorFeedback: null,
     editorRevision: 0,
     deleteConfirmation: null,
+    joinConfirmation: null,
     splitSession: null,
     mergeSession: null,
     mergePreview: null,
@@ -1608,6 +1609,12 @@
       duplicateSelectedAsset();
     } else if (action === "begin-split-asset") {
       beginSplitAsset();
+    } else if (action === "request-join-selected-assets") {
+      requestJoinSelectedAssets();
+    } else if (action === "confirm-join-selected-assets") {
+      joinSelectedAssets();
+    } else if (action === "cancel-join-selected-assets") {
+      cancelJoinSelectedAssets();
     } else if (action === "set-split-target-mode") {
       setSplitTargetMode(control?.dataset.splitMode);
     } else if (action === "choose-split-vertex") {
@@ -1641,7 +1648,11 @@
     } else if (action === "fit-dxf-reference") {
       fitDxfReference(control?.dataset.dxfReferenceId);
     } else if (action === "snap-geometry-to-dxf") {
-      beginDxfGeometrySnapSelection(control?.dataset.dxfSnapFeature, Number(control?.dataset.dxfSnapIndex));
+      beginDxfGeometrySnapSelection(
+        control?.dataset.dxfSnapFeature,
+        Number(control?.dataset.dxfSnapIndex),
+        control?.dataset.dxfSnapMode,
+      );
     } else if (action === "toggle-suggestions") {
       toggleSuggestions();
     } else if (action === "close-suggestions") {
@@ -4267,7 +4278,7 @@
         return;
       }
       if (state.dxfSnapSelection) {
-        const target = findDxfGeometryAtCanvasPoint(canvasPoint);
+        const target = findSnapGeometryAtCanvasPoint(canvasPoint);
         if (target) applySelectedDxfGeometrySnap(target);
         else {
           resetDxfSnapHoverState();
@@ -4275,7 +4286,9 @@
           state.editorFeedback = {
             fileId: feature?.sourceFileId || "",
             tone: "warning",
-            message: "No visible DXF geometry was found at that position. Click a DXF point or line, or press Esc to cancel.",
+            message: state.dxfSnapSelection.snapMode === "endpoint"
+              ? "No visible XML or DXF point or open line was found at that position. Click a point or open line, or press Esc to cancel."
+              : "No visible XML or DXF geometry was found at that position. Click an XML asset, DXF point or DXF line, or press Esc to cancel.",
           };
           renderDetails();
           drawMap();
@@ -5614,6 +5627,7 @@
     state.editorBusy = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     state.splitSession = null;
     state.editorRevision += 1;
     state.bulkHistoryPast = [];
@@ -6730,6 +6744,7 @@
     state.geometryEditorOpen = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     state.drawOrderCache = null;
     renderDetails();
     drawMap();
@@ -6766,6 +6781,7 @@
       state.editorFeedback = null;
       state.geometryEditorOpen = false;
       state.deleteConfirmation = null;
+      state.joinConfirmation = null;
     }
     state.selectedIds = nextSelectedIds;
     state.selectedId = nextPrimary;
@@ -6784,6 +6800,7 @@
     state.geometryEditorOpen = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     state.drawOrderCache = null;
     renderDetails();
     drawMap();
@@ -6797,6 +6814,7 @@
       state.editMode = false;
       state.editorFeedback = null;
       state.deleteConfirmation = null;
+      state.joinConfirmation = null;
     }
     updateMultiSelectButton();
     renderDetails();
@@ -7234,6 +7252,7 @@
     state.editMode = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     state.drawOrderCache = null;
     updateMultiSelectButton();
     closeSelectionMenu();
@@ -7254,6 +7273,7 @@
     state.geometryEditorOpen = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     renderDetails();
     drawMap();
   }
@@ -8973,6 +8993,7 @@
         <p class="viewer-details__selection-help">Click another asset while multi-select is on, or use Shift or Command/Ctrl click, to update this selection.</p>
       </div>
       ${state.editMode ? renderBulkXmlEditorToolbar(features) : ""}
+      ${state.editMode ? renderJoinConfirmation(features) : ""}
       ${state.editMode ? renderDeleteConfirmation(features) : ""}
       ${renderXmlEditorFeedback(primaryFeature)}
       <dl class="viewer-details__grid viewer-details__grid--multi">
@@ -9185,6 +9206,8 @@
 
   function renderBulkXmlEditorToolbar(features) {
     const fileCount = uniqueValues(features.map((feature) => feature.sourceFileId)).length;
+    const allLines = features.length > 1 && features.every((feature) => feature.geometryKind === "Line");
+    const joinEligibility = allLines ? getJoinAssetEligibility(features) : null;
     return `
       <section class="viewer-xml-editor viewer-xml-editor--bulk" aria-label="Bulk XML attribute editor">
         <div class="viewer-xml-editor__status">
@@ -9199,6 +9222,11 @@
           <button type="button" data-action="redo-bulk-xml-edit" ${canApplyBulkHistoryTransaction(state.bulkHistoryFuture.at(-1), "redo") && !state.editorBusy ? "" : "disabled"}>
             <i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Redo bulk edit</span>
           </button>
+          ${allLines ? `
+            <button type="button" class="viewer-xml-editor__join" data-action="request-join-selected-assets" title="${escapeHtml(joinEligibility?.eligible ? "Join the selected line assets in the working XML" : joinEligibility?.reason || "Check whether the selected lines can be joined")}" ${state.editorBusy ? "disabled" : ""}>
+              <i class="fa-solid fa-link" aria-hidden="true"></i><span>Join assets</span>
+            </button>
+          ` : ""}
           <button type="button" class="viewer-xml-editor__delete" data-action="request-delete-selected-assets" ${state.editorBusy ? "disabled" : ""}>
             <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete selected</span>
           </button>
@@ -9332,6 +9360,38 @@
     `;
   }
 
+  function renderJoinConfirmation(features) {
+    const confirmation = state.joinConfirmation;
+    if (!confirmation?.selectedIds?.length) return "";
+    const currentIds = new Set(features.map((feature) => feature.uid));
+    if (!confirmation.selectedIds.every((uid) => currentIds.has(uid))) return "";
+    const eligibility = getJoinAssetEligibility(features);
+    if (!eligibility.eligible) return "";
+    const count = confirmation.selectedIds.length;
+    return `
+      <section class="viewer-join-confirmation" role="alert" aria-label="Confirm line asset join">
+        <i class="fa-solid fa-link" aria-hidden="true"></i>
+        <div>
+          <strong>Join ${count} selected ${escapeHtml(eligibility.assetType)} assets?</strong>
+          <p><b>${escapeHtml(eligibility.survivorFeature.id)}</b> will be retained as the joined asset. The other selected assets will be removed from the working XML copy.</p>
+          <dl>
+            <div><dt>Result</dt><dd>${eligibility.vertexCount} vertices</dd></div>
+            <div><dt>Geometry length</dt><dd>${escapeHtml(formatNumber(eligibility.horizontalLength, 3))} m</dd></div>
+            <div><dt>Endpoint tolerance</dt><dd>${escapeHtml(formatNumber(eligibility.maximumJoinOffset, 3))} m</dd></div>
+          </dl>
+          <p>Non-directional attributes from ${escapeHtml(eligibility.survivorFeature.id)} will be kept. Length and available upstream/downstream endpoint fields will be recalculated. Review identifiers, relationships and other retained values after joining.</p>
+          <div class="viewer-join-confirmation__actions">
+            <button type="button" data-action="cancel-join-selected-assets">Cancel</button>
+            <button type="button" class="is-primary" data-action="confirm-join-selected-assets">
+              <i class="fa-solid fa-link" aria-hidden="true"></i>
+              <span>Join assets</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderEditableAttributeRows(feature, record) {
     const fields = getVisibleEditableFields(feature);
     if (!fields.length) return `<div><dt>Attributes</dt><dd>No editable scalar attributes were found for this asset.</dd></div>`;
@@ -9458,6 +9518,7 @@
       state.geometryEditorOpen = false;
       state.editorFeedback = null;
       state.deleteConfirmation = null;
+      state.joinConfirmation = null;
       renderDetails();
       return;
     }
@@ -9471,6 +9532,7 @@
     if (!state.editMode) state.geometryEditorOpen = false;
     state.editorFeedback = null;
     state.deleteConfirmation = null;
+    state.joinConfirmation = null;
     renderDetails();
   }
 
@@ -9682,6 +9744,307 @@
       return { eligible: false, reason: "Multicell stormwater geometry must be reviewed and split manually." };
     }
     return { eligible: true, geometry, assetNode };
+  }
+
+  function getJoinAssetEligibility(features, workingDocument = null) {
+    if (!Array.isArray(features) || features.length < 2) {
+      return { eligible: false, reason: "Select at least two line assets to join." };
+    }
+    if (features.length > 200) {
+      return { eligible: false, reason: "Join supports up to 200 selected lines at a time. Refine the selection and try again." };
+    }
+    if (!features.every((feature) => feature.geometryKind === "Line")) {
+      return { eligible: false, reason: "Only line assets can be joined." };
+    }
+    const fileIds = uniqueValues(features.map((feature) => feature.sourceFileId));
+    if (fileIds.length !== 1) {
+      return { eligible: false, reason: "Joined assets must come from the same XML file." };
+    }
+    const assetPaths = uniqueValues(features.map((feature) => feature.assetPath || ""));
+    if (assetPaths.length !== 1) {
+      return { eligible: false, reason: "Joined lines must be the same ADAC asset class." };
+    }
+    const record = state.documents.get(fileIds[0]);
+    if (!record?.workingDocument || !record.validation?.valid) {
+      return { eligible: false, reason: "A schema-valid working XML is required." };
+    }
+    const doc = workingDocument || record.workingDocument;
+    const entries = features.map((feature) => {
+      const assetNode = findXmlElementByLocator(doc, feature.xmlLocator);
+      const geometry = getSimpleDirectionGeometry(assetNode);
+      return {
+        feature,
+        assetNode,
+        geometry,
+        parentLocator: assetNode?.parentElement ? getXmlElementLocator(assetNode.parentElement) : "",
+      };
+    });
+    const unsupported = entries.find((entry) => !entry.assetNode?.parentNode || !entry.geometry.supported);
+    if (unsupported) {
+      return {
+        eligible: false,
+        reason: unsupported.geometry?.reason || `Geometry for ${unsupported.feature.id} could not be located.`,
+      };
+    }
+    if (uniqueValues(entries.map((entry) => entry.parentLocator)).length !== 1) {
+      return { eligible: false, reason: "Joined assets must be stored in the same ADAC asset collection." };
+    }
+    const chain = buildConnectedJoinChain(entries);
+    if (!chain.eligible) return chain;
+    const survivorFeature = features.find((feature) => feature.uid === state.selectedId) || features[features.length - 1];
+    const survivorEntry = chain.orderedEntries.find((entry) => entry.feature.uid === survivorFeature.uid);
+    const joinedPoints = chain.orderedEntries.flatMap((entry, index) => {
+      const points = entry.reversed ? entry.geometry.points.slice().reverse() : entry.geometry.points;
+      return points.slice(index ? 1 : 0);
+    });
+    const vertexCount = joinedPoints.length;
+    const horizontalLength = getPolylineLength(joinedPoints);
+    return {
+      eligible: true,
+      record,
+      entries,
+      orderedEntries: chain.orderedEntries,
+      survivorFeature,
+      survivorEntry,
+      assetType: survivorFeature.assetTag || survivorFeature.type || "line",
+      vertexCount,
+      horizontalLength,
+      maximumJoinOffset: chain.maximumJoinOffset,
+    };
+  }
+
+  function buildConnectedJoinChain(entries) {
+    const xyTolerance = 0.02;
+    const zTolerance = 0.05;
+    const endpoints = entries.map((entry) => [
+      entry.geometry.points[0],
+      entry.geometry.points[entry.geometry.points.length - 1],
+    ]);
+    const matches = entries.map(() => [[], []]);
+    let maximumJoinOffset = 0;
+    for (let firstIndex = 0; firstIndex < entries.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < entries.length; secondIndex += 1) {
+        for (let firstEnd = 0; firstEnd < 2; firstEnd += 1) {
+          for (let secondEnd = 0; secondEnd < 2; secondEnd += 1) {
+            const firstPoint = endpoints[firstIndex][firstEnd];
+            const secondPoint = endpoints[secondIndex][secondEnd];
+            const offset = Math.hypot(firstPoint.x - secondPoint.x, firstPoint.y - secondPoint.y);
+            if (offset > xyTolerance) continue;
+            const zOffset = Math.abs(Number(firstPoint.z) - Number(secondPoint.z));
+            if (zOffset > zTolerance) {
+              return { eligible: false, reason: "Connected line endpoints differ by more than 0.05 m vertically. Review the endpoint levels before joining." };
+            }
+            matches[firstIndex][firstEnd].push({ entryIndex: secondIndex, endpointIndex: secondEnd, offset });
+            matches[secondIndex][secondEnd].push({ entryIndex: firstIndex, endpointIndex: firstEnd, offset });
+            maximumJoinOffset = Math.max(maximumJoinOffset, offset);
+          }
+        }
+      }
+    }
+    if (matches.some((entryMatches) => entryMatches.some((endpointMatches) => endpointMatches.length > 1))) {
+      return { eligible: false, reason: "The selected lines form a branch or overlap. Join supports one unbranched chain at a time." };
+    }
+    const openEndpoints = [];
+    let connectedPairs = 0;
+    matches.forEach((entryMatches, entryIndex) => {
+      entryMatches.forEach((endpointMatches, endpointIndex) => {
+        if (!endpointMatches.length) openEndpoints.push({ entryIndex, endpointIndex });
+        else connectedPairs += endpointMatches.length;
+      });
+    });
+    connectedPairs /= 2;
+    if (connectedPairs !== entries.length - 1 || openEndpoints.length !== 2) {
+      return { eligible: false, reason: "The selected lines must form one connected, open chain with matching endpoints." };
+    }
+
+    const orderedEntries = [];
+    const used = new Set();
+    let entryIndex = openEndpoints[0].entryIndex;
+    let startEndpoint = openEndpoints[0].endpointIndex;
+    while (!used.has(entryIndex)) {
+      const entry = entries[entryIndex];
+      const reversed = startEndpoint === 1;
+      orderedEntries.push({ ...entry, reversed });
+      used.add(entryIndex);
+      const exitEndpoint = reversed ? 0 : 1;
+      const nextMatch = matches[entryIndex][exitEndpoint][0];
+      if (!nextMatch) break;
+      entryIndex = nextMatch.entryIndex;
+      startEndpoint = nextMatch.endpointIndex;
+    }
+    if (used.size !== entries.length) {
+      return { eligible: false, reason: "The selected lines could not be ordered into one continuous chain." };
+    }
+    return { eligible: true, orderedEntries, maximumJoinOffset };
+  }
+
+  function requestJoinSelectedAssets() {
+    const features = getSelectedFeatures();
+    if (state.editorBusy) return;
+    const eligibility = getJoinAssetEligibility(features);
+    if (!eligibility.eligible) {
+      state.editorFeedback = { bulk: true, tone: "warning", message: eligibility.reason };
+      renderDetails();
+      return;
+    }
+    state.joinConfirmation = { selectedIds: features.map((feature) => feature.uid) };
+    state.deleteConfirmation = null;
+    state.editorFeedback = null;
+    renderDetails();
+  }
+
+  function cancelJoinSelectedAssets() {
+    state.joinConfirmation = null;
+    renderDetails();
+  }
+
+  async function joinSelectedAssets() {
+    if (state.editorBusy) return;
+    const requestedIds = state.joinConfirmation?.selectedIds || [];
+    const requestedIdSet = new Set(requestedIds);
+    const features = state.features.filter((feature) => requestedIdSet.has(feature.uid));
+    if (!requestedIds.length || features.length !== requestedIds.length) {
+      state.joinConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: "The asset selection changed before joining. The working XML was not changed." };
+      renderDetails();
+      return;
+    }
+    const initialEligibility = getJoinAssetEligibility(features);
+    if (!initialEligibility.eligible) {
+      state.joinConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: initialEligibility.reason };
+      renderDetails();
+      return;
+    }
+
+    const record = initialEligibility.record;
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const eligibility = candidateDoc ? getJoinAssetEligibility(features, candidateDoc) : { eligible: false };
+    if (!candidateDoc || !eligibility.eligible || !eligibility.survivorEntry?.assetNode?.parentNode) {
+      state.joinConfirmation = null;
+      state.editorFeedback = { bulk: true, tone: "error", message: eligibility.reason || "The selected line geometry changed before it could be joined." };
+      renderDetails();
+      return;
+    }
+
+    const combinedVertices = [];
+    eligibility.orderedEntries.forEach((entry, index) => {
+      const vertices = entry.reversed
+        ? entry.geometry.vertices.slice().reverse()
+        : entry.geometry.vertices;
+      vertices.slice(index ? 1 : 0).forEach((vertex) => combinedVertices.push(vertex.cloneNode(true)));
+    });
+    replaceElementChildren(eligibility.survivorEntry.geometry.polySegment, combinedVertices);
+    updateJoinDependentFields(eligibility.survivorEntry.assetNode, eligibility.orderedEntries);
+    eligibility.entries
+      .filter((entry) => entry.feature.uid !== eligibility.survivorFeature.uid)
+      .forEach((entry) => entry.assetNode.parentNode?.removeChild(entry.assetNode));
+
+    const survivorLocator = getXmlElementLocator(eligibility.survivorEntry.assetNode);
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    state.editorBusy = true;
+    state.joinConfirmation = null;
+    state.editorFeedback = {
+      bulk: true,
+      tone: "info",
+      message: `Checking the joined ${eligibility.assetType} asset against ${schemaLabel(record.schemaVersion)}...`,
+    };
+    renderDetails();
+
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validation.errors)[0]);
+      state.editorFeedback = {
+        bulk: true,
+        tone: "error",
+        message: `The lines were not joined. ${details.title}. ${details.suggestion || details.detail || "The previous valid working XML was kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    const transaction = {
+      kind: "join",
+      label: "asset join",
+      assetCount: features.length,
+      beforeSelectedIds: requestedIds,
+      afterSelectedIds: [],
+      selectedIds: [],
+      documents: [{
+        fileId: record.id,
+        beforeXmlText: record.workingXmlText,
+        afterXmlText: candidateXmlText,
+        selectedLocator: survivorLocator,
+        validation,
+      }],
+    };
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    state.bulkHistoryPast.push(transaction);
+    if (state.bulkHistoryPast.length > 50) state.bulkHistoryPast.shift();
+    state.bulkHistoryFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, survivorLocator);
+    const survivor = state.features.find((feature) => (
+      feature.sourceFileId === record.id
+      && feature.xmlLocator === survivorLocator
+    )) || state.features.find((feature) => (
+      feature.sourceFileId === record.id
+      && feature.assetPath === eligibility.survivorFeature.assetPath
+      && feature.id === eligibility.survivorFeature.id
+    ));
+    if (survivor) {
+      transaction.afterSelectedIds = [survivor.uid];
+      transaction.selectedIds = [survivor.uid];
+      state.selectedId = survivor.uid;
+      state.selectedIds = new Set([survivor.uid]);
+    }
+    const message = `Joined ${features.length} ${eligibility.assetType} assets as ${eligibility.survivorFeature.id} in the working XML copy.`;
+    state.editorFeedback = {
+      bulk: true,
+      tone: "warning",
+      message: `${message} Length and available endpoint fields were recalculated. Review retained identifiers, relationships and attributes. The original upload was not changed, and Undo restores the source assets.`,
+    };
+    renderDetails();
+    drawMap();
+    setStatus(message, false);
+  }
+
+  function updateJoinDependentFields(survivorNode, orderedEntries) {
+    const points = orderedEntries.flatMap((entry, index) => {
+      const orderedPoints = entry.reversed ? entry.geometry.points.slice().reverse() : entry.geometry.points;
+      return orderedPoints.slice(index ? 1 : 0);
+    });
+    const geometryLength = getPolylineLength(points);
+    const sourceLengths = orderedEntries.map((entry) => getAssetNumericValue(entry.assetNode, "lengthm"));
+    const materialLength = sourceLengths.every((value) => value !== null)
+      ? sourceLengths.reduce((total, value) => total + value, 0)
+      : geometryLength;
+    setAssetNumericValue(survivorNode, "lengthm", materialLength);
+
+    const first = orderedEntries[0];
+    const last = orderedEntries[orderedEntries.length - 1];
+    [
+      ["usinvertlevelm", "dsinvertlevelm"],
+      ["ussurfacelevelm", "dssurfacelevelm"],
+      ["startchainage", "endchainage"],
+    ].forEach(([upstreamKey, downstreamKey]) => {
+      const upstreamValue = getJoinEntryEndpointValue(first, upstreamKey, downstreamKey, "start");
+      const downstreamValue = getJoinEntryEndpointValue(last, upstreamKey, downstreamKey, "end");
+      if (upstreamValue !== null && downstreamValue !== null) {
+        setAssetNumericValue(survivorNode, upstreamKey, upstreamValue);
+        setAssetNumericValue(survivorNode, downstreamKey, downstreamValue);
+      }
+    });
+    updateSplitGrade(survivorNode, geometryLength);
+    updateSplitDepth(survivorNode);
+  }
+
+  function getJoinEntryEndpointValue(entry, upstreamKey, downstreamKey, side) {
+    const useUpstream = side === "start" ? !entry.reversed : entry.reversed;
+    return getAssetNumericValue(entry.assetNode, useUpstream ? upstreamKey : downstreamKey);
   }
 
   function beginSplitAsset() {
@@ -10273,6 +10636,7 @@
       return;
     }
     state.deleteConfirmation = { selectedIds: features.map((feature) => feature.uid) };
+    state.joinConfirmation = null;
     state.editorFeedback = null;
     renderDetails();
   }
@@ -11804,6 +12168,9 @@
     if (transaction.kind === "split") {
       return `${verb} split of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
     }
+    if (transaction.kind === "join") {
+      return `${verb} join of ${transaction.assetCount} asset${transaction.assetCount === 1 ? "" : "s"}.`;
+    }
     if (transaction.kind === "translate") {
       const transform = transaction.transform || {};
       if (transform.scope === "selected") {
@@ -12355,20 +12722,33 @@
           </label>
         `;
       }).join("");
-      const canSnap = group.elements.x && group.elements.y && state.dxfReferences.some((reference) => (
+      const hasVisibleDxfGeometry = state.dxfReferences.some((reference) => (
         reference.visible
         && reference.layers.some((layer) => layer.visible && layer.entityCount > 0)
       ));
-      const snapActive = state.dxfSnapSelection?.featureUid === feature.uid && state.dxfSnapSelection?.pointIndex === index;
+      const hasVisibleXmlTarget = state.filteredFeatures.some((item) => (
+        item.uid !== feature.uid && item.points?.length
+      ));
+      const canSnap = group.elements.x && group.elements.y && (hasVisibleDxfGeometry || hasVisibleXmlTarget);
+      const activeSnapMode = state.dxfSnapSelection?.featureUid === feature.uid
+        && state.dxfSnapSelection?.pointIndex === index
+        ? state.dxfSnapSelection.snapMode
+        : "";
       return `
         <fieldset class="viewer-geometry-editor__row">
           <legend>${escapeHtml(coordinateLabel)} ${index + 1}</legend>
           <div class="viewer-geometry-editor__coordinates">${controls}</div>
           ${canSnap ? `
-            <button type="button" class="viewer-geometry-editor__snap ${snapActive ? "is-active" : ""}" data-action="snap-geometry-to-dxf" data-dxf-snap-feature="${escapeHtml(feature.uid)}" data-dxf-snap-index="${index}" ${state.editorBusy ? "disabled" : ""}>
-              <i class="fa-solid ${snapActive ? "fa-xmark" : "fa-crosshairs"}" aria-hidden="true"></i>
-              <span>${snapActive ? "Cancel DXF geometry choice" : "Choose DXF geometry to snap to"}</span>
-            </button>
+            <div class="viewer-geometry-editor__snap-actions" role="group" aria-label="${escapeHtml(`${coordinateLabel} ${index + 1} snap mode`)}">
+              <button type="button" class="viewer-geometry-editor__snap ${activeSnapMode === "closest" ? "is-active" : ""}" data-action="snap-geometry-to-dxf" data-dxf-snap-mode="closest" data-dxf-snap-feature="${escapeHtml(feature.uid)}" data-dxf-snap-index="${index}" title="Snap to the closest point on the XML or DXF geometry" ${state.editorBusy ? "disabled" : ""}>
+                <i class="fa-solid ${activeSnapMode === "closest" ? "fa-xmark" : "fa-crosshairs"}" aria-hidden="true"></i>
+                <span>${activeSnapMode === "closest" ? "Cancel choice" : "Closest point"}</span>
+              </button>
+              <button type="button" class="viewer-geometry-editor__snap ${activeSnapMode === "endpoint" ? "is-active" : ""}" data-action="snap-geometry-to-dxf" data-dxf-snap-mode="endpoint" data-dxf-snap-feature="${escapeHtml(feature.uid)}" data-dxf-snap-index="${index}" title="Snap to the open line end nearest to where you click" ${state.editorBusy ? "disabled" : ""}>
+                <i class="fa-solid ${activeSnapMode === "endpoint" ? "fa-xmark" : "fa-circle-dot"}" aria-hidden="true"></i>
+                <span>${activeSnapMode === "endpoint" ? "Cancel choice" : "Nearest end"}</span>
+              </button>
+            </div>
           ` : ""}
         </fieldset>
       `;
@@ -12389,14 +12769,22 @@
     `;
   }
 
-  function beginDxfGeometrySnapSelection(featureUid, pointIndex) {
+  function beginDxfGeometrySnapSelection(featureUid, pointIndex, requestedSnapMode = "closest") {
     const feature = state.features.find((item) => item.uid === featureUid);
+    const snapMode = requestedSnapMode === "endpoint" ? "endpoint" : "closest";
     const hasVisibleDxfGeometry = state.dxfReferences.some((reference) => (
       reference.visible && reference.layers.some((layer) => layer.visible)
     ));
-    if (!feature?.points?.[pointIndex] || !hasVisibleDxfGeometry || state.editorBusy) return;
+    const hasVisibleXmlTarget = state.filteredFeatures.some((item) => (
+      item.uid !== featureUid && item.points?.length
+    ));
+    if (!feature?.points?.[pointIndex] || (!hasVisibleDxfGeometry && !hasVisibleXmlTarget) || state.editorBusy) return;
     if (state.splitSession) cancelSplitAsset({ silent: true });
-    if (state.dxfSnapSelection?.featureUid === featureUid && state.dxfSnapSelection?.pointIndex === pointIndex) {
+    if (
+      state.dxfSnapSelection?.featureUid === featureUid
+      && state.dxfSnapSelection?.pointIndex === pointIndex
+      && state.dxfSnapSelection?.snapMode === snapMode
+    ) {
       cancelDxfGeometrySnapSelection();
       return;
     }
@@ -12404,17 +12792,24 @@
     state.measurement.mode = "off";
     state.measurement.preview = null;
     resetDxfSnapHoverState();
-    state.dxfSnapSelection = { featureUid, pointIndex, pending: false };
+    state.dxfSnapSelection = { featureUid, pointIndex, snapMode, pending: false };
     state.selectedId = featureUid;
     state.selectedIds = new Set([featureUid]);
     state.editorFeedback = {
       fileId: feature.sourceFileId,
       tone: "info",
-      message: `Choose the visible DXF point or line for ${feature.geometryKind === "Point" ? "this point" : `vertex ${pointIndex + 1}`} on the map. Drag to pan or press Esc to cancel.`,
+      message: snapMode === "endpoint"
+        ? `Choose a visible XML or DXF point or open line for ${feature.geometryKind === "Point" ? "this point" : `vertex ${pointIndex + 1}`}. An open line will use the end nearest to where you click. Drag to pan or press Esc to cancel.`
+        : `Choose a visible XML asset or DXF point or line for ${feature.geometryKind === "Point" ? "this point" : `vertex ${pointIndex + 1}`} on the map. Drag to pan or press Esc to cancel.`,
     };
     renderDetails();
     drawMap();
-    setStatus("DXF snap selection active. Click the specific DXF geometry to use.", false);
+    setStatus(
+      snapMode === "endpoint"
+        ? "Nearest-end snap active. Click an XML or DXF point or open line."
+        : "Closest-point snap active. Click the specific XML or DXF geometry to use.",
+      false,
+    );
   }
 
   function cancelDxfGeometrySnapSelection(options = {}) {
@@ -12423,8 +12818,8 @@
     resetDxfSnapHoverState();
     if (selection && !options.silent) {
       const feature = state.features.find((item) => item.uid === selection.featureUid);
-      state.editorFeedback = { fileId: feature?.sourceFileId || "", tone: "info", message: "DXF geometry choice cancelled. No coordinates were changed." };
-      setStatus("DXF geometry choice cancelled.", false);
+      state.editorFeedback = { fileId: feature?.sourceFileId || "", tone: "info", message: "Geometry choice cancelled. No coordinates were changed." };
+      setStatus("Geometry choice cancelled.", false);
     }
     renderDetails();
     drawMap();
@@ -12432,7 +12827,11 @@
 
   function getDxfSnapTargetKey(target) {
     if (!target) return "";
-    return `${target.reference?.id || ""}:${target.entityUid || ""}:${target.segmentIndex ?? "point"}`;
+    const endpointKey = target.snapEndpoint?.endNumber ? `:end-${target.snapEndpoint.endNumber}` : "";
+    if (target.targetSource === "xml") {
+      return `xml:${target.featureUid || ""}:${target.segmentIndex ?? target.pointIndex ?? "point"}${endpointKey}`;
+    }
+    return `dxf:${target.reference?.id || ""}:${target.entityUid || ""}:${target.segmentIndex ?? "point"}${endpointKey}`;
   }
 
   function scheduleDxfSnapHover(canvasPoint) {
@@ -12442,7 +12841,7 @@
     state.dxfSnapHoverFrame = window.requestAnimationFrame(() => {
       state.dxfSnapHoverFrame = 0;
       if (!state.dxfSnapSelection || state.dxfSnapSelection.pending || !state.dxfSnapPointer) return;
-      const hover = findDxfGeometryAtCanvasPoint(state.dxfSnapPointer);
+      const hover = findSnapGeometryAtCanvasPoint(state.dxfSnapPointer);
       if (getDxfSnapTargetKey(hover) !== getDxfSnapTargetKey(state.dxfSnapHover)) {
         state.dxfSnapHover = hover;
         drawMap();
@@ -12460,6 +12859,7 @@
   function findDxfGeometryAtCanvasPoint(canvasPoint) {
     const transform = getCurrentMapTransform();
     if (!transform) return null;
+    const endpointMode = state.dxfSnapSelection?.snapMode === "endpoint";
     const hitTolerance = 11;
     let best = null;
     state.dxfReferences.forEach((reference) => {
@@ -12474,6 +12874,7 @@
           const distancePixels = distanceBetween(canvasPoint, screenPoints[0]);
           if (distancePixels <= hitTolerance && (!best || distancePixels < best.distancePixels)) {
             best = {
+              targetSource: "dxf",
               kind: "point",
               point: worldPoints[0],
               reference,
@@ -12485,12 +12886,14 @@
           }
           return;
         }
+        if (endpointMode && (entity.closed || entity.geometryKind === "Polygon")) return;
         const segmentCount = screenPoints.length - 1 + ((entity.closed || entity.geometryKind === "Polygon") && screenPoints.length > 2 ? 1 : 0);
         for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
           const nextIndex = (segmentIndex + 1) % screenPoints.length;
           const distancePixels = distanceToSegment(canvasPoint, screenPoints[segmentIndex], screenPoints[nextIndex]);
           if (distancePixels <= hitTolerance && (!best || distancePixels < best.distancePixels)) {
             best = {
+              targetSource: "dxf",
               kind: "segment",
               start: worldPoints[segmentIndex],
               end: worldPoints[nextIndex],
@@ -12499,6 +12902,8 @@
               entityUid: entity.uid,
               sourceType: entity.sourceType,
               segmentIndex,
+              linePoints: worldPoints,
+              snapEndpoint: endpointMode ? getClickNearestLineEndpoint(canvasPoint, worldPoints, screenPoints) : null,
               distancePixels,
             };
           }
@@ -12506,6 +12911,95 @@
       });
     });
     return best;
+  }
+
+  function findXmlGeometryAtCanvasPoint(canvasPoint) {
+    const transform = getCurrentMapTransform();
+    const sourceFeatureUid = state.dxfSnapSelection?.featureUid;
+    if (!transform || !sourceFeatureUid) return null;
+    const hitTolerance = 11;
+    const endpointMode = state.dxfSnapSelection?.snapMode === "endpoint";
+    let best = null;
+
+    state.filteredFeatures.forEach((feature) => {
+      if (feature.uid === sourceFeatureUid || !feature.points?.length) return;
+      const worldPoints = feature.points;
+      const screenPoints = worldPoints.map((point) => projectFeaturePoint(point, transform));
+      if (!screenPoints.length || screenPoints.some((point) => !point)) return;
+
+      if (feature.geometryKind === "Point" || worldPoints.length === 1) {
+        screenPoints.forEach((screenPoint, pointIndex) => {
+          const style = getPlanStyleForFeature(feature);
+          const symbolSize = getPointHitSymbolSize(feature, style, transform, worldPoints[pointIndex]);
+          const symbolDistance = symbolSize
+            ? getPointSymbolHitDistance(canvasPoint, screenPoint, symbolSize, feature, style)
+            : null;
+          const centreDistance = distanceBetween(canvasPoint, screenPoint);
+          const distancePixels = symbolDistance ?? centreDistance;
+          const hit = symbolDistance !== null || centreDistance <= hitTolerance;
+          if (hit && (!best || distancePixels < best.distancePixels)) {
+            best = {
+              targetSource: "xml",
+              kind: "point",
+              point: worldPoints[pointIndex],
+              pointIndex,
+              feature,
+              featureUid: feature.uid,
+              sourceType: feature.type,
+              distancePixels,
+            };
+          }
+        });
+        return;
+      }
+      if (endpointMode && feature.geometryKind === "Polygon") return;
+
+      const closePath = feature.geometryKind === "Polygon";
+      const segmentCount = screenPoints.length - 1 + (closePath && screenPoints.length > 2 ? 1 : 0);
+      for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+        const nextIndex = (segmentIndex + 1) % screenPoints.length;
+        const distancePixels = distanceToSegment(canvasPoint, screenPoints[segmentIndex], screenPoints[nextIndex]);
+        if (distancePixels <= hitTolerance && (!best || distancePixels < best.distancePixels)) {
+          best = {
+            targetSource: "xml",
+            kind: "segment",
+            start: worldPoints[segmentIndex],
+            end: worldPoints[nextIndex],
+            segmentIndex,
+            feature,
+            featureUid: feature.uid,
+            sourceType: feature.type,
+            distancePixels,
+            linePoints: worldPoints,
+            snapEndpoint: endpointMode ? getClickNearestLineEndpoint(canvasPoint, worldPoints, screenPoints) : null,
+          };
+        }
+      }
+    });
+
+    return best;
+  }
+
+  function getClickNearestLineEndpoint(canvasPoint, worldPoints, screenPoints) {
+    if (!worldPoints?.length || !screenPoints?.length) return null;
+    const lastIndex = worldPoints.length - 1;
+    const startDistance = distanceBetween(canvasPoint, screenPoints[0]);
+    const endDistance = distanceBetween(canvasPoint, screenPoints[lastIndex]);
+    const pointIndex = startDistance <= endDistance ? 0 : lastIndex;
+    return {
+      point: worldPoints[pointIndex],
+      pointIndex,
+      endNumber: pointIndex === 0 ? 1 : 2,
+    };
+  }
+
+  function findSnapGeometryAtCanvasPoint(canvasPoint) {
+    const candidates = [
+      findXmlGeometryAtCanvasPoint(canvasPoint),
+      findDxfGeometryAtCanvasPoint(canvasPoint),
+    ].filter(Boolean);
+    candidates.sort((a, b) => a.distancePixels - b.distancePixels);
+    return candidates[0] || null;
   }
 
   function getNearestPointOnSegment(point, start, end) {
@@ -12529,10 +13023,10 @@
     selection.pending = true;
     resetDxfSnapHoverState();
     state.dxfSnapHover = target;
-    snapGeometryPointToSelectedDxf(selection.featureUid, selection.pointIndex, target);
+    snapGeometryPointToSelectedDxf(selection.featureUid, selection.pointIndex, target, selection.snapMode);
   }
 
-  async function snapGeometryPointToSelectedDxf(featureUid, pointIndex, target) {
+  async function snapGeometryPointToSelectedDxf(featureUid, pointIndex, target, snapMode = "closest") {
     if (state.editorBusy) return;
     const feature = state.features.find((item) => item.uid === featureUid);
     const record = feature ? state.documents.get(feature.sourceFileId) : null;
@@ -12545,13 +13039,17 @@
       drawMap();
       return;
     }
-    const snapPoint = target.kind === "point" ? target.point : getNearestPointOnSegment(sourcePoint, target.start, target.end);
+    const endpointSnap = snapMode === "endpoint" && target.kind === "segment" ? target.snapEndpoint : null;
+    const snapPoint = target.kind === "point"
+      ? target.point
+      : endpointSnap?.point || getNearestPointOnSegment(sourcePoint, target.start, target.end);
     const snapDistance = Math.hypot(snapPoint.x - sourcePoint.x, snapPoint.y - sourcePoint.y);
-    const targetLabel = `${target.reference.name} / ${target.layer}${target.sourceType ? ` ${target.sourceType}` : ""}`;
+    const targetLabel = getGeometrySnapTargetLabel(target, snapMode);
+    const snapDescription = endpointSnap ? "nearest line end" : target.targetSource === "xml" ? "XML asset" : "DXF geometry";
     if (snapDistance < 1e-9) {
       state.dxfSnapSelection = null;
       resetDxfSnapHoverState();
-      state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `This coordinate is already on the chosen DXF geometry (${targetLabel}).` };
+      state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `This coordinate is already on the chosen ${snapDescription} (${targetLabel}).` };
       renderDetails();
       drawMap();
       return;
@@ -12573,7 +13071,7 @@
     const candidateXmlText = serializeXmlDocument(candidateDoc);
     const revision = ++state.editorRevision;
     state.editorBusy = true;
-    state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `Checking the chosen ${target.sourceType || "DXF"} geometry against ${schemaLabel(record.schemaVersion)}...` };
+    state.editorFeedback = { fileId: feature.sourceFileId, tone: "info", message: `Checking the chosen ${target.targetSource === "xml" ? "XML asset" : target.sourceType || "DXF"} geometry against ${schemaLabel(record.schemaVersion)}...` };
     renderDetails();
     drawMap();
 
@@ -12601,7 +13099,7 @@
     state.editorFeedback = {
       fileId: feature.sourceFileId,
       tone: dependencyWarning ? "warning" : "success",
-      message: `Snapped X/Y ${formatNumber(snapDistance, 3)} m to the chosen DXF geometry (${targetLabel}). The original upload and DXF were not changed.${dependencyWarning ? ` ${dependencyWarning}` : ""}`,
+      message: `Snapped X/Y ${formatNumber(snapDistance, 3)} m to the chosen ${snapDescription} (${targetLabel}). The original upload and chosen target were not changed.${dependencyWarning ? ` ${dependencyWarning}` : ""}`,
       recalculation: recalculation ? {
         kind: "geometry",
         sourceFileId: record.id,
@@ -12612,7 +13110,22 @@
     };
     renderDetails();
     drawMap();
-    setStatus(`Snapped ${feature.id || feature.type} to the chosen DXF geometry.`, false);
+    setStatus(`Snapped ${feature.id || feature.type} to the chosen ${snapDescription}.`, false);
+  }
+
+  function getGeometrySnapTargetLabel(target, snapMode = "closest") {
+    const endpointLabel = snapMode === "endpoint" && target?.snapEndpoint
+      ? ` / end ${target.snapEndpoint.endNumber}`
+      : "";
+    if (target?.targetSource === "xml") {
+      const feature = target.feature;
+      const assetLabel = feature?.id || feature?.type || "XML asset";
+      const geometryLabel = target.kind === "point"
+        ? "point"
+        : `segment ${(target.segmentIndex ?? 0) + 1}`;
+      return `${feature?.layer || "XML"} / ${assetLabel} / ${geometryLabel}${endpointLabel}`;
+    }
+    return `${target?.reference?.name || "DXF"} / ${target?.layer || "Layer"}${target?.sourceType ? ` ${target.sourceType}` : ""}${endpointLabel}`;
   }
 
   function formatDxfCoordinate(value) {
@@ -12852,6 +13365,7 @@
     getFeaturesForMapDrawing(features).forEach((feature) => {
       drawAssetFeature(feature, transform);
     });
+    drawDxfSnapTargetHighlight(transform);
     drawSplitOverlay(transform);
     drawMeasurementOverlay(transform);
     drawSelectionBoxOverlay();
@@ -12950,7 +13464,6 @@
       });
       ctx.restore();
     });
-    drawDxfSnapTargetHighlight(transform);
   }
 
   function drawDxfSnapTargetHighlight(transform) {
@@ -12970,10 +13483,28 @@
         ctx.stroke();
       }
     } else {
-      const points = [target.start, target.end].map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
+      const sourcePoints = target.snapEndpoint?.point && target.linePoints?.length
+        ? target.linePoints
+        : [target.start, target.end];
+      const points = sourcePoints.map((point) => projectFeaturePoint(point, transform)).filter(Boolean);
       if (points.length === 2) {
         drawStyledScreenPath(points, { lineWidth: 7, stroke: "rgba(11, 31, 58, 0.92)" });
         drawStyledScreenPath(points, { lineWidth: 3.5, stroke: "#ffd24a" });
+      } else if (points.length > 2) {
+        drawStyledScreenPath(points, { lineWidth: 7, stroke: "rgba(11, 31, 58, 0.92)" });
+        drawStyledScreenPath(points, { lineWidth: 3.5, stroke: "#ffd24a" });
+      }
+      if (target.snapEndpoint?.point) {
+        const endpoint = projectFeaturePoint(target.snapEndpoint.point, transform);
+        if (endpoint) {
+          ctx.fillStyle = "#ffd24a";
+          ctx.strokeStyle = "#0b1f3a";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(endpoint.x, endpoint.y, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();

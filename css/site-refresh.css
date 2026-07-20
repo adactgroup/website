@@ -5350,6 +5350,17 @@ h3,
     color: #684600;
 }
 
+.viewer-xml-editor__actions .viewer-xml-editor__join {
+    border-color: rgba(32, 111, 207, 0.4);
+    background: #f5f9ff;
+    color: #155da8;
+}
+
+.viewer-xml-editor__actions .viewer-xml-editor__join:hover:not(:disabled) {
+    border-color: #206fcf;
+    background: #eef6ff;
+}
+
 .viewer-xml-editor__actions .viewer-xml-editor__delete {
     grid-column: 1 / -1;
     border-color: rgba(181, 55, 45, 0.42);
@@ -5373,6 +5384,99 @@ h3,
     border-radius: 8px;
     background: #fff7f6;
     color: #7f302a;
+}
+
+.viewer-join-confirmation {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 9px;
+    margin: 0 0 10px;
+    padding: 10px;
+    border: 1px solid rgba(32, 111, 207, 0.3);
+    border-radius: 8px;
+    background: #f7fbff;
+    color: var(--mockup-ink);
+}
+
+.viewer-join-confirmation > i {
+    margin-top: 2px;
+    color: #206fcf;
+    text-align: center;
+}
+
+.viewer-join-confirmation strong {
+    display: block;
+    color: var(--mockup-ink);
+    font-size: 0.74rem;
+}
+
+.viewer-join-confirmation p {
+    margin: 4px 0 0;
+    color: #526276;
+    font-size: 0.66rem;
+    line-height: 1.45;
+}
+
+.viewer-join-confirmation dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    margin: 8px 0;
+}
+
+.viewer-join-confirmation dl > div {
+    min-width: 0;
+    padding: 6px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.viewer-join-confirmation dt {
+    color: #6b7b8e;
+    font-size: 0.54rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.viewer-join-confirmation dd {
+    margin: 2px 0 0;
+    color: var(--mockup-ink);
+    font-size: 0.63rem;
+}
+
+.viewer-join-confirmation__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.viewer-join-confirmation__actions button {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 9px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    background: #ffffff;
+    color: var(--mockup-ink);
+    font: 700 0.64rem "Manrope", "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+}
+
+.viewer-join-confirmation__actions button.is-primary {
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+@media (max-width: 560px) {
+    .viewer-join-confirmation dl {
+        grid-template-columns: 1fr;
+    }
 }
 
 .viewer-split-panel {
@@ -6197,6 +6301,17 @@ h3,
     font: 700 0.58rem "Manrope", "Segoe UI", Arial, sans-serif;
 }
 
+.viewer-geometry-editor__snap-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.viewer-geometry-editor__snap-actions .viewer-geometry-editor__snap {
+    margin-top: 0;
+}
+
 .viewer-geometry-editor__snap:hover {
     border-color: #6e9bc7;
     background: #edf5fc;
@@ -6217,6 +6332,10 @@ h3,
 @media (max-width: 560px) {
     .viewer-geometry-editor__coordinates {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .viewer-geometry-editor__snap-actions {
+        grid-template-columns: 1fr;
     }
 }
 
