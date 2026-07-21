@@ -1671,6 +1671,10 @@
         Number(control?.dataset.dxfSnapIndex),
         control?.dataset.dxfSnapMode,
       );
+    } else if (action === "add-geometry-vertex") {
+      addGeometryVertex(control?.dataset.geometryVertexFeature, control?.dataset.geometryVertexLocator);
+    } else if (action === "delete-geometry-vertex") {
+      deleteGeometryVertex(control?.dataset.geometryVertexFeature, control?.dataset.geometryVertexLocator);
     } else if (action === "toggle-suggestions") {
       toggleSuggestions();
     } else if (action === "close-suggestions") {
@@ -1920,17 +1924,25 @@
     ].join("");
     const conflictRows = analysis.conflicts.map((conflict) => {
       const resolution = getMergeConflictResolution(session, conflict);
-      const typeText = conflict.typeMismatch
-        ? `${getSelectionAssetClassLabel(conflict.existingFeature)} conflicts with ${getSelectionAssetClassLabel(conflict.incomingFeature)}`
-        : `${getSelectionAssetClassLabel(conflict.incomingFeature)} differs from the base asset`;
+      const existingAssetId = conflict.existingAssetId || conflict.existingFeature?.id || "an existing asset";
+      const typeText = conflict.geometryDuplicate
+        ? `${getSelectionAssetClassLabel(conflict.incomingFeature)} has the same geometry as ${existingAssetId}, but uses a different ADAC ID`
+        : conflict.typeMismatch
+          ? `${getSelectionAssetClassLabel(conflict.existingFeature)} conflicts with ${getSelectionAssetClassLabel(conflict.incomingFeature)}`
+          : `${getSelectionAssetClassLabel(conflict.incomingFeature)} differs from the base asset`;
       return `
-        <label class="viewer-merge-conflict">
+        <label class="viewer-merge-conflict${conflict.geometryDuplicate ? " viewer-merge-conflict--geometry" : ""}">
           <strong>${escapeHtml(conflict.assetId)}</strong>
           <span>${escapeHtml(typeText)}<br>${escapeHtml(conflict.incomingFeature.sourceFile || "Incoming XML")}</span>
-          <select data-merge-control="conflict" data-merge-conflict-key="${escapeHtml(conflict.key)}" aria-label="Resolve duplicate ${escapeHtml(conflict.assetId)}">
+          <select data-merge-control="conflict" data-merge-conflict-key="${escapeHtml(conflict.key)}" aria-label="${escapeHtml(conflict.geometryDuplicate ? `Resolve matching geometry for ${conflict.assetId}` : `Resolve duplicate ${conflict.assetId}`)}">
             <option value="" ${resolution ? "" : "selected"}>Choose action</option>
-            <option value="keep" ${resolution === "keep" ? "selected" : ""}>Keep base asset</option>
-            <option value="replace" ${resolution === "replace" ? "selected" : ""}>Use incoming asset</option>
+            ${conflict.geometryDuplicate ? `
+              <option value="skip" ${resolution === "skip" ? "selected" : ""}>Skip incoming asset</option>
+              <option value="add" ${resolution === "add" ? "selected" : ""}>Allow duplicate geometry (confirmed)</option>
+            ` : `
+              <option value="keep" ${resolution === "keep" ? "selected" : ""}>Keep base asset</option>
+              <option value="replace" ${resolution === "replace" ? "selected" : ""}>Use incoming asset</option>
+            `}
           </select>
         </label>
       `;
@@ -1992,7 +2004,7 @@
           <span><strong>${analysis.conflicts.length}</strong><small>Conflicts</small></span>
         </div>
         ${notices}
-        ${analysis.conflicts.length ? `<div class="viewer-merge-conflicts">${conflictRows}</div>` : `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>No changed duplicate IDs require review. Identical duplicates will be skipped automatically.</span></span>`}
+        ${analysis.conflicts.length ? `<div class="viewer-merge-conflicts">${conflictRows}</div>` : `<span class="viewer-merge-notice"><i class="fa-solid fa-check" aria-hidden="true"></i><span>No changed duplicate IDs or matching same-type geometries require review. Identical duplicates will be skipped automatically.</span></span>`}
       </section>
     `;
     const ready = !session.busy && !analysis.errors.length && analysis.candidateCount > 0 && analysis.unresolvedCount === 0;
@@ -2048,11 +2060,46 @@
     if (!candidates.length && sourceFiles.length) errors.push("The selected merge scope does not contain any incoming assets.");
 
     const targetById = new Map();
+    const targetByGeometry = new Map();
+    const addGeometryTarget = (feature, idKey = "") => {
+      const geometryKey = getMergeGeometryMatchKey(feature);
+      if (!geometryKey) return;
+      if (!targetByGeometry.has(geometryKey)) targetByGeometry.set(geometryKey, []);
+      targetByGeometry.get(geometryKey).push({ feature, idKey });
+    };
+    const removeGeometryTarget = (feature, idKey = "") => {
+      const geometryKey = getMergeGeometryMatchKey(feature);
+      const matches = geometryKey ? targetByGeometry.get(geometryKey) : null;
+      if (!matches) return;
+      const remaining = matches.filter((entry) => entry.feature !== feature && (!idKey || entry.idKey !== idKey));
+      if (remaining.length) targetByGeometry.set(geometryKey, remaining);
+      else targetByGeometry.delete(geometryKey);
+    };
+    const findGeometryMatch = (feature, idKey = "") => {
+      const geometryKey = getMergeGeometryMatchKey(feature);
+      if (!geometryKey) return null;
+      return (targetByGeometry.get(geometryKey) || []).find((entry) => !idKey || entry.idKey !== idKey) || null;
+    };
+    const addGeometryConflict = (feature, assetId, idKey, geometryMatch) => {
+      const conflict = {
+        key: `geometry|${feature.sourceFileId}|${feature.xmlLocator}|${idKey}`,
+        assetId: assetId || feature.id || "Unnamed asset",
+        existingAssetId: geometryMatch.feature.id || "an existing asset",
+        existingFeature: geometryMatch.feature,
+        incomingFeature: feature,
+        geometryDuplicate: true,
+        typeMismatch: false,
+      };
+      conflicts.push(conflict);
+      return getMergeConflictResolution(session, conflict);
+    };
     state.features.filter((feature) => feature.sourceFileId === session.baseFileId).forEach((feature) => {
       const record = state.documents.get(feature.sourceFileId);
       const node = record?.workingDocument ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator) : null;
       const assetId = getMergeAssetId(node, feature);
-      if (assetId) targetById.set(normalizeMergeAssetId(assetId), { feature, fingerprint: getMergeAssetFingerprint(node) });
+      const idKey = normalizeMergeAssetId(assetId);
+      if (idKey) targetById.set(idKey, { feature, fingerprint: getMergeAssetFingerprint(node) });
+      addGeometryTarget(feature, idKey);
     });
     const conflicts = [];
     let addCount = 0;
@@ -2067,8 +2114,21 @@
       const fingerprint = getMergeAssetFingerprint(node);
       const existing = idKey ? targetById.get(idKey) : null;
       if (!existing) {
+        const geometryMatch = findGeometryMatch(feature, idKey);
+        if (geometryMatch) {
+          const resolution = addGeometryConflict(feature, assetId, idKey, geometryMatch);
+          if (resolution === "add") {
+            addCount += 1;
+            if (idKey) targetById.set(idKey, { feature, fingerprint });
+            addGeometryTarget(feature, idKey);
+          } else if (resolution === "skip") {
+            skipCount += 1;
+          }
+          return;
+        }
         addCount += 1;
         if (idKey) targetById.set(idKey, { feature, fingerprint });
+        addGeometryTarget(feature, idKey);
         return;
       }
       if (existing.feature.assetPath === feature.assetPath && existing.fingerprint === fingerprint) {
@@ -2086,14 +2146,27 @@
       conflicts.push(conflict);
       const resolution = getMergeConflictResolution(session, conflict);
       if (resolution === "replace") {
+        removeGeometryTarget(existing.feature, idKey);
+        const geometryMatch = findGeometryMatch(feature, idKey);
+        if (geometryMatch) {
+          const geometryResolution = addGeometryConflict(feature, assetId, idKey, geometryMatch);
+          if (geometryResolution !== "add") {
+            addGeometryTarget(existing.feature, idKey);
+            if (geometryResolution === "skip") skipCount += 1;
+            return;
+          }
+        }
         replaceCount += 1;
         targetById.set(idKey, { feature, fingerprint });
+        addGeometryTarget(feature, idKey);
       } else if (resolution === "keep") {
         skipCount += 1;
       }
     });
     const unresolvedCount = conflicts.filter((conflict) => !getMergeConflictResolution(session, conflict)).length;
     if (identicalCount) warnings.push(`${identicalCount} identical duplicate asset${identicalCount === 1 ? " was" : "s were"} found and will be skipped automatically.`);
+    const geometryDuplicateCount = conflicts.filter((conflict) => conflict.geometryDuplicate).length;
+    if (geometryDuplicateCount) warnings.push(`${geometryDuplicateCount} incoming asset${geometryDuplicateCount === 1 ? " has" : "s have"} the same geometry and asset type as an asset already planned for the merge. Explicit confirmation is required before duplicate geometry can be added.`);
     const missingReferenceCount = countMissingMergeReferences(candidates, targetById);
     if (missingReferenceCount) warnings.push(`${missingReferenceCount} selected asset reference${missingReferenceCount === 1 ? " points" : "s point"} to an ID not present in the planned merged result. Review connectivity after merging.`);
     return {
@@ -2108,6 +2181,7 @@
       replaceCount,
       skipCount,
       identicalCount,
+      geometryDuplicateCount,
       unresolvedCount,
       errors: uniqueValues(errors),
       warnings: uniqueValues(warnings),
@@ -2116,6 +2190,7 @@
 
   function getMergeConflictResolution(session, conflict) {
     const explicit = session.conflictResolutions.get(conflict.key);
+    if (conflict.geometryDuplicate) return ["skip", "add"].includes(explicit) ? explicit : "";
     if (["keep", "replace"].includes(explicit)) return explicit;
     if (conflict.typeMismatch || session.conflictPolicy === "review") return "";
     return session.conflictPolicy === "replace" ? "replace" : "keep";
@@ -2168,6 +2243,66 @@
       .trim();
   }
 
+  function getMergeGeometryMatchKey(feature) {
+    const geometryFingerprint = getMergeGeometryFingerprint(feature);
+    if (!geometryFingerprint) return "";
+    return `${normalizeSchemaPathKey(feature.assetPath)}|${geometryFingerprint}`;
+  }
+
+  function getMergeGeometryFingerprint(feature) {
+    const points = (feature?.points || [])
+      .filter((point) => Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
+      .map((point) => [
+        formatMergeGeometryCoordinate(point.x),
+        formatMergeGeometryCoordinate(point.y),
+        hasMergeGeometryCoordinate(point.z) ? formatMergeGeometryCoordinate(point.z) : "_",
+      ].join(","));
+    if (!points.length) return "";
+    const geometryKind = feature.geometryKind || "Geometry";
+    if (geometryKind === "Point" || points.length === 1) return `${geometryKind}|${points[0]}`;
+    if (geometryKind === "Polygon" && points.length > 1 && points[0] === points[points.length - 1]) points.pop();
+    if (!points.length) return "";
+    const forward = geometryKind === "Polygon" ? getLeastGeometryRotation(points) : points.join(";");
+    const reversePoints = [...points].reverse();
+    const reverse = geometryKind === "Polygon" ? getLeastGeometryRotation(reversePoints) : reversePoints.join(";");
+    return `${geometryKind}|${forward < reverse ? forward : reverse}`;
+  }
+
+  function formatMergeGeometryCoordinate(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(6) : "_";
+  }
+
+  function hasMergeGeometryCoordinate(value) {
+    return value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number(value));
+  }
+
+  function getLeastGeometryRotation(tokens) {
+    if (!tokens.length) return "";
+    const doubled = [...tokens, ...tokens];
+    let first = 0;
+    let second = 1;
+    let offset = 0;
+    while (first < tokens.length && second < tokens.length && offset < tokens.length) {
+      const left = doubled[first + offset];
+      const right = doubled[second + offset];
+      if (left === right) {
+        offset += 1;
+        continue;
+      }
+      if (left > right) {
+        first += offset + 1;
+        if (first === second) first += 1;
+      } else {
+        second += offset + 1;
+        if (first === second) second += 1;
+      }
+      offset = 0;
+    }
+    const start = Math.min(first, second);
+    return doubled.slice(start, start + tokens.length).join(";");
+  }
+
   function countMissingMergeReferences(candidates, plannedTargets) {
     const referenceNames = new Set(["dsmhid", "pumptoid", "linetoid"]);
     let count = 0;
@@ -2218,6 +2353,11 @@
       const fingerprint = getMergeAssetFingerprint(sourceNode);
       const existing = idKey ? targetById.get(idKey) : null;
       if (existing && existing.feature.assetPath === feature.assetPath && existing.fingerprint === fingerprint) {
+        skippedCount += 1;
+        continue;
+      }
+      const geometryConflict = analysis.conflicts.find((item) => item.geometryDuplicate && item.key === `geometry|${feature.sourceFileId}|${feature.xmlLocator}|${idKey}`);
+      if (geometryConflict && getMergeConflictResolution(session, geometryConflict) !== "add") {
         skippedCount += 1;
         continue;
       }
@@ -11331,6 +11471,156 @@
     });
   }
 
+  function addGeometryVertex(featureUid, vertexLocator) {
+    commitGeometryVertexMutation({ featureUid, vertexLocator, operation: "add" });
+  }
+
+  function deleteGeometryVertex(featureUid, vertexLocator) {
+    commitGeometryVertexMutation({ featureUid, vertexLocator, operation: "delete" });
+  }
+
+  async function commitGeometryVertexMutation({ featureUid, vertexLocator, operation }) {
+    if (state.editorBusy || !["add", "delete"].includes(operation)) return;
+    const feature = state.features.find((item) => item.uid === featureUid)
+      || state.features.find((item) => item.uid === state.selectedId);
+    const record = feature ? state.documents.get(feature.sourceFileId) : null;
+    if (!feature || !record?.workingXmlText || !record.validation?.valid || !vertexLocator) return;
+
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    const assetNode = candidateDoc ? findXmlElementByLocator(candidateDoc, feature.xmlLocator) : null;
+    const vertex = candidateDoc ? findXmlElementByLocator(candidateDoc, vertexLocator) : null;
+    const actionState = getGeometryVertexActionState(vertex, feature, record);
+    if (!assetNode || !vertex || !actionState || !isElementInsideGeometry(vertex, assetNode)) {
+      state.editorFeedback = { fileId: record.id, tone: "error", message: "That geometry vertex could not be located in the working XML copy." };
+      renderDetails();
+      return;
+    }
+
+    let changedVertexNumber = actionState.index + 1;
+    if (operation === "add") {
+      if (!actionState.canInsert || !actionState.nextVertex) {
+        state.editorFeedback = {
+          fileId: record.id,
+          tone: "warning",
+          message: actionState.insertReason || "A vertex cannot be inserted at that position.",
+        };
+        renderDetails();
+        return;
+      }
+      const currentPoint = getVertexCoordinates(vertex);
+      const nextPoint = getVertexCoordinates(actionState.nextVertex);
+      if (![currentPoint.x, currentPoint.y, nextPoint.x, nextPoint.y].every(Number.isFinite)) {
+        state.editorFeedback = { fileId: record.id, tone: "error", message: "The adjacent vertices need valid X and Y coordinates before a midpoint can be inserted." };
+        renderDetails();
+        return;
+      }
+      const midpoint = {
+        x: (currentPoint.x + nextPoint.x) / 2,
+        y: (currentPoint.y + nextPoint.y) / 2,
+      };
+      if (Number.isFinite(currentPoint.z) && Number.isFinite(nextPoint.z)) midpoint.z = (currentPoint.z + nextPoint.z) / 2;
+      const insertedVertex = createSplitVertex(vertex, midpoint);
+      if (actionState.wrapsRing) {
+        if (actionState.explicitlyClosed) actionState.parent.insertBefore(insertedVertex, actionState.closingVertex);
+        else actionState.parent.appendChild(insertedVertex);
+      } else {
+        actionState.parent.insertBefore(insertedVertex, actionState.nextVertex);
+      }
+      changedVertexNumber += 1;
+    } else {
+      if (!actionState.canDelete) {
+        state.editorFeedback = {
+          fileId: record.id,
+          tone: "warning",
+          message: actionState.deleteReason || "That vertex cannot be deleted without invalidating the geometry.",
+        };
+        renderDetails();
+        return;
+      }
+      const deletedFirstVertex = actionState.index === 0;
+      vertex.remove();
+      if (actionState.explicitlyClosed && deletedFirstVertex) {
+        const remainingVertices = getSiblingGeometryVertices(actionState.parent);
+        copyVertexCoordinateSnapshot(remainingVertices[0], remainingVertices[remainingVertices.length - 1]);
+      }
+      if (actionState.isRing) {
+        const remainingVertices = getSiblingGeometryVertices(actionState.parent);
+        const effectiveVertices = actionState.explicitlyClosed ? remainingVertices.slice(0, -1) : remainingVertices;
+        const remainingPoints = effectiveVertices.map(getVertexCoordinates);
+        if (remainingPoints.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y)) || calculateMeasurementArea(remainingPoints) <= 1e-9) {
+          state.editorFeedback = { fileId: record.id, tone: "warning", message: "That vertex was not deleted because the polygon would have no measurable area." };
+          renderDetails();
+          return;
+        }
+      }
+    }
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    const actionLabel = operation === "add" ? `inserted vertex ${changedVertexNumber}` : `deleted vertex ${changedVertexNumber}`;
+    state.editorBusy = true;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: "info",
+      message: `Checking the ${actionLabel} against ${schemaLabel(record.schemaVersion)}...`,
+    };
+    if (state.dxfSnapSelection) cancelDxfGeometrySnapSelection({ silent: true });
+    renderDetails();
+
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision) return;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validation.errors)[0]);
+      state.editorFeedback = {
+        fileId: record.id,
+        tone: "error",
+        message: `The vertex was not ${operation === "add" ? "inserted" : "deleted"}. ${details.title}. ${details.suggestion || details.detail || "The previous valid geometry has been kept."}`,
+      };
+      renderDetails();
+      return;
+    }
+
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, feature.xmlLocator);
+    const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
+    const dependencyWarning = getGeometryCoordinateDependencyWarning(updatedFeature, "x", Math.max(0, changedVertexNumber - 1));
+    const recalculation = getGeometryCoordinateRecalculationPlan(updatedFeature, "x", record.workingXmlText);
+    const successMessage = `${operation === "add" ? "Inserted" : "Deleted"} vertex ${changedVertexNumber}. The working XML remains schema-valid.`;
+    state.editorFeedback = {
+      fileId: record.id,
+      tone: dependencyWarning ? "warning" : "success",
+      message: dependencyWarning ? `${successMessage} ${dependencyWarning}` : successMessage,
+      recalculation: recalculation ? {
+        kind: "geometry",
+        sourceFileId: record.id,
+        xmlLocator: feature.xmlLocator,
+        changedFieldName: "x",
+        labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
+      } : null,
+    };
+    renderDetails();
+    setStatus(`${successMessage} The original upload was not changed.`, false);
+  }
+
+  function copyVertexCoordinateSnapshot(sourceVertex, targetVertex) {
+    if (!sourceVertex || !targetVertex) return;
+    ["x", "y", "z"].forEach((axis) => {
+      const source = getVertexCoordinateElement(sourceVertex, axis);
+      const target = getVertexCoordinateElement(targetVertex, axis);
+      if (!source) {
+        if (axis === "z" && target) target.remove();
+        return;
+      }
+      if (isNilledReportElement(source)) {
+        if (target) setXmlElementSnapshot(target, { value: "", nil: true });
+        return;
+      }
+      setVertexCoordinate(targetVertex, axis, String(source.textContent || "").trim());
+    });
+  }
+
   async function commitGeometryCoordinateEdit({ featureUid, locator, value, pointIndex, axis, control }) {
     if (state.editorBusy) return;
     const feature = state.features.find((item) => item.uid === featureUid)
@@ -12170,7 +12460,10 @@
   function getVertexCoordinates(vertex) {
     const read = (name) => {
       const element = elementChildren(vertex).find((child) => cleanName(child.tagName).toLowerCase() === name);
-      const value = Number(String(element?.textContent || "").trim());
+      if (!element || isNilledReportElement(element)) return null;
+      const text = String(element.textContent || "").trim();
+      if (!text) return null;
+      const value = Number(text);
       return Number.isFinite(value) ? value : null;
     };
     return { x: read("x"), y: read("y"), z: read("z") };
@@ -12304,6 +12597,79 @@
         return { container, elements };
       })
       .filter((group) => group.elements.x && group.elements.y);
+  }
+
+  function getSiblingGeometryVertices(parent) {
+    return elementChildren(parent)
+      .filter((child) => cleanName(child.tagName).toLowerCase() === "vertex");
+  }
+
+  function getGeometryVertexActionState(vertex, feature, record) {
+    if (
+      !vertex
+      || !["Line", "Polygon"].includes(feature?.geometryKind)
+      || cleanName(vertex.tagName).toLowerCase() !== "vertex"
+    ) return null;
+
+    const parent = vertex.parentElement;
+    const vertices = getSiblingGeometryVertices(parent);
+    const index = vertices.indexOf(vertex);
+    if (!parent || index < 0) return null;
+
+    let current = parent;
+    let isRing = false;
+    while (current && cleanName(current.tagName).toLowerCase() !== "geometry") {
+      if (cleanName(current.tagName).toLowerCase() === "ring") isRing = true;
+      current = current.parentElement;
+    }
+    isRing = isRing || feature.geometryKind === "Polygon";
+
+    const points = vertices.map(getVertexCoordinates);
+    const explicitlyClosed = isRing
+      && vertices.length > 3
+      && samePoint(points[0], points[points.length - 1]);
+    const effectiveCount = explicitlyClosed ? vertices.length - 1 : vertices.length;
+    const isClosingVertex = explicitlyClosed && index === vertices.length - 1;
+    const closingVertex = explicitlyClosed ? vertices[vertices.length - 1] : null;
+    const minimumVertices = isRing ? 3 : 2;
+    const parentRule = resolveSchemaFieldRule(record?.schemaKey, getXmlElementLocator(parent));
+    const vertexRule = resolveSchemaFieldRule(record?.schemaKey, getXmlElementLocator(vertex));
+    const parentType = normalizeSchemaTypeKey(parentRule?.type);
+    const assetPathKey = normalizeSchemaPathKey(feature.assetPath);
+    const fixedTwoVertexAsset = /^cadastre\/(?:[^/]+\/)*connection$/.test(assetPathKey)
+      || /^enhancements\/(?:[^/]+\/)*dimension$/.test(assetPathKey);
+    const fixedTwoVertexSegment = parentType === "geometryfragmentsinglesegment"
+      || String(vertexRule?.maxOccurs || "").trim() === "2"
+      || fixedTwoVertexAsset;
+    const wrapsRing = isRing && !isClosingVertex && index === effectiveCount - 1;
+    const nextVertex = wrapsRing
+      ? vertices[0]
+      : (!isClosingVertex && index < effectiveCount - 1 ? vertices[index + 1] : null);
+    const hasFollowingSegment = Boolean(nextVertex);
+
+    return {
+      parent,
+      vertices,
+      index,
+      isRing,
+      explicitlyClosed,
+      effectiveCount,
+      isClosingVertex,
+      closingVertex,
+      wrapsRing,
+      nextVertex,
+      showInsert: hasFollowingSegment,
+      canInsert: hasFollowingSegment && !fixedTwoVertexSegment,
+      canDelete: !isClosingVertex && effectiveCount > minimumVertices,
+      insertReason: fixedTwoVertexSegment
+        ? "This ADAC geometry is constrained by the schema to exactly two vertices."
+        : (!hasFollowingSegment ? "There is no following segment at this endpoint." : ""),
+      deleteReason: isClosingVertex
+        ? "The closing vertex is maintained automatically from vertex 1."
+        : (effectiveCount <= minimumVertices
+          ? `A ${isRing ? "polygon" : "line"} must retain at least ${minimumVertices} vertices.`
+          : ""),
+    };
   }
 
   function getGeometryZElements(assetNode) {
@@ -13250,10 +13616,43 @@
         && state.dxfSnapSelection?.pointIndex === index
         ? state.dxfSnapSelection.snapMode
         : "";
+      const vertexActions = getGeometryVertexActionState(group.container, feature, record);
+      const vertexLocator = vertexActions ? getXmlElementLocator(group.container) : "";
       return `
         <fieldset class="viewer-geometry-editor__row">
           <legend>${escapeHtml(coordinateLabel)} ${index + 1}</legend>
           <div class="viewer-geometry-editor__coordinates">${controls}</div>
+          ${vertexActions ? `
+            <div class="viewer-geometry-editor__vertex-actions" role="group" aria-label="${escapeHtml(`Vertex ${index + 1} structure actions`)}">
+              ${vertexActions.showInsert ? `
+                <button
+                  type="button"
+                  class="viewer-geometry-editor__vertex-action"
+                  data-action="add-geometry-vertex"
+                  data-geometry-vertex-feature="${escapeHtml(feature.uid)}"
+                  data-geometry-vertex-locator="${escapeHtml(vertexLocator)}"
+                  title="${escapeHtml(vertexActions.canInsert ? `Insert a midpoint vertex after vertex ${index + 1}` : vertexActions.insertReason)}"
+                  ${!vertexActions.canInsert || state.editorBusy ? "disabled" : ""}
+                >
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  <span>Insert after</span>
+                </button>
+              ` : ""}
+              <button
+                type="button"
+                class="viewer-geometry-editor__vertex-action viewer-geometry-editor__vertex-action--delete"
+                data-action="delete-geometry-vertex"
+                data-geometry-vertex-feature="${escapeHtml(feature.uid)}"
+                data-geometry-vertex-locator="${escapeHtml(vertexLocator)}"
+                title="${escapeHtml(vertexActions.canDelete ? `Delete vertex ${index + 1}` : vertexActions.deleteReason)}"
+                ${!vertexActions.canDelete || state.editorBusy ? "disabled" : ""}
+              >
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                <span>Delete</span>
+              </button>
+              ${vertexActions.isClosingVertex ? `<span class="viewer-geometry-editor__closure-note">Closing vertex</span>` : ""}
+            </div>
+          ` : ""}
           ${canSnap ? `
             <div class="viewer-geometry-editor__snap-actions" role="group" aria-label="${escapeHtml(`${coordinateLabel} ${index + 1} snap mode`)}">
               <button type="button" class="viewer-geometry-editor__snap ${activeSnapMode === "closest" ? "is-active" : ""}" data-action="snap-geometry-to-dxf" data-dxf-snap-mode="closest" data-dxf-snap-feature="${escapeHtml(feature.uid)}" data-dxf-snap-index="${index}" title="Snap to the closest point on the XML or DXF geometry" ${state.editorBusy ? "disabled" : ""}>

@@ -3830,6 +3830,16 @@ h3,
     border-bottom: 0;
 }
 
+.viewer-merge-conflict--geometry {
+    border: 1px solid rgba(196, 124, 0, 0.24);
+    border-radius: 7px;
+    background: #fffaf0;
+}
+
+.viewer-merge-conflict--geometry + .viewer-merge-conflict--geometry {
+    margin-top: 2px;
+}
+
 .viewer-merge-conflict strong,
 .viewer-merge-conflict span {
     overflow-wrap: anywhere;
@@ -6583,6 +6593,55 @@ h3,
 
 .viewer-geometry-editor__snap-actions .viewer-geometry-editor__snap {
     margin-top: 0;
+}
+
+.viewer-geometry-editor__vertex-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+}
+
+.viewer-geometry-editor__vertex-action {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 4px 8px;
+    border: 1px solid #c6d4e2;
+    border-radius: 6px;
+    background: #f7fafc;
+    color: #315474;
+    cursor: pointer;
+    font: 700 0.57rem "Manrope", "Segoe UI", Arial, sans-serif;
+}
+
+.viewer-geometry-editor__vertex-action:hover {
+    border-color: #6e9bc7;
+    background: #edf5fc;
+}
+
+.viewer-geometry-editor__vertex-action--delete {
+    color: #8c3530;
+}
+
+.viewer-geometry-editor__vertex-action--delete:hover {
+    border-color: #d59a94;
+    background: #fff3f1;
+}
+
+.viewer-geometry-editor__vertex-action:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.viewer-geometry-editor__closure-note {
+    margin-left: auto;
+    color: #65758a;
+    font-size: 0.54rem;
+    font-weight: 650;
 }
 
 .viewer-geometry-editor__snap:hover {
