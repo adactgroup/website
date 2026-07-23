@@ -286,6 +286,10 @@ body.viewer-workspace-active {
     overflow: hidden;
 }
 
+.viewer-workspace-brand {
+    display: none;
+}
+
 .viewer-page.is-workspace {
     position: fixed;
     z-index: 1200;
@@ -312,12 +316,45 @@ body.viewer-workspace-active {
     display: flex;
     min-width: 0;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 16px;
 }
 
 .viewer-page.is-workspace .adac-viewer__mast > div:first-child,
 .viewer-page.is-workspace .adac-viewer__seo {
     display: none;
+}
+
+.viewer-page.is-workspace .viewer-workspace-brand {
+    display: inline-flex;
+    min-width: max-content;
+    align-items: center;
+    gap: 9px;
+    color: var(--mockup-ink);
+    font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+    line-height: 1.05;
+}
+
+.viewer-page.is-workspace .viewer-workspace-brand img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.viewer-page.is-workspace .viewer-workspace-brand span {
+    display: grid;
+    gap: 3px;
+}
+
+.viewer-page.is-workspace .viewer-workspace-brand strong {
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.viewer-page.is-workspace .viewer-workspace-brand small {
+    color: var(--mockup-body);
+    font-size: 0.72rem;
+    font-weight: 700;
 }
 
 .viewer-page.is-workspace .adac-viewer__actions {
@@ -355,6 +392,19 @@ body.viewer-workspace-active {
 
     .viewer-page.is-workspace .adac-viewer__mast {
         overflow: hidden;
+    }
+
+    .viewer-page.is-workspace .viewer-workspace-brand {
+        gap: 6px;
+    }
+
+    .viewer-page.is-workspace .viewer-workspace-brand img {
+        width: 32px;
+        height: 32px;
+    }
+
+    .viewer-page.is-workspace .viewer-workspace-brand small {
+        display: none;
     }
 
     .viewer-page.is-workspace .adac-viewer__actions {

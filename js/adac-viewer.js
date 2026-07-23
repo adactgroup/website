@@ -19929,7 +19929,15 @@
     if (!els.shell) return;
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        els.shell.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        const target = root.querySelector(".viewer-status") || els.shell;
+        const header = document.querySelector(".header");
+        const headerOffset = header?.getBoundingClientRect().height || 0;
+        const targetTop = window.scrollY + target.getBoundingClientRect().top;
+        const maxScrollTop = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        window.scrollTo({
+          top: clamp(targetTop - headerOffset - 12, 0, maxScrollTop),
+          behavior: "smooth",
+        });
       });
     });
   }
