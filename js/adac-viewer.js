@@ -10198,16 +10198,19 @@
     `;
   }
 
-  function renderXmlEditorFeedback(feature) {
+  function renderXmlEditorFeedback(feature, options = {}) {
     const feedback = state.editorFeedback;
     if (!feedback || (!feedback.bulk && feedback.fileId !== feature.sourceFileId)) return "";
+    const requestedAnchor = String(options.anchorLocator || "");
+    const feedbackAnchor = String(feedback.anchorLocator || "");
+    if (requestedAnchor ? feedbackAnchor !== requestedAnchor : feedbackAnchor) return "";
     const icon = feedback.tone === "error"
       ? "fa-circle-exclamation"
       : feedback.tone === "warning"
         ? "fa-triangle-exclamation"
         : "fa-circle-check";
     return `
-      <div class="viewer-xml-editor__feedback viewer-xml-editor__feedback--${escapeHtml(feedback.tone || "info")}" role="status">
+      <div class="viewer-xml-editor__feedback viewer-xml-editor__feedback--${escapeHtml(feedback.tone || "info")}${requestedAnchor ? " viewer-xml-editor__feedback--inline" : ""}" role="status">
         <i class="fa-solid ${icon}" aria-hidden="true"></i>
         <span class="viewer-xml-editor__feedback-content">
           <span>${escapeHtml(feedback.message)}</span>
@@ -10288,7 +10291,7 @@
   function renderEditableAttributeRows(feature, record) {
     const fields = getVisibleEditableFields(feature);
     if (!fields.length) return `<div><dt>Attributes</dt><dd>No editable scalar attributes were found for this asset.</dd></div>`;
-    return fields.map((field) => renderEditableAttributeRow(field, record)).join("");
+    return fields.map((field) => renderEditableAttributeRow(field, record, feature)).join("");
   }
 
   function getVisibleEditableFields(feature) {
@@ -10304,7 +10307,7 @@
     });
   }
 
-  function renderEditableAttributeRow(field, record) {
+  function renderEditableAttributeRow(field, record, feature) {
     const label = formatDetailLabel(field.name);
     const context = field.parent && normalizeDetailKey(field.parent) !== normalizeDetailKey(field.name)
       ? `<small>${escapeHtml(formatDetailLabel(field.parent))}</small>`
@@ -10314,8 +10317,10 @@
     const original = changed
       ? `<span class="viewer-details__original-value">Original: ${escapeHtml(formatEditorOriginalValue(change))}</span>`
       : "";
+    const inlineFeedback = renderXmlEditorFeedback(feature, { anchorLocator: field.locator });
     return `
       <div class="viewer-details__editable-row${changed ? " is-edited" : ""}">
+        ${inlineFeedback}
         <dt>${escapeHtml(label)}${context}${changed ? `<span class="viewer-details__edited-mark">Edited</span>${original}` : ""}</dt>
         <dd>${renderEditableFieldControl(field)}</dd>
       </div>
@@ -11829,16 +11834,27 @@
     const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
     const dependencyWarning = getGeometryCoordinateDependencyWarning(updatedFeature, "x", Math.max(0, changedVertexNumber - 1));
     const recalculation = getGeometryCoordinateRecalculationPlan(updatedFeature, "x", record.workingXmlText);
+    const updatedAssetNode = record.workingDocument
+      ? findXmlElementByLocator(record.workingDocument, feature.xmlLocator)
+      : null;
+    const updatedCoordinateGroups = getGeometryCoordinateGroups(updatedAssetNode);
+    const feedbackGroup = updatedCoordinateGroups[Math.min(
+      Math.max(0, changedVertexNumber - 1),
+      Math.max(0, updatedCoordinateGroups.length - 1),
+    )];
+    const feedbackAnchorLocator = feedbackGroup ? getXmlElementLocator(feedbackGroup.container) : "";
     const successMessage = `${operation === "add" ? "Inserted" : "Deleted"} vertex ${changedVertexNumber}. The working XML remains schema-valid.`;
     state.editorFeedback = {
       fileId: record.id,
       tone: dependencyWarning ? "warning" : "success",
       message: dependencyWarning ? `${successMessage} ${dependencyWarning}` : successMessage,
+      anchorLocator: recalculation ? feedbackAnchorLocator : "",
       recalculation: recalculation ? {
         kind: "geometry",
         sourceFileId: record.id,
         xmlLocator: feature.xmlLocator,
         changedFieldName: "x",
+        anchorLocator: feedbackAnchorLocator,
         labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
       } : null,
     };
@@ -11934,11 +11950,13 @@
       message: dependencyWarning
         ? `${coordinateLabel} updated and the working XML remains schema-valid. ${dependencyWarning}`
         : `${coordinateLabel} updated. The working XML remains schema-valid.`,
+      anchorLocator: recalculation ? locator : "",
       recalculation: recalculation ? {
         kind: "geometry",
         sourceFileId: record.id,
         xmlLocator: feature.xmlLocator,
         changedFieldName: targetAxis,
+        anchorLocator: locator,
         labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
       } : null,
     };
@@ -12241,17 +12259,20 @@
       message: dependencyWarning
         ? `${fieldLabel} updated and the working XML remains schema-valid. ${dependencyWarning}`
         : `${fieldLabel} updated. The working XML remains schema-valid.`,
+      anchorLocator: recalculation || directionFlip?.reversed ? locator : "",
       recalculation: recalculation ? {
         sourceFileId: record.id,
         xmlLocator: feature.xmlLocator,
         changedFieldName,
         previousValue,
+        anchorLocator: locator,
         labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
       } : null,
       directionFlip: directionFlip?.reversed ? {
         sourceFileId: record.id,
         xmlLocator: feature.xmlLocator,
         changedFieldName,
+        anchorLocator: locator,
         supported: directionFlip.supported,
       } : null,
     };
@@ -12941,6 +12962,7 @@
     if (state.editorBusy) return;
     const request = state.editorFeedback?.recalculation;
     if (!request) return;
+    const feedbackAnchorLocator = state.editorFeedback?.anchorLocator || request.anchorLocator || "";
     const feature = state.features.find((item) => item.sourceFileId === request.sourceFileId && item.xmlLocator === request.xmlLocator);
     const record = feature ? state.documents.get(feature.sourceFileId) : null;
     const plan = request.kind === "geometry"
@@ -12954,6 +12976,7 @@
         fileId: request.sourceFileId,
         tone: "error",
         message: "The related values could not be recalculated from the current XML fields.",
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -12978,6 +13001,7 @@
       fileId: record.id,
       tone: "info",
       message: `Checking recalculated ${formatList(appliedUpdates.map((update) => formatDetailLabel(update.name)))} against ${schemaLabel(record.schemaVersion)}...`,
+      anchorLocator: feedbackAnchorLocator,
     };
     renderDetails();
     const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
@@ -12990,6 +13014,7 @@
         fileId: record.id,
         tone: "error",
         message: `The recalculation was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid values have been kept."}`,
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -13012,6 +13037,7 @@
       fileId: record.id,
       tone: reviewMessages.length ? "warning" : "success",
       message,
+      anchorLocator: feedbackAnchorLocator,
     };
     renderDetails();
     setStatus(message, false);
@@ -13021,6 +13047,7 @@
     if (state.editorBusy) return;
     const request = state.editorFeedback?.directionFlip;
     if (!request) return;
+    const feedbackAnchorLocator = state.editorFeedback?.anchorLocator || request.anchorLocator || "";
     const feature = state.features.find((item) => item.sourceFileId === request.sourceFileId && item.xmlLocator === request.xmlLocator);
     const record = feature ? state.documents.get(feature.sourceFileId) : null;
     const analysis = getEditorDirectionFlipAnalysis(feature, request.changedFieldName, record?.workingXmlText);
@@ -13029,6 +13056,7 @@
         fileId: request.sourceFileId,
         tone: "error",
         message: "The asset no longer has reversed upstream and downstream invert levels.",
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -13038,6 +13066,7 @@
         fileId: request.sourceFileId,
         tone: "warning",
         message: analysis.reason,
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -13051,6 +13080,7 @@
         fileId: record.id,
         tone: "error",
         message: geometry.reason || "The asset geometry could not be prepared for a direction change.",
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -13092,7 +13122,12 @@
 
     const semanticError = getGravityDirectionSemanticError(assetNode);
     if (semanticError) {
-      state.editorFeedback = { fileId: record.id, tone: "error", message: `The direction change was not applied. ${semanticError}` };
+      state.editorFeedback = {
+        fileId: record.id,
+        tone: "error",
+        message: `The direction change was not applied. ${semanticError}`,
+        anchorLocator: feedbackAnchorLocator,
+      };
       renderDetails();
       return;
     }
@@ -13104,6 +13139,7 @@
       fileId: record.id,
       tone: "info",
       message: `Checking the flipped asset against ${schemaLabel(record.schemaVersion)}...`,
+      anchorLocator: feedbackAnchorLocator,
     };
     renderDetails();
     const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
@@ -13116,6 +13152,7 @@
         fileId: record.id,
         tone: "error",
         message: `The direction change was not applied. ${details.title}. ${details.suggestion || details.detail || "The previous valid values have been kept."}`,
+        anchorLocator: feedbackAnchorLocator,
       };
       renderDetails();
       return;
@@ -13132,6 +13169,7 @@
       fileId: record.id,
       tone: analysis.linkedAssets.length ? "warning" : "success",
       message,
+      anchorLocator: feedbackAnchorLocator,
     };
     renderDetails();
     setStatus(message, false);
@@ -13822,6 +13860,13 @@
     }
     const coordinateLabel = feature.geometryKind === "Point" ? "Point" : "Vertex";
     const rows = coordinateGroups.map((group, index) => {
+      const feedbackLocators = [
+        getXmlElementLocator(group.container),
+        ...Object.values(group.elements).filter(Boolean).map(getXmlElementLocator),
+      ];
+      const inlineFeedback = feedbackLocators
+        .map((anchorLocator) => renderXmlEditorFeedback(feature, { anchorLocator }))
+        .find(Boolean) || "";
       const controls = ["x", "y", "z"].map((axis) => {
         const element = group.elements[axis];
         if (!element) return "";
@@ -13866,6 +13911,7 @@
       return `
         <fieldset class="viewer-geometry-editor__row">
           <legend>${escapeHtml(coordinateLabel)} ${index + 1}</legend>
+          ${inlineFeedback}
           <div class="viewer-geometry-editor__coordinates">${controls}</div>
           ${vertexActions ? `
             <div class="viewer-geometry-editor__vertex-actions" role="group" aria-label="${escapeHtml(`Vertex ${index + 1} structure actions`)}">
@@ -14254,17 +14300,20 @@
     const updatedFeature = state.features.find((item) => item.sourceFileId === record.id && item.xmlLocator === feature.xmlLocator);
     const dependencyWarning = getGeometryCoordinateDependencyWarning(updatedFeature, "x", pointIndex);
     const recalculation = getGeometryCoordinateRecalculationPlan(updatedFeature, "x", record.workingXmlText);
+    const feedbackAnchorLocator = getXmlElementLocator(group.elements.x);
     state.dxfSnapSelection = null;
     resetDxfSnapHoverState();
     state.editorFeedback = {
       fileId: feature.sourceFileId,
       tone: dependencyWarning ? "warning" : "success",
       message: `Snapped X/Y ${formatNumber(snapDistance, 3)} m to the chosen ${snapDescription} (${targetLabel}). The original upload and chosen target were not changed.${dependencyWarning ? ` ${dependencyWarning}` : ""}`,
+      anchorLocator: recalculation ? feedbackAnchorLocator : "",
       recalculation: recalculation ? {
         kind: "geometry",
         sourceFileId: record.id,
         xmlLocator: feature.xmlLocator,
         changedFieldName: "x",
+        anchorLocator: feedbackAnchorLocator,
         labels: recalculation.updates.map((update) => formatDetailLabel(update.name)),
       } : null,
     };

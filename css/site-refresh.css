@@ -6527,6 +6527,15 @@ h3,
     line-height: 1.4;
 }
 
+.viewer-details__editable-row > .viewer-xml-editor__feedback--inline {
+    grid-column: 1 / -1;
+    margin-bottom: 1px;
+}
+
+.viewer-geometry-editor__row > .viewer-xml-editor__feedback--inline {
+    margin: 7px 0 2px;
+}
+
 .viewer-xml-editor__feedback-content {
     display: grid;
     flex: 1 1 auto;
