@@ -217,6 +217,18 @@
     labelAlpha: 0.82,
     parcelColor: "#7f8c9d",
   };
+  const overlaySpatialReferenceCache = new Map();
+  const gda94SpatialReferenceWkids = new Set([
+    4283,
+    ...Array.from({ length: 11 }, (_, index) => 28348 + index),
+  ]);
+  const gda2020SpatialReferenceWkids = new Set([
+    7842,
+    7843,
+    7844,
+    ...Array.from({ length: 14 }, (_, index) => 7846 + index),
+  ]);
+  const gda94ToGda2020TransformationWkid = 8048;
 
   const councilBoundaryServiceUrl = "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/Boundaries/AdministrativeBoundaries/MapServer/1";
   const unitywaterWaterServiceUrl = "https://services2.arcgis.com/tQg86iShPXJPWQWw/ArcGIS/rest/services/UWPublicAccessWaterInfrastructureLayers/FeatureServer";
@@ -16595,6 +16607,11 @@
     overlay.status = "Loading...";
     renderOverlays();
 
+    const sourceDatum = await resolveOverlaySourceDatum(overlay);
+    if (controller.signal.aborted) return;
+    const transformGda94ToGda2020 = sourceDatum === "GDA94";
+    const requestGda2020 = transformGda94ToGda2020 || isUnitywaterOverlay(overlay);
+
     const params = new URLSearchParams({
       f: "geojson",
       where: "1=1",
@@ -16604,11 +16621,14 @@
       geometryType: "esriGeometryEnvelope",
       inSR: "4326",
       spatialRel: "esriSpatialRelIntersects",
-      outSR: "4326",
+      outSR: requestGda2020 ? "7844" : "4326",
       resultRecordCount: String(overlay.resultRecordCount || (overlay.mode === "parcel" ? 900 : 300)),
       geometryPrecision: "7",
       maxAllowableOffset: String(getOverlayTolerance(extent, width)),
     });
+    if (transformGda94ToGda2020) {
+      params.set("datumTransformation", String(gda94ToGda2020TransformationWkid));
+    }
 
     try {
       const response = await fetch(`${overlay.serviceUrl}/query?${params.toString()}`, {
@@ -16639,6 +16659,53 @@
       overlay.status = "Unavailable";
       renderOverlays();
     }
+  }
+
+  function isUnitywaterOverlay(overlay) {
+    return String(overlay?.provider || "").trim().toLowerCase() === "unitywater";
+  }
+
+  async function resolveOverlaySourceDatum(overlay) {
+    if (overlay.sourceDatumResolved) return overlay.sourceDatum || "";
+
+    let metadataPromise = overlaySpatialReferenceCache.get(overlay.serviceUrl);
+    if (!metadataPromise) {
+      metadataPromise = fetch(`${overlay.serviceUrl}?f=json`).then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      });
+      overlaySpatialReferenceCache.set(overlay.serviceUrl, metadataPromise);
+    }
+
+    try {
+      const metadata = await metadataPromise;
+      const sourceSpatialReference = metadata.sourceSpatialReference
+        || metadata.extent?.spatialReference
+        || metadata.spatialReference
+        || null;
+      overlay.sourceDatum = inferAustralianDatumFromSpatialReference(sourceSpatialReference);
+      overlay.sourceSpatialReference = sourceSpatialReference;
+    } catch (error) {
+      overlaySpatialReferenceCache.delete(overlay.serviceUrl);
+      overlay.sourceDatum = "";
+      overlay.sourceSpatialReference = null;
+    }
+    overlay.sourceDatumResolved = true;
+    return overlay.sourceDatum;
+  }
+
+  function inferAustralianDatumFromSpatialReference(spatialReference) {
+    if (!spatialReference) return "";
+    const wkids = [spatialReference.wkid, spatialReference.latestWkid]
+      .map(Number)
+      .filter(Number.isFinite);
+    if (wkids.some((wkid) => gda94SpatialReferenceWkids.has(wkid))) return "GDA94";
+    if (wkids.some((wkid) => gda2020SpatialReferenceWkids.has(wkid))) return "GDA2020";
+
+    const definition = JSON.stringify(spatialReference).toUpperCase();
+    if (/GDA[_\s]?1994|GDA94/.test(definition)) return "GDA94";
+    if (/GDA[_\s]?2020|GDA2020/.test(definition)) return "GDA2020";
+    return "";
   }
 
   function drawArcgisOverlays(width, height, transform) {
