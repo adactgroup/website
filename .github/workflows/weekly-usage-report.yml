@@ -1,0 +1,44 @@
+name: Weekly ADAC Viewer usage report
+
+on:
+  schedule:
+    # 8:00 am Monday in Brisbane (AEST, UTC+10).
+    - cron: "0 22 * * 0"
+  workflow_dispatch:
+    inputs:
+      send_email:
+        description: Send the report email after generating it
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-adac-viewer-usage-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Generate weekly report
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          REPORT_SEND_EMAIL: ${{ github.event_name == 'schedule' || inputs.send_email }}
+          REPORT_TO: ${{ vars.WEEKLY_REPORT_TO || 'projects@adact.com.au' }}
+          REPORT_FROM: ${{ vars.WEEKLY_REPORT_FROM || 'ADACT Viewer <reports@adact.com.au>' }}
+          REPORT_DASHBOARD_URL: https://adact.com.au/usage-dashboard.html
+          REPORT_TIME_ZONE: Australia/Brisbane
+        run: node scripts/weekly-usage-report.mjs
