@@ -1119,6 +1119,8 @@
     showAllDetails: false,
     projectDetailsOpen: false,
     geometryEditorOpen: false,
+    workspaceMode: false,
+    workspaceScrollY: 0,
     editMode: false,
     editorBusy: false,
     editorFeedback: null,
@@ -1141,6 +1143,7 @@
   };
 
   const els = {
+    viewerPage: root.closest(".viewer-page"),
     fileInput: document.getElementById("adac-file-input"),
     dxfInput: document.getElementById("dxf-reference-input"),
     canvas: document.getElementById("adac-map-canvas"),
@@ -1164,6 +1167,7 @@
     measurementReadout: root.querySelector("[data-role='measurement-readout']"),
     measurementMode: root.querySelector("[data-role='measurement-mode']"),
     measurementValue: root.querySelector("[data-role='measurement-value']"),
+    workspaceButton: root.querySelector("[data-role='workspace-button']"),
     termsButton: root.querySelector("[data-role='terms-button']"),
     termsModal: document.querySelector("[data-role='terms-modal']"),
     visibleLayerCount: root.querySelector("[data-role='visible-layer-count']"),
@@ -1221,6 +1225,7 @@
   const ctx = els.canvas.getContext("2d");
   let dxfWorker = null;
   let dxfRequestSequence = 0;
+  let shellResizeObserver = null;
   const dxfWorkerRequests = new Map();
 
   function init() {
@@ -1346,6 +1351,12 @@
 
     window.addEventListener("resize", drawMap);
     window.addEventListener("keydown", handleWindowKeydown);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    if (window.ResizeObserver && els.shell) {
+      shellResizeObserver = new ResizeObserver(() => scheduleWorkspaceMapDraw());
+      shellResizeObserver.observe(els.shell);
+    }
     if (els.suggestionForm) {
       els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
     }
@@ -1523,6 +1534,8 @@
   function runAction(action, control = null) {
     if (action === "fit") {
       fitMap();
+    } else if (action === "toggle-workspace") {
+      toggleWorkspaceMode();
     } else if (action === "toggle-multi-select") {
       toggleMultiSelectMode();
     } else if (action === "toggle-selection-menu") {
@@ -1716,8 +1729,120 @@
         cancelDxfGeometrySnapSelection();
         return;
       }
+      const hadTransientUi = hasTransientUiOpen();
+      const wasMeasuring = isMeasurementActive();
       closeTransientUi();
-      if (isMeasurementActive()) finishMeasurement();
+      if (wasMeasuring) {
+        finishMeasurement();
+        return;
+      }
+      if (!hadTransientUi && state.workspaceMode) exitWorkspaceMode();
+    }
+  }
+
+  function hasTransientUiOpen() {
+    return Boolean(
+      isReportExportMenuOpen()
+      || isSampleMenuOpen()
+      || isLabelMenuOpen()
+      || isMeasurementMenuOpen()
+      || isSelectionMenuOpen()
+      || isMergeXmlModalOpen()
+      || isTransformXmlModalOpen()
+      || isEngineeringResolutionOpen()
+      || (els.termsModal && !els.termsModal.hidden)
+      || els.suggestionWidget?.classList.contains("is-open")
+    );
+  }
+
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function scheduleWorkspaceMapDraw() {
+    window.requestAnimationFrame(() => drawMap());
+  }
+
+  function updateWorkspaceButton() {
+    if (!els.workspaceButton) return;
+    const active = state.workspaceMode;
+    const label = active ? "Exit full-screen workspace" : "Enter full-screen workspace";
+    els.workspaceButton.classList.toggle("is-active", active);
+    els.workspaceButton.setAttribute("aria-pressed", String(active));
+    els.workspaceButton.setAttribute("aria-label", label);
+    els.workspaceButton.setAttribute("title", label);
+    const icon = els.workspaceButton.querySelector("i");
+    if (icon) {
+      icon.classList.toggle("fa-maximize", !active);
+      icon.classList.toggle("fa-minimize", active);
+    }
+  }
+
+  function applyWorkspaceMode(active, options = {}) {
+    const nextActive = Boolean(active);
+    if (nextActive === state.workspaceMode && !options.force) {
+      updateWorkspaceButton();
+      scheduleWorkspaceMapDraw();
+      return;
+    }
+
+    if (nextActive) state.workspaceScrollY = window.scrollY;
+    state.workspaceMode = nextActive;
+    document.body.classList.toggle("viewer-workspace-active", nextActive);
+    els.viewerPage?.classList.toggle("is-workspace", nextActive);
+    root.classList.toggle("is-workspace", nextActive);
+    updateWorkspaceButton();
+    scheduleWorkspaceMapDraw();
+
+    if (!nextActive) {
+      window.requestAnimationFrame(() => window.scrollTo(0, state.workspaceScrollY));
+    }
+  }
+
+  function requestNativeWorkspaceFullscreen() {
+    if (!els.viewerPage || getFullscreenElement()) return;
+    const requestFullscreen = els.viewerPage.requestFullscreen || els.viewerPage.webkitRequestFullscreen;
+    if (!requestFullscreen) return;
+    try {
+      const request = requestFullscreen.call(els.viewerPage, { navigationUI: "hide" });
+      if (request?.catch) request.catch(() => {});
+    } catch (error) {
+      // CSS workspace mode remains active when native fullscreen is unavailable.
+    }
+  }
+
+  function toggleWorkspaceMode() {
+    closeTransientUi();
+    if (state.workspaceMode) {
+      exitWorkspaceMode();
+      return;
+    }
+    applyWorkspaceMode(true);
+    requestNativeWorkspaceFullscreen();
+  }
+
+  function exitWorkspaceMode() {
+    applyWorkspaceMode(false);
+    const fullscreenElement = getFullscreenElement();
+    if (fullscreenElement !== els.viewerPage) return;
+    const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!exitFullscreen) return;
+    try {
+      const exit = exitFullscreen.call(document);
+      if (exit?.catch) exit.catch(() => {});
+    } catch (error) {
+      // The CSS workspace has already been closed.
+    }
+  }
+
+  function handleFullscreenChange() {
+    const nativeWorkspaceActive = getFullscreenElement() === els.viewerPage;
+    if (nativeWorkspaceActive && !state.workspaceMode) {
+      applyWorkspaceMode(true, { force: true });
+    } else if (!nativeWorkspaceActive && state.workspaceMode) {
+      applyWorkspaceMode(false, { force: true });
+    } else {
+      scheduleWorkspaceMapDraw();
     }
   }
 
