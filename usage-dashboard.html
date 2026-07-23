@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>Viewer Usage | ADACT</title>
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <link rel="stylesheet" href="css/usage-dashboard.css?v=20260723" />
+</head>
+<body>
+  <header class="usage-header">
+    <a href="index.html" class="usage-header__brand">
+      <img src="img/mockup-header-logo.png" alt="" />
+      <span>ADACT</span>
+    </a>
+    <div>
+      <span>Private administration</span>
+      <strong>ADAC Viewer usage</strong>
+    </div>
+    <button type="button" data-action="sign-out" hidden>
+      <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+      <span>Sign out</span>
+    </button>
+  </header>
+
+  <main class="usage-main">
+    <section class="usage-login" data-role="login-panel">
+      <div class="usage-login__icon"><i class="fa-solid fa-lock" aria-hidden="true"></i></div>
+      <span>Restricted dashboard</span>
+      <h1>Sign in with the authorised ADACT account</h1>
+      <p>Project names, professional details and locations are available only to approved administrators.</p>
+      <button type="button" data-action="sign-in">
+        <i class="fa-brands fa-google" aria-hidden="true"></i>
+        <span>Sign in with Google</span>
+      </button>
+      <p class="usage-login__status" data-role="login-status" role="status"></p>
+    </section>
+
+    <section class="usage-dashboard" data-role="dashboard" hidden>
+      <div class="usage-dashboard__heading">
+        <div>
+          <span>Viewer activity register</span>
+          <h1>Uploaded project metadata</h1>
+        </div>
+        <div class="usage-dashboard__commands">
+          <button type="button" data-action="download-csv" title="Download the current project register as CSV">
+            <i class="fa-solid fa-file-csv" aria-hidden="true"></i>
+            <span>Export CSV</span>
+          </button>
+          <button type="button" data-action="refresh">
+            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="usage-stats">
+        <div><span>Projects shown</span><strong data-role="project-count">0</strong></div>
+        <div><span>Distinct visitors</span><strong data-role="visitor-count">0</strong></div>
+        <div><span>Tool actions</span><strong data-role="tool-count">0</strong></div>
+        <div><span>Assets represented</span><strong data-role="asset-count">0</strong></div>
+      </div>
+
+      <div class="usage-tools">
+        <div class="usage-section-heading">
+          <div>
+            <span>Feature adoption</span>
+            <h2>Viewer tools used</h2>
+          </div>
+        </div>
+        <div class="usage-tool-list" data-role="tool-list"></div>
+      </div>
+
+      <div class="usage-register">
+        <div class="usage-section-heading">
+          <div>
+            <span>Most recent 500 records</span>
+            <h2>Projects</h2>
+          </div>
+          <label>
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" data-role="project-search" placeholder="Search project, people, receiver or software" />
+          </label>
+        </div>
+        <div class="usage-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Loaded</th>
+                <th>Project</th>
+                <th>Surveyor</th>
+                <th>Engineer</th>
+                <th>Receiver</th>
+                <th>Software</th>
+                <th>Location</th>
+                <th>Schema</th>
+                <th>Assets</th>
+                <th>Tools</th>
+              </tr>
+            </thead>
+            <tbody data-role="project-rows"></tbody>
+          </table>
+        </div>
+        <p class="usage-empty" data-role="empty-state" hidden>No matching project records were found.</p>
+      </div>
+      <p class="usage-dashboard__status" data-role="dashboard-status" role="status"></p>
+    </section>
+  </main>
+
+  <script src="js/firebase-config.js?v=20260723e"></script>
+  <script type="module" src="js/usage-dashboard.js?v=20260723c"></script>
+</body>
+</html>

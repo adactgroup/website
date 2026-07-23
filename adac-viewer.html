@@ -645,6 +645,34 @@
         </div>
       </div>
 
+      <div class="usage-consent-modal" data-role="usage-consent-modal" role="dialog" aria-modal="true" aria-labelledby="usage-consent-title" hidden>
+        <div class="usage-consent-modal__backdrop"></div>
+        <div class="usage-consent-modal__panel">
+          <div class="usage-consent-modal__icon" aria-hidden="true">
+            <i class="fa-solid fa-chart-line"></i>
+          </div>
+          <div>
+            <span class="usage-consent-modal__eyebrow">Project usage information</span>
+            <h2 id="usage-consent-title">Help ADACT understand how the viewer is used</h2>
+            <p>
+              With your permission, ADACT will privately record the XML project name, surveyor, engineer, receiver, software product,
+              drawing location, schema version, asset count and the viewer tools used. Your XML and DXF file contents,
+              filenames, asset attributes and edited values remain in your browser and are not uploaded.
+            </p>
+            <p class="usage-consent-modal__authority">
+              Only load project information you are authorised to use. Read the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.
+            </p>
+            <div class="usage-consent-modal__actions">
+              <button type="button" class="usage-consent-modal__secondary" data-action="decline-project-tracking">Continue without sharing</button>
+              <button type="button" class="usage-consent-modal__primary" data-action="allow-project-tracking">
+                <i class="fa-solid fa-check" aria-hidden="true"></i>
+                <span>Allow project usage tracking</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="viewer-terms-modal" data-role="terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-title" hidden>
         <div class="viewer-terms-modal__backdrop" data-action="close-terms"></div>
         <div class="viewer-terms-modal__panel">
@@ -667,7 +695,7 @@
             <h3>Terms and conditions</h3>
             <ol>
               <li><strong>Permitted use:</strong> The viewer may be used for professional, commercial and general ADAC review workflows. It is provided free of charge and without warranties as to availability, fitness for purpose, completeness or acceptance by any council, utility or other receiving authority.</li>
-              <li><strong>Browser processing and data responsibility:</strong> The current viewer is designed to process uploaded XML and DXF reference drawings within the user's browser rather than submit those files to ADACT SOLUTIONS PTY LTD. Third-party maps, overlays, analytics, links and suggestion services may still make network requests. Users must have authority to use the data and must not load confidential, personal, restricted or sensitive information where browser-based processing or third-party requests would be inappropriate.</li>
+              <li><strong>Browser processing and data responsibility:</strong> XML and DXF file contents, filenames, individual asset attributes and edited values are processed within the user's browser rather than submitted to ADACT SOLUTIONS PTY LTD. The viewer may privately record declared project metadata including project, surveyor, engineer and receiver names, software product, drawing location, schema version, asset count and controlled viewer-tool events. Third-party maps, overlays, analytics, links and suggestion services may also make network requests. Users must have authority to use and share the project information they load. See the <a href="privacy.html" target="_blank" rel="noopener">privacy policy</a>.</li>
               <li><strong>Working copies and user edits:</strong> Uploaded XML files are not overwritten. Repairs, attribute changes, geometry edits, bulk updates, recalculations, duplications, deletions and merges are applied to temporary working copies. Changes may be lost when the page is refreshed or closed unless the user downloads the edited or merged XML. Users are responsible for reviewing every change and retaining appropriate source and revision records.</li>
               <li><strong>Schema validation and suggested repairs:</strong> Validation is limited to the ADAC schema versions and rules supported by the viewer. A schema-valid result confirms supported XML structure and allowed values only; it does not prove engineering accuracy, survey accuracy, completeness, topology, asset connectivity, ownership, receiver acceptance or project compliance. Suggested fixes and automated repair previews are guidance only and may not reflect the intended engineering meaning.</li>
               <li><strong>Calculated and spatial outputs:</strong> Measurements, labels, map placement, coordinate interpretation, lengths, grades, depths, offsets, direction changes and optional recalculations may be approximate, incomplete or dependent on the uploaded data. Warnings do not identify every possible dependency. Users must independently verify geometry and derived values before relying on them.</li>
@@ -703,6 +731,7 @@
           <a href="adac-viewer.html">Free ADAC XML viewer and editor</a>
           <a href="about.html">About ADACT</a>
           <a href="contact.html">Request an ADAC quote</a>
+          <a href="privacy.html">Privacy</a>
         </nav>
         <div class="footer__bottom">
           <span>Copyright &copy; 2026 ADACT SOLUTIONS PTY LTD. All rights reserved.</span>
@@ -712,8 +741,10 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260723b"></script>
+  <script src="js/adac-viewer.js?v=20260723c"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
+  <script src="js/firebase-config.js?v=20260723e"></script>
+  <script src="js/adact-usage-tracking.js?v=20260723e"></script>
 </body>
 
 </html>

@@ -4,4 +4,5 @@ Disallow: /img/Blake.png
 Disallow: /img/Jayden.jpeg
 Disallow: /img/James.jpeg
 Disallow: /img/Alex.jpeg
+Disallow: /usage-dashboard.html
 Sitemap: https://adact.com.au/sitemap.xml

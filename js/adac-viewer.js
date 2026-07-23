@@ -1543,7 +1543,45 @@
     state.projectDetailsOpen = projectDetails.open;
   }
 
+  const viewerUsageToolActions = Object.freeze({
+    "toggle-workspace": "fullscreen_workspace",
+    "toggle-multi-select": "multi_asset_selection",
+    "apply-selection-criteria": "filtered_asset_selection",
+    "apply-engineering-resolution": "engineering_recalculation",
+    "export-combined-report-pdf": "combined_pdf_report",
+    "export-separate-report-pdfs": "separate_pdf_reports",
+    "build-merged-xml": "xml_merge",
+    "download-merged-xml": "merged_xml_download",
+    "apply-transform-xml": "position_shift",
+    "set-label-simple": "simple_labels",
+    "set-label-detailed": "as_constructed_labels",
+    "set-measure-distance": "distance_measurement",
+    "set-measure-area": "area_measurement",
+    "preview-repaired-xml": "suggested_repair_preview",
+    "preview-selected-validation-fixes": "selected_repair_preview",
+    "download-repaired-xml": "repaired_xml_download",
+    "toggle-attribute-editing": "xml_editing",
+    "undo-xml-edit": "edit_undo",
+    "redo-xml-edit": "edit_redo",
+    "undo-bulk-xml-edit": "bulk_edit_undo",
+    "redo-bulk-xml-edit": "bulk_edit_redo",
+    "duplicate-selected-asset": "asset_duplicate",
+    "apply-split-asset": "line_split",
+    "confirm-join-selected-assets": "line_join",
+    "confirm-delete-selected-assets": "asset_delete",
+    "download-edited-xml": "edited_xml_download",
+    "recalculate-related-xml-fields": "related_field_recalculation",
+    "flip-gravity-asset-direction": "gravity_direction_flip",
+    "snap-geometry-to-dxf": "geometry_snap",
+  });
+
+  function emitViewerUsageTool(toolName) {
+    if (!toolName) return;
+    window.dispatchEvent(new CustomEvent("adact:viewer-tool", { detail: { toolName } }));
+  }
+
   function runAction(action, control = null) {
+    emitViewerUsageTool(viewerUsageToolActions[action]);
     if (action === "fit") {
       fitMap();
     } else if (action === "toggle-workspace") {
@@ -3409,7 +3447,7 @@
       const response = await fetch(sample.url, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const xmlText = await response.text();
-      await loadXmlFiles([{ xmlText, fileName: sample.fileName }], { replace: !state.loadedFiles.length });
+      await loadXmlFiles([{ xmlText, fileName: sample.fileName }], { replace: !state.loadedFiles.length, usageSource: "sample" });
     } catch (error) {
       console.error(`Could not load ${sample.label}:`, error);
       setStatus(`The ${sample.label} could not be loaded.`, true);
@@ -4426,7 +4464,6 @@
 
     const formData = new FormData(els.suggestionForm);
     formData.append("page_url", window.location.href);
-    formData.append("viewer_file", state.fileName || "No ADAC file loaded");
 
     submitButton.disabled = true;
     setSuggestionStatus("Sending suggestion...", false);
@@ -4908,10 +4945,15 @@
       return;
     }
 
+    const previousFileCount = state.loadedFiles.length;
     applyParsedFilesToState(parsedFiles, {
       replace,
       validationErrorResults: failedValidationResults,
     });
+    if (options.usageSource !== "sample") {
+      const loadedFileStart = replace ? 0 : previousFileCount;
+      emitLoadedXmlUsage(parsedFiles, state.loadedFiles.slice(loadedFileStart));
+    }
 
     const loadedAssetCount = parsedFiles.reduce((total, item) => total + item.features.length, 0);
     const loadedReportAssetCount = parsedFiles.reduce((total, item) => total + item.reportBundle.assets.length, 0);
@@ -4926,6 +4968,67 @@
       setStatus("The XML loaded, but no mapped asset geometry was found.", true);
     }
     centerViewerInViewport();
+  }
+
+  function emitLoadedXmlUsage(parsedFiles, loadedFiles) {
+    const projects = parsedFiles.map((item, index) => {
+      const metadata = item.reportBundle?.metadata || {};
+      const location = getXmlUsageLocation(item.features, item.doc);
+      return {
+        localFileId: loadedFiles[index]?.id || "",
+        projectName: metadata.name || "",
+        surveyorName: metadata.surveyor?.Name || "",
+        engineerName: metadata.engineer?.Name || "",
+        receiver: metadata.receiver || item.fileMeta?.receiver || "",
+        softwareProduct: metadata.software?.Product || "",
+        schemaVersion: schemaLabel(item.schemaValidation?.schemaVersion || ""),
+        assetCount: item.features.length,
+        coordinateSystem: metadata.coordinateSystem?.horizontalCoordinateSystem || "",
+        horizontalDatum: metadata.coordinateSystem?.horizontalDatum || "",
+        location,
+      };
+    });
+    if (projects.length) {
+      window.dispatchEvent(new CustomEvent("adact:xml-loaded", { detail: { projects } }));
+    }
+  }
+
+  function getXmlUsageLocation(features, doc) {
+    const zone = inferCoordinateZoneFromDoc(doc) || inferCoordinateZoneFromFeatures(features) || 56;
+    let minimumLatitude = Infinity;
+    let maximumLatitude = -Infinity;
+    let minimumLongitude = Infinity;
+    let maximumLongitude = -Infinity;
+    let coordinateCount = 0;
+    features.forEach((feature) => {
+      (feature.points || []).forEach((point) => {
+        let latitude = null;
+        let longitude = null;
+        if (isLongitudeLatitude(point)) {
+          latitude = point.y;
+          longitude = point.x;
+        } else if (isMgaCoordinate(point)) {
+          const latLng = mgaToLatLng(point.x, point.y, zone);
+          latitude = latLng?.[0] ?? null;
+          longitude = latLng?.[1] ?? null;
+        }
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+        minimumLatitude = Math.min(minimumLatitude, latitude);
+        maximumLatitude = Math.max(maximumLatitude, latitude);
+        minimumLongitude = Math.min(minimumLongitude, longitude);
+        maximumLongitude = Math.max(maximumLongitude, longitude);
+        coordinateCount += 1;
+      });
+    });
+    if (!coordinateCount) return {};
+    return {
+      centreLatitude: (minimumLatitude + maximumLatitude) / 2,
+      centreLongitude: (minimumLongitude + maximumLongitude) / 2,
+      minimumLatitude,
+      maximumLatitude,
+      minimumLongitude,
+      maximumLongitude,
+    };
   }
 
   function applyParsedFilesToState(parsedFiles, options = {}) {
@@ -5973,6 +6076,7 @@
     state.fileMeta = { receiver: "", receiverField: "" };
     state.fileMetas = [];
     state.loadedFiles = [];
+    window.dispatchEvent(new CustomEvent("adact:viewer-projects-cleared"));
     state.documents = new Map();
     state.reportBundles = [];
     state.schemaValidationResults = [];
@@ -10505,6 +10609,7 @@
     };
     renderDetails();
     setStatus(`${transaction.label} updated for ${transaction.assetCount} selected assets. Original uploads were not changed.`, false);
+    emitViewerUsageTool("bulk_attribute_edit");
   }
 
   function setXmlEditorElementValue(target, value, nil) {
@@ -11739,6 +11844,7 @@
     };
     renderDetails();
     setStatus(`${successMessage} The original upload was not changed.`, false);
+    emitViewerUsageTool(operation === "add" ? "vertex_add" : "vertex_delete");
   }
 
   function copyVertexCoordinateSnapshot(sourceVertex, targetVertex) {
@@ -11838,6 +11944,7 @@
     };
     renderDetails();
     setStatus(dependencyWarning || `Updated ${coordinateLabel} in the working XML copy. The original upload was not changed.`, false);
+    emitViewerUsageTool("geometry_coordinate_edit");
   }
 
   function getGeometryCoordinateDependencyWarning(feature, axis, pointIndex) {
@@ -12150,6 +12257,7 @@
     };
     renderDetails();
     setStatus(dependencyWarning || `Updated ${fieldLabel} in the working XML copy. The original upload was not changed.`, false);
+    emitViewerUsageTool("attribute_edit");
   }
 
   function getEditorDependencyWarning(feature, changedFieldName) {
