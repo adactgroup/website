@@ -6567,13 +6567,14 @@
       if (fromText) points.push(fromText);
     });
 
-    return dedupePoints(points);
+    return points;
   }
 
   function isCoordinateContainerWithChildren(node) {
-    const name = cleanName(node.tagName).toLowerCase();
-    if (!/^(geometry|coordinates|spatial)$/i.test(name)) return false;
-    return Array.from(node.children).some((child) => isCoordinateNode(child) || child.querySelector("*"));
+    return Array.from(node.children).some((child) => {
+      if (isCoordinateNode(child)) return true;
+      return Array.from(child.querySelectorAll("*")).some((descendant) => isCoordinateNode(descendant));
+    });
   }
 
   function isCoordinateNode(node) {
@@ -6621,18 +6622,6 @@
     const z = Number(numbers[2]);
     if (includeZ && Number.isFinite(z)) point.z = z;
     return point;
-  }
-
-  function dedupePoints(points) {
-    const seen = new Set();
-    return points.filter((point, index) => {
-      const key = `${round(point.x)},${round(point.y)}`;
-      const closesRing = index === points.length - 1 && points.length > 3 && samePoint(point, points[0]);
-      if (closesRing) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
   }
 
   function samePoint(a, b) {
@@ -9386,7 +9375,7 @@
               <i class="fa-solid fa-calculator" aria-hidden="true"></i>
               <span>Resolve</span>
             </button>
-          ` : `<span class="viewer-checks__manual" title="${escapeHtml(check.engineeringRepairReason || "This issue requires engineering review.")}">Manual review</span>`}
+          ` : `<span class="viewer-checks__manual" title="${escapeHtml(check.engineeringRepairReason || "This issue requires engineering review.")}">${escapeHtml(check.reviewLabel || "Manual review")}</span>`}
         `;
       } else {
         item.innerHTML = content;
@@ -14377,8 +14366,10 @@
 
     const checks = [];
     const missingIds = state.features.filter((feature) => !feature.id).length;
-    const singlePointLines = state.features.filter((feature) => feature.points.length === 1 && /pipe|main|road|line|kerb/i.test(feature.type)).length;
+    const singlePointLineFeatures = state.features.filter((feature) => feature.points.length === 1 && isExpectedLineAsset(feature));
+    const singlePointLines = singlePointLineFeatures.length;
     const unknownLayers = state.features.filter((feature) => feature.layer === "Other").length;
+    const geometryTopologyIssues = findGeometryTopologyIssues(state.features);
 
     checks.push({ tone: "good", icon: "fa-check", text: "XML parsed successfully in browser." });
     if (state.mergePreview?.active) {
@@ -14426,17 +14417,123 @@
       checks.push({ tone: "warn", icon: "fa-triangle-exclamation", text: `${missingIds} assets may be missing IDs.` });
     }
     if (singlePointLines) {
-      checks.push({ tone: "warn", icon: "fa-triangle-exclamation", text: `${singlePointLines} line assets only have one mapped point.` });
+      const affectedIds = singlePointLineFeatures
+        .slice(0, 5)
+        .map((feature) => feature.id || feature.assetTag)
+        .filter(Boolean);
+      const affectedText = affectedIds.length
+        ? ` Affected: ${affectedIds.join(", ")}${singlePointLines > affectedIds.length ? ` and ${singlePointLines - affectedIds.length} more` : ""}.`
+        : "";
+      checks.push({
+        tone: "warn",
+        icon: "fa-triangle-exclamation",
+        text: `${singlePointLines} line asset${singlePointLines === 1 ? "" : "s"} contain only one mapped geometry vertex.${affectedText} Add the missing second vertex to the asset geometry.`,
+      });
     }
+    geometryTopologyIssues.forEach((issue) => {
+      checks.push({
+        tone: "warn",
+        icon: "fa-route",
+        text: issue.message,
+        featureUid: issue.feature.uid,
+        engineeringRepairReason: issue.repairReason,
+        reviewLabel: "Edit geometry",
+      });
+    });
     if (unknownLayers) {
       checks.push({ tone: "muted", icon: "fa-circle-info", text: `${unknownLayers} assets could not be confidently layered.` });
     }
-    if (!missingIds && !singlePointLines) {
+    if (!missingIds && !singlePointLines && !geometryTopologyIssues.length) {
       checks.push({ tone: "good", icon: "fa-check", text: "Asset IDs and geometry passed the quick checks." });
     }
     checks.push(...buildEngineeringConsistencyChecks());
 
     return checks;
+  }
+
+  function isExpectedLineAsset(feature) {
+    const structuralText = [
+      feature?.assetTag,
+      feature?.type,
+      feature?.assetPath,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_/-]+/g, " ");
+    return /(^|[^a-z])(pipe|main|road|line|kerb)([^a-z]|$)/i.test(structuralText);
+  }
+
+  function findGeometryTopologyIssues(features) {
+    const issues = [];
+    features.forEach((feature) => {
+      if (feature.geometryKind !== "Polygon" || feature.points.length < 4) return;
+      const points = feature.points;
+      const explicitlyClosed = feature.geometryKind === "Polygon" && samePoint(points[0], points[points.length - 1]);
+      const effectivePoints = explicitlyClosed ? points.slice(0, -1) : points.slice();
+      if (effectivePoints.length < (feature.geometryKind === "Polygon" ? 3 : 2)) return;
+
+      const duplicateIndex = findConsecutiveDuplicateVertex(effectivePoints);
+      if (duplicateIndex >= 0) {
+        const point = effectivePoints[duplicateIndex];
+        const vertexNumber = duplicateIndex + 1;
+        issues.push({
+          feature,
+          message: `${feature.id || feature.assetTag} has a repeated geometry vertex at vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating a zero-length segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+          repairReason: `Delete repeated vertex ${vertexNumber}; the original uploaded XML will remain unchanged until the edited copy is downloaded.`,
+        });
+        return;
+      }
+
+      const doubleBackIndex = findDoubleBackVertex(effectivePoints, feature.geometryKind === "Polygon");
+      if (doubleBackIndex < 0) return;
+      const point = effectivePoints[doubleBackIndex];
+      const vertexNumber = doubleBackIndex + 1;
+      issues.push({
+        feature,
+        message: `${feature.id || feature.assetTag} doubles back at geometry vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating an overlapping boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+        repairReason: `Delete doubled-back vertex ${vertexNumber}; for a closed polygon the editor will keep the ring closed using the next valid boundary point.`,
+      });
+    });
+    return issues;
+  }
+
+  function findConsecutiveDuplicateVertex(points) {
+    for (let index = 1; index < points.length; index += 1) {
+      if (samePoint(points[index - 1], points[index])) return index;
+    }
+    return -1;
+  }
+
+  function findDoubleBackVertex(points, closed) {
+    const startIndex = closed ? 0 : 1;
+    const endIndex = closed ? points.length : points.length - 1;
+    for (let index = startIndex; index < endIndex; index += 1) {
+      const previous = points[(index - 1 + points.length) % points.length];
+      const current = points[index];
+      const next = points[(index + 1) % points.length];
+      if (isDoubleBackTurn(previous, current, next)) return index;
+    }
+    return -1;
+  }
+
+  function isDoubleBackTurn(previous, current, next) {
+    if (!previous || !current || !next || samePoint(previous, current) || samePoint(current, next)) return false;
+    if (samePoint(previous, next)) return true;
+    const incomingX = current.x - previous.x;
+    const incomingY = current.y - previous.y;
+    const outgoingX = next.x - current.x;
+    const outgoingY = next.y - current.y;
+    const incomingLength = Math.hypot(incomingX, incomingY);
+    const outgoingLength = Math.hypot(outgoingX, outgoingY);
+    if (incomingLength <= 1e-9 || outgoingLength <= 1e-9) return false;
+    const normalizedCross = Math.abs((incomingX * outgoingY) - (incomingY * outgoingX)) / (incomingLength * outgoingLength);
+    const normalizedDot = ((incomingX * outgoingX) + (incomingY * outgoingY)) / (incomingLength * outgoingLength);
+    return normalizedCross <= 1e-6 && normalizedDot <= -0.999999;
+  }
+
+  function formatTopologyPoint(point) {
+    return `X ${formatNumber(point.x, 3)}, Y ${formatNumber(point.y, 3)}`;
   }
 
   function buildEngineeringConsistencyChecks() {
