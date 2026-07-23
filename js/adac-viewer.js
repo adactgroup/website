@@ -4295,6 +4295,58 @@
     drawMap();
   }
 
+  function fitFeaturesOnMap(features) {
+    const fitFeatures = (features || []).filter((feature) => feature?.points?.length);
+    if (!fitFeatures.length) return false;
+    const width = els.canvas.clientWidth || els.canvas.width;
+    const height = els.canvas.clientHeight || els.canvas.height;
+    if (!width || !height) return false;
+
+    state.dxfFitReferenceId = "";
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    const extentFeatures = getMapExtentFeatures(state.filteredFeatures);
+    const baseTransform = getActiveMapTransform(extentFeatures, width, height);
+    if (!baseTransform) return false;
+    const basePoints = fitFeatures
+      .flatMap((feature) => feature.points)
+      .map((point) => projectFeaturePoint(point, baseTransform))
+      .filter(Boolean);
+    if (!basePoints.length) return false;
+
+    const bounds = getPointBounds(basePoints);
+    if (!bounds) return false;
+    const boundsWidth = bounds.maxX - bounds.minX;
+    const boundsHeight = bounds.maxY - bounds.minY;
+    const padding = Math.min(72, Math.max(42, Math.min(width, height) * 0.1));
+    const availableWidth = Math.max(1, width - padding * 2);
+    const availableHeight = Math.max(1, height - padding * 2);
+    const isSinglePosition = boundsWidth < 1 && boundsHeight < 1;
+    const fitZoom = isSinglePosition
+      ? Math.min(16, mapMaxZoom)
+      : Math.min(
+          availableWidth / Math.max(boundsWidth, 1),
+          availableHeight / Math.max(boundsHeight, 1),
+        );
+    state.zoom = clamp(fitZoom, mapMinZoom, mapMaxZoom);
+    state.pan = { x: 0, y: 0 };
+
+    const zoomedTransform = getActiveMapTransform(extentFeatures, width, height);
+    if (!zoomedTransform) return false;
+    const zoomedPoints = fitFeatures
+      .flatMap((feature) => feature.points)
+      .map((point) => projectFeaturePoint(point, zoomedTransform))
+      .filter(Boolean);
+    if (!zoomedPoints.length) return false;
+    const zoomedBounds = getPointBounds(zoomedPoints);
+    if (!zoomedBounds) return false;
+    state.pan = {
+      x: (width / 2) - ((zoomedBounds.minX + zoomedBounds.maxX) / 2),
+      y: (height / 2) - ((zoomedBounds.minY + zoomedBounds.maxY) / 2),
+    };
+    return true;
+  }
+
   function toggleLabelMenu() {
     if (isLabelMenuOpen()) {
       closeLabelMenu();
@@ -7713,12 +7765,22 @@
     updateMultiSelectButton();
     closeSelectionMenu();
     renderDetails();
+    const selectedFeatures = state.features.filter((feature) => nextSelectedIds.has(feature.uid));
+    const visibleSelectedFeatures = state.filteredFeatures.filter((feature) => nextSelectedIds.has(feature.uid));
+    const fittedSelection = visibleSelectedFeatures.length
+      ? fitFeaturesOnMap(visibleSelectedFeatures)
+      : false;
     drawMap();
     const action = state.selectionBuilder.mode === "add" ? "Added" : state.selectionBuilder.mode === "remove" ? "Removed" : "Selected";
     const matchDescription = state.selectionBuilder.assetClass === SELECTION_ALL_ASSETS
       ? `asset${matches.length === 1 ? "" : "s"} in the selected XML scope`
       : `matching asset${matches.length === 1 ? "" : "s"}`;
-    setStatus(`${action} ${matches.length} ${matchDescription}.`, false);
+    const fitMessage = fittedSelection
+      ? ` Map fitted to ${visibleSelectedFeatures.length} visible selected asset${visibleSelectedFeatures.length === 1 ? "" : "s"}.`
+      : selectedFeatures.length
+        ? " The selected assets are hidden by the current filters or layers, so the map view was unchanged."
+        : " No assets remain selected, so the map view was unchanged.";
+    setStatus(`${action} ${matches.length} ${matchDescription}.${fitMessage}`, false);
   }
 
   function selectOverlayFeature(selection) {
@@ -9351,7 +9413,48 @@
 
   function renderChecks() {
     const checks = buildChecks();
-    els.checkCount.textContent = `${checks.length} check${checks.length === 1 ? "" : "s"}`;
+    const warningCount = checks.filter((check) => check.tone === "warn").length;
+    const errorCount = checks.filter((check) => check.tone === "error").length;
+    const checksPanel = els.checkList?.closest(".viewer-status-checks");
+    const checksSummary = checksPanel?.querySelector(".viewer-status-checks__summary");
+    const checksIcon = checksSummary?.querySelector("i");
+    const hasLoadedValidation = Boolean(state.features.length || state.validationErrorResults.length);
+    const validationState = errorCount
+      ? "error"
+      : warningCount
+        ? "warning"
+        : hasLoadedValidation
+          ? "passed"
+          : "idle";
+    const issueParts = [
+      errorCount ? `${errorCount} error${errorCount === 1 ? "" : "s"}` : "",
+      warningCount ? `${warningCount} warning${warningCount === 1 ? "" : "s"}` : "",
+    ].filter(Boolean);
+    const validationSummary = issueParts.length
+      ? issueParts.join(" · ")
+      : validationState === "passed"
+        ? "Passed"
+        : `${checks.length} check${checks.length === 1 ? "" : "s"}`;
+    els.checkCount.textContent = validationSummary;
+    if (checksPanel) checksPanel.dataset.validationState = validationState;
+    if (checksSummary) {
+      checksSummary.setAttribute(
+        "aria-label",
+        `Validation: ${validationSummary}. ${checks.length} check${checks.length === 1 ? "" : "s"} in total.`,
+      );
+      checksSummary.title = `${checks.length} validation check${checks.length === 1 ? "" : "s"} in total`;
+    }
+    if (checksIcon) {
+      checksIcon.className = `fa-solid ${
+        validationState === "error"
+          ? "fa-circle-xmark"
+          : validationState === "warning"
+            ? "fa-triangle-exclamation"
+            : validationState === "passed"
+              ? "fa-circle-check"
+              : "fa-list-check"
+      }`;
+    }
     els.checkList.innerHTML = "";
     checks.forEach((check) => {
       const item = document.createElement("li");
@@ -9397,7 +9500,7 @@
     const checksPanel = els.checkList?.closest("details");
     if (checksPanel) checksPanel.open = false;
     if (els.details) els.details.scrollTop = 0;
-    setStatus(`Selected ${feature.id || feature.assetTag || "asset"} from the engineering consistency checks.`, false);
+    setStatus(`Selected ${feature.id || feature.assetTag || "asset"} from the validation checks.`, false);
   }
 
   function openEngineeringResolution(issueKey = "") {
@@ -14370,6 +14473,7 @@
     const singlePointLines = singlePointLineFeatures.length;
     const unknownLayers = state.features.filter((feature) => feature.layer === "Other").length;
     const geometryTopologyIssues = findGeometryTopologyIssues(state.features);
+    const geometryTopologyWarnings = geometryTopologyIssues.filter((issue) => issue.tone === "warn");
 
     checks.push({ tone: "good", icon: "fa-check", text: "XML parsed successfully in browser." });
     if (state.mergePreview?.active) {
@@ -14432,18 +14536,18 @@
     }
     geometryTopologyIssues.forEach((issue) => {
       checks.push({
-        tone: "warn",
-        icon: "fa-route",
+        tone: issue.tone || "warn",
+        icon: issue.icon || "fa-route",
         text: issue.message,
         featureUid: issue.feature.uid,
         engineeringRepairReason: issue.repairReason,
-        reviewLabel: "Edit geometry",
+        reviewLabel: issue.reviewLabel || "Edit geometry",
       });
     });
     if (unknownLayers) {
       checks.push({ tone: "muted", icon: "fa-circle-info", text: `${unknownLayers} assets could not be confidently layered.` });
     }
-    if (!missingIds && !singlePointLines && !geometryTopologyIssues.length) {
+    if (!missingIds && !singlePointLines && !geometryTopologyWarnings.length) {
       checks.push({ tone: "good", icon: "fa-check", text: "Asset IDs and geometry passed the quick checks." });
     }
     checks.push(...buildEngineeringConsistencyChecks());
@@ -14467,59 +14571,78 @@
   function findGeometryTopologyIssues(features) {
     const issues = [];
     features.forEach((feature) => {
-      if (feature.geometryKind !== "Polygon" || feature.points.length < 4) return;
+      const isPolygon = feature.geometryKind === "Polygon";
+      const isLine = feature.geometryKind === "Line";
+      if ((!isPolygon && !isLine) || feature.points.length < (isPolygon ? 4 : 3)) return;
       const points = feature.points;
-      const explicitlyClosed = feature.geometryKind === "Polygon" && samePoint(points[0], points[points.length - 1]);
+      const explicitlyClosed = isPolygon && samePoint(points[0], points[points.length - 1]);
       const effectivePoints = explicitlyClosed ? points.slice(0, -1) : points.slice();
-      if (effectivePoints.length < (feature.geometryKind === "Polygon" ? 3 : 2)) return;
+      if (effectivePoints.length < (isPolygon ? 3 : 2)) return;
 
-      const duplicateIndex = findConsecutiveDuplicateVertex(effectivePoints);
+      const duplicateIndex = findConsecutiveDuplicateVertex(effectivePoints, { requireMatchingZ: isLine });
       if (duplicateIndex >= 0) {
+        if (isLine) return;
         const point = effectivePoints[duplicateIndex];
         const vertexNumber = duplicateIndex + 1;
         issues.push({
           feature,
-          message: `${feature.id || feature.assetTag} has a repeated geometry vertex at vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating a zero-length segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+          tone: "warn",
+          message: `${feature.id || feature.assetTag} has a repeated geometry vertex at vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating a zero-length boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
           repairReason: `Delete repeated vertex ${vertexNumber}; the original uploaded XML will remain unchanged until the edited copy is downloaded.`,
         });
         return;
       }
 
-      const doubleBackIndex = findDoubleBackVertex(effectivePoints, feature.geometryKind === "Polygon");
+      const doubleBackIndex = findDoubleBackVertex(effectivePoints, {
+        closed: isPolygon,
+        requireMatchingZ: isLine,
+        allowCollinearReturn: isPolygon,
+      });
       if (doubleBackIndex < 0) return;
       const point = effectivePoints[doubleBackIndex];
       const vertexNumber = doubleBackIndex + 1;
-      issues.push({
-        feature,
-        message: `${feature.id || feature.assetTag} doubles back at geometry vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating an overlapping boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
-        repairReason: `Delete doubled-back vertex ${vertexNumber}; for a closed polygon the editor will keep the ring closed using the next valid boundary point.`,
-      });
+      issues.push(isLine
+        ? {
+            feature,
+            tone: "muted",
+            icon: "fa-location-dot",
+            message: `${feature.id || feature.assetTag} double-back position: line vertex ${vertexNumber} (${formatTopologyPoint(point)}). The following vertex returns to the previous X, Y and Z position. All XML vertices are preserved.`,
+            repairReason: "This is an informational line-geometry position. No vertex deletion is suggested.",
+            reviewLabel: "View geometry",
+          }
+        : {
+            feature,
+            tone: "warn",
+            message: `${feature.id || feature.assetTag} doubles back at geometry vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating an overlapping boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+            repairReason: `Delete doubled-back vertex ${vertexNumber}; for a closed polygon the editor will keep the ring closed using the next valid boundary point.`,
+          });
     });
     return issues;
   }
 
-  function findConsecutiveDuplicateVertex(points) {
+  function findConsecutiveDuplicateVertex(points, options = {}) {
     for (let index = 1; index < points.length; index += 1) {
-      if (samePoint(points[index - 1], points[index])) return index;
+      if (sameTopologyPoint(points[index - 1], points[index], options.requireMatchingZ)) return index;
     }
     return -1;
   }
 
-  function findDoubleBackVertex(points, closed) {
-    const startIndex = closed ? 0 : 1;
-    const endIndex = closed ? points.length : points.length - 1;
+  function findDoubleBackVertex(points, options = {}) {
+    const startIndex = options.closed ? 0 : 1;
+    const endIndex = options.closed ? points.length : points.length - 1;
     for (let index = startIndex; index < endIndex; index += 1) {
       const previous = points[(index - 1 + points.length) % points.length];
       const current = points[index];
       const next = points[(index + 1) % points.length];
-      if (isDoubleBackTurn(previous, current, next)) return index;
+      if (isDoubleBackTurn(previous, current, next, options)) return index;
     }
     return -1;
   }
 
-  function isDoubleBackTurn(previous, current, next) {
+  function isDoubleBackTurn(previous, current, next, options = {}) {
     if (!previous || !current || !next || samePoint(previous, current) || samePoint(current, next)) return false;
-    if (samePoint(previous, next)) return true;
+    if (sameTopologyPoint(previous, next, options.requireMatchingZ)) return true;
+    if (!options.allowCollinearReturn) return false;
     const incomingX = current.x - previous.x;
     const incomingY = current.y - previous.y;
     const outgoingX = next.x - current.x;
@@ -14530,6 +14653,17 @@
     const normalizedCross = Math.abs((incomingX * outgoingY) - (incomingY * outgoingX)) / (incomingLength * outgoingLength);
     const normalizedDot = ((incomingX * outgoingX) + (incomingY * outgoingY)) / (incomingLength * outgoingLength);
     return normalizedCross <= 1e-6 && normalizedDot <= -0.999999;
+  }
+
+  function sameTopologyPoint(a, b, requireMatchingZ = false) {
+    if (!samePoint(a, b)) return false;
+    if (!requireMatchingZ) return true;
+    const firstZ = Number(a?.z);
+    const secondZ = Number(b?.z);
+    const firstHasZ = Number.isFinite(firstZ);
+    const secondHasZ = Number.isFinite(secondZ);
+    if (!firstHasZ || !secondHasZ) return !firstHasZ && !secondHasZ;
+    return round(firstZ) === round(secondZ);
   }
 
   function formatTopologyPoint(point) {

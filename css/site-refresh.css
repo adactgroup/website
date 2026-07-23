@@ -2445,6 +2445,36 @@ h3,
     background: #ffffff;
 }
 
+.viewer-status-checks[data-validation-state="passed"] .viewer-status-checks__summary {
+    border-color: #9fd6bf;
+    background: #f2fbf7;
+}
+
+.viewer-status-checks[data-validation-state="passed"] .viewer-status-checks__summary i,
+.viewer-status-checks[data-validation-state="passed"] .viewer-status-checks__summary strong {
+    color: #167451;
+}
+
+.viewer-status-checks[data-validation-state="warning"] .viewer-status-checks__summary {
+    border-color: #e2b85c;
+    background: #fff8e6;
+}
+
+.viewer-status-checks[data-validation-state="warning"] .viewer-status-checks__summary i,
+.viewer-status-checks[data-validation-state="warning"] .viewer-status-checks__summary strong {
+    color: #8a5a00;
+}
+
+.viewer-status-checks[data-validation-state="error"] .viewer-status-checks__summary {
+    border-color: #e0a09a;
+    background: #fff3f1;
+}
+
+.viewer-status-checks[data-validation-state="error"] .viewer-status-checks__summary i,
+.viewer-status-checks[data-validation-state="error"] .viewer-status-checks__summary strong {
+    color: #b23b31;
+}
+
 .viewer-status-download {
     display: inline-flex;
     flex: 0 0 auto;
