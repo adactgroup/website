@@ -115,6 +115,7 @@ async function initializeFirebase() {
     return firebaseServices;
   })().catch((error) => {
     console.warn("ADACT project tracking is unavailable.", error);
+    document.documentElement.dataset.projectTrackingError = cleanString(error?.code || error?.message || "unknown", 160);
     setTrackingStatus("unavailable");
     return null;
   });
