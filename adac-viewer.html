@@ -148,7 +148,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260723e" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260727a" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -322,6 +322,27 @@
                         <strong>Off</strong>
                         <small>Hide asset labels</small>
                       </button>
+                    </span>
+                  </span>
+                </span>
+                <span class="viewer-symbol-tool">
+                  <button type="button" data-action="toggle-symbol-menu" data-role="symbol-button" title="Symbol size: 100%" aria-label="Symbol size: 100%" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fa-solid fa-circle-dot" aria-hidden="true"></i>
+                  </button>
+                  <span class="viewer-symbol-menu" data-role="symbol-menu" role="dialog" aria-label="Symbol size" hidden>
+                    <span class="viewer-symbol-menu__panel">
+                      <span class="viewer-symbol-menu__heading">
+                        <strong>Symbol size</strong>
+                        <span data-role="symbol-scale-value">100%</span>
+                      </span>
+                      <input type="range" min="50" max="200" step="10" value="100" data-role="symbol-scale-control" aria-label="Symbol size percentage" />
+                      <span class="viewer-symbol-menu__footer">
+                        <small>50%</small>
+                        <button type="button" data-action="reset-symbol-scale" title="Reset symbol size" aria-label="Reset symbol size">
+                          <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                        </button>
+                        <small>200%</small>
+                      </span>
                     </span>
                   </span>
                 </span>
@@ -748,7 +769,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260723e"></script>
+  <script src="js/adac-viewer.js?v=20260727a"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
   <script src="js/firebase-config.js?v=20260723e"></script>
   <script src="js/adact-usage-tracking.js?v=20260723f"></script>

@@ -209,6 +209,9 @@
   const mapMinZoom = 0.35;
   const mapMaxZoom = 64;
   const mapMaxTileZoom = 20;
+  const symbolScaleMin = 0.5;
+  const symbolScaleMax = 2;
+  const symbolScaleStorageKey = "adact-viewer-symbol-scale";
   const mapOverlayReferenceStyle = {
     strokeAlpha: 0.36,
     pointStrokeAlpha: 0.48,
@@ -1065,6 +1068,7 @@
     coordinateZone: 56,
     zoom: 1,
     pan: { x: 0, y: 0 },
+    symbolScale: getStoredSymbolScale(),
     isPanning: false,
     isPointerDown: false,
     hasDraggedMap: false,
@@ -1168,6 +1172,10 @@
     sampleMenu: root.querySelector("[data-role='sample-menu']"),
     labelButton: root.querySelector("[data-role='label-button']"),
     labelMenu: root.querySelector("[data-role='label-menu']"),
+    symbolButton: root.querySelector("[data-role='symbol-button']"),
+    symbolMenu: root.querySelector("[data-role='symbol-menu']"),
+    symbolScaleControl: root.querySelector("[data-role='symbol-scale-control']"),
+    symbolScaleValue: root.querySelector("[data-role='symbol-scale-value']"),
     selectionButton: root.querySelector("[data-role='selection-button']"),
     selectionMenu: root.querySelector("[data-role='selection-menu']"),
     selectionMenuContent: root.querySelector("[data-role='selection-menu-content']"),
@@ -1238,6 +1246,7 @@
   let dxfWorker = null;
   let dxfRequestSequence = 0;
   let shellResizeObserver = null;
+  let symbolScaleDrawFrame = 0;
   const dxfWorkerRequests = new Map();
 
   function init() {
@@ -1272,6 +1281,7 @@
     root.addEventListener("click", handleClick);
     root.addEventListener("change", handleChange);
     root.addEventListener("input", handleSelectionBuilderInput);
+    root.addEventListener("input", handleSymbolScaleInput);
     if (els.termsButton) {
       els.termsButton.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1400,6 +1410,9 @@
     }
     if (isLabelMenuOpen() && !event.target.closest("[data-role='label-menu']") && !event.target.closest("[data-role='label-button']")) {
       closeLabelMenu();
+    }
+    if (isSymbolMenuOpen() && !event.target.closest("[data-role='symbol-menu']") && !event.target.closest("[data-role='symbol-button']")) {
+      closeSymbolMenu();
     }
     if (isMeasurementMenuOpen() && !event.target.closest("[data-role='measurement-menu']") && !event.target.closest("[data-role='measurement-button']")) {
       closeMeasurementMenu();
@@ -1532,6 +1545,12 @@
     renderSelectionBuilderResult();
   }
 
+  function handleSymbolScaleInput(event) {
+    const control = event.target.closest?.("[data-role='symbol-scale-control']");
+    if (!control) return;
+    setSymbolScale(Number(control.value) / 100);
+  }
+
   function handleProjectDetailsToggle(event) {
     const geometryEditor = event.target.closest?.("[data-role='geometry-editor']");
     if (geometryEditor) {
@@ -1555,6 +1574,7 @@
     "apply-transform-xml": "position_shift",
     "set-label-simple": "simple_labels",
     "set-label-detailed": "as_constructed_labels",
+    "toggle-symbol-menu": "symbol_scale",
     "set-measure-distance": "distance_measurement",
     "set-measure-area": "area_measurement",
     "preview-repaired-xml": "suggested_repair_preview",
@@ -1650,6 +1670,10 @@
       setLabelMode("detailed");
     } else if (action === "set-label-off") {
       setLabelMode("off");
+    } else if (action === "toggle-symbol-menu") {
+      toggleSymbolMenu();
+    } else if (action === "reset-symbol-scale") {
+      setSymbolScale(1);
     } else if (action === "toggle-measure-menu") {
       toggleMeasurementMenu();
     } else if (action === "set-measure-distance") {
@@ -1795,6 +1819,7 @@
       isReportExportMenuOpen()
       || isSampleMenuOpen()
       || isLabelMenuOpen()
+      || isSymbolMenuOpen()
       || isMeasurementMenuOpen()
       || isSelectionMenuOpen()
       || isMergeXmlModalOpen()
@@ -1900,6 +1925,7 @@
     if (except !== "report") closeReportExportMenu();
     if (except !== "sample") closeSampleMenu();
     if (except !== "label") closeLabelMenu();
+    if (except !== "symbol") closeSymbolMenu();
     if (except !== "measurement") closeMeasurementMenu();
     if (except !== "selection") closeSelectionMenu();
     if (except !== "merge") closeMergeXmlModal();
@@ -4393,6 +4419,80 @@
         const mode = button.dataset.action.replace("set-label-", "");
         button.classList.toggle("is-active", mode === state.labelMode);
       });
+    }
+  }
+
+  function getStoredSymbolScale() {
+    try {
+      return normalizeSymbolScale(window.localStorage.getItem(symbolScaleStorageKey));
+    } catch {
+      return 1;
+    }
+  }
+
+  function normalizeSymbolScale(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0
+      ? clamp(numeric, symbolScaleMin, symbolScaleMax)
+      : 1;
+  }
+
+  function persistSymbolScale() {
+    try {
+      window.localStorage.setItem(symbolScaleStorageKey, String(state.symbolScale));
+    } catch {
+      // The live setting still works when browser storage is unavailable.
+    }
+  }
+
+  function toggleSymbolMenu() {
+    if (isSymbolMenuOpen()) {
+      closeSymbolMenu();
+    } else {
+      openSymbolMenu();
+    }
+  }
+
+  function openSymbolMenu() {
+    if (!els.symbolMenu) return;
+    closeTransientUi("symbol");
+    els.symbolMenu.hidden = false;
+    els.symbolButton?.setAttribute("aria-expanded", "true");
+  }
+
+  function closeSymbolMenu() {
+    if (!els.symbolMenu) return;
+    els.symbolMenu.hidden = true;
+    els.symbolButton?.setAttribute("aria-expanded", "false");
+  }
+
+  function isSymbolMenuOpen() {
+    return Boolean(els.symbolMenu && !els.symbolMenu.hidden);
+  }
+
+  function setSymbolScale(value) {
+    state.symbolScale = normalizeSymbolScale(value);
+    persistSymbolScale();
+    updateSymbolScaleUi();
+    if (symbolScaleDrawFrame) return;
+    symbolScaleDrawFrame = window.requestAnimationFrame(() => {
+      symbolScaleDrawFrame = 0;
+      drawMap();
+    });
+  }
+
+  function updateSymbolScaleUi() {
+    const percent = Math.round(normalizeSymbolScale(state.symbolScale) * 100);
+    if (els.symbolScaleControl && Number(els.symbolScaleControl.value) !== percent) {
+      els.symbolScaleControl.value = String(percent);
+    }
+    if (els.symbolScaleValue) els.symbolScaleValue.textContent = `${percent}%`;
+    if (els.symbolButton) {
+      const label = `Symbol size: ${percent}%`;
+      els.symbolButton.classList.toggle("is-active", percent !== 100);
+      els.symbolButton.setAttribute("title", label);
+      els.symbolButton.setAttribute("aria-label", label);
+      els.symbolButton.setAttribute("aria-pressed", String(percent !== 100));
     }
   }
 
@@ -15044,6 +15144,7 @@
   function drawMap() {
     updateMapModeButtons();
     updateLabelModeUi();
+    updateSymbolScaleUi();
 
     const width = els.canvas.clientWidth || els.canvas.width;
     const height = els.canvas.clientHeight || els.canvas.height;
@@ -15566,12 +15667,34 @@
     const obstacles = state.filteredFeatures
       .filter((feature) => getFeatureLabelCollisionGroup(feature) === collisionGroup)
       .map((feature) => {
-        const points = getProjectedFeatureScreenPoints(feature, transform);
+        const pointPairs = getProjectedFeatureScreenPairs(feature, transform);
+        const points = pointPairs.map((pair) => pair.screenPoint);
         if (!points.length) return null;
+        let bounds = getScreenPointRectBounds(points);
+        if (feature.geometryKind === "Point") {
+          const style = getPlanStyleForFeature(feature);
+          const symbolRects = pointPairs.map(({ sourcePoint, screenPoint }) => {
+            const size = getPointHitSymbolSize(feature, style, transform, sourcePoint);
+            const radiusX = Math.max(3, Number(size?.radiusX) || 0);
+            const radiusY = Math.max(3, Number(size?.radiusY) || radiusX);
+            return {
+              x: screenPoint.x - radiusX,
+              y: screenPoint.y - radiusY,
+              width: radiusX * 2,
+              height: radiusY * 2,
+            };
+          });
+          bounds = {
+            x: Math.min(...symbolRects.map((rect) => rect.x)),
+            y: Math.min(...symbolRects.map((rect) => rect.y)),
+            width: Math.max(...symbolRects.map((rect) => rect.x + rect.width)) - Math.min(...symbolRects.map((rect) => rect.x)),
+            height: Math.max(...symbolRects.map((rect) => rect.y + rect.height)) - Math.min(...symbolRects.map((rect) => rect.y)),
+          };
+        }
         return {
           kind: feature.geometryKind,
           points,
-          bounds: getScreenPointRectBounds(points),
+          bounds,
         };
       })
       .filter(Boolean);
@@ -15643,7 +15766,7 @@
     obstacles.forEach((obstacle) => {
       if (!rectsOverlap(padded, obstacle.bounds)) return;
       if (obstacle.kind === "Point") {
-        if (obstacle.points.some((point) => rectContainsPoint(padded, point))) score += 45000;
+        score += 45000;
         return;
       }
       if (pathIntersectsRect(obstacle.points, padded, obstacle.kind === "Polygon")) {
@@ -17676,9 +17799,9 @@
   }
 
   function getPlanPointRadiusPx(style, selected) {
-    const compact = style.key === "sewer_fitting" || style.key === "stormwater_end_structure";
-    const symbolScale = compact ? 0.55 : 1;
-    const base = Math.max(3, (style.pointRadiusMm || 1) * 4.6 * symbolScale);
+    const compact = style?.key === "sewer_fitting" || style?.key === "stormwater_end_structure";
+    const compactScale = compact ? 0.55 : 1;
+    const base = Math.max(2, Math.max(3, (style?.pointRadiusMm || 1) * 4.6 * compactScale) * normalizeSymbolScale(state.symbolScale));
     return selected ? base + 1.6 : base;
   }
 
@@ -19758,7 +19881,9 @@
       .sort((a, b) => getOverlayDrawOrder(b) - getOverlayDrawOrder(a))
       .forEach((overlay, overlayIndex) => {
         overlay.features.forEach((feature, featureIndex) => {
-          const distance = getOverlayHitDistance(point, feature.geometry, transform, overlay.mode);
+          const style = getOverlayFeatureStyle(overlay, feature.properties || {});
+          const pointRadius = getPlanPointRadiusPx(style.planStyle, false) * 0.82;
+          const distance = getOverlayHitDistance(point, feature.geometry, transform, overlay.mode, pointRadius);
           if (distance === null) return;
           candidates.push({
             overlay,
@@ -19774,13 +19899,13 @@
     return candidates[0] ? { overlay: candidates[0].overlay, feature: candidates[0].feature } : null;
   }
 
-  function getOverlayHitDistance(point, geometry, transform, mode) {
+  function getOverlayHitDistance(point, geometry, transform, mode, pointRadius = 0) {
     const pointCoords = getGeometryPointCoords(geometry)
       .map((coord) => projectLngLat(coord[0], coord[1], transform))
       .filter(Boolean);
     if (pointCoords.length) {
       const closestPoint = Math.min(...pointCoords.map((item) => distanceBetween(point, item)));
-      return closestPoint <= 12 ? closestPoint : null;
+      return closestPoint <= Math.max(12, pointRadius + 3) ? closestPoint : null;
     }
 
     const paths = getGeometryPaths(geometry);
@@ -19828,7 +19953,6 @@
   function getPointHitSymbolSize(feature, style, transform, sourcePoint) {
     const realWorldSize = getRealWorldPointSymbolSize(feature, style, transform, sourcePoint, false);
     if (realWorldSize) return realWorldSize;
-    if (style?.key !== "stormwater_pit" && style?.key !== "sewer_node") return null;
     const radius = getPlanPointRadiusPx(style, false);
     return { radiusX: radius, radiusY: radius };
   }
@@ -20233,6 +20357,7 @@
     els.canvas.dataset.zoom = state.zoom.toFixed(3);
     els.canvas.dataset.panX = state.pan.x.toFixed(1);
     els.canvas.dataset.panY = state.pan.y.toFixed(1);
+    els.canvas.dataset.symbolScale = normalizeSymbolScale(state.symbolScale).toFixed(2);
     els.canvas.dataset.measurementMode = state.measurement.mode;
     els.canvas.classList.toggle("is-measuring", isMeasurementActive());
     els.canvas.classList.toggle("is-dxf-snap-picking", Boolean(state.dxfSnapSelection));

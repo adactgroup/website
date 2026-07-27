@@ -3344,6 +3344,7 @@ h3,
 }
 
 .viewer-label-tool,
+.viewer-symbol-tool,
 .viewer-measure-tool,
 .viewer-selection-tool,
 .viewer-sample-tool {
@@ -3377,6 +3378,7 @@ h3,
 }
 
 .viewer-label-menu,
+.viewer-symbol-menu,
 .viewer-measure-menu {
     position: absolute;
     top: calc(100% + 8px);
@@ -3386,6 +3388,7 @@ h3,
 }
 
 .viewer-label-menu[hidden],
+.viewer-symbol-menu[hidden],
 .viewer-measure-menu[hidden],
 .viewer-selection-menu[hidden] {
     display: none;
@@ -3583,6 +3586,7 @@ h3,
 }
 
 .viewer-label-menu__panel,
+.viewer-symbol-menu__panel,
 .viewer-measure-menu__panel {
     display: grid;
     gap: 7px;
@@ -3591,6 +3595,67 @@ h3,
     border-radius: 8px;
     background: #ffffff;
     box-shadow: 0 18px 42px rgba(11, 31, 58, 0.16);
+}
+
+.viewer-symbol-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 46;
+    width: min(230px, calc(100vw - 32px));
+}
+
+.viewer-symbol-menu__panel {
+    gap: 11px;
+    padding: 12px;
+}
+
+.viewer-symbol-menu__heading,
+.viewer-symbol-menu__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.viewer-symbol-menu__heading strong {
+    color: var(--mockup-ink);
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.viewer-symbol-menu__heading span {
+    color: var(--mockup-blue);
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.viewer-symbol-menu input[type="range"] {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--mockup-blue);
+    cursor: pointer;
+}
+
+.viewer-symbol-menu__footer small {
+    color: var(--mockup-body);
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+.viewer-tool-buttons .viewer-symbol-menu__footer button {
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+    border-color: var(--mockup-line);
+    background: #f8fbfe;
+    color: var(--mockup-ink);
+}
+
+.viewer-tool-buttons .viewer-symbol-menu__footer button:hover {
+    transform: none;
+    border-color: rgba(11, 31, 58, 0.28);
+    background: #ffffff;
 }
 
 .viewer-tool-buttons .viewer-label-menu button,
