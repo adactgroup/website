@@ -11772,24 +11772,23 @@
       return;
     }
 
-    let removedCount = 0;
+    const resolvedTargets = [];
     candidateRecords.forEach((candidate) => {
-      candidate.features
-        .slice()
-        .sort((a, b) => parseXmlElementLocator(b.xmlLocator).length - parseXmlElementLocator(a.xmlLocator).length)
-        .forEach((feature) => {
-          const target = findXmlElementByLocator(candidate.doc, feature.xmlLocator);
-          if (!target?.parentNode) return;
-          target.parentNode.removeChild(target);
-          removedCount += 1;
-        });
+      candidate.features.forEach((feature) => {
+        const target = findXmlElementByLocator(candidate.doc, feature.xmlLocator);
+        if (target?.parentNode) resolvedTargets.push({ feature, target });
+      });
     });
-    if (removedCount !== features.length) {
+    const uniqueTargets = new Set(resolvedTargets.map(({ target }) => target));
+    if (resolvedTargets.length !== features.length || uniqueTargets.size !== features.length) {
       state.deleteConfirmation = null;
       state.editorFeedback = { bulk: true, tone: "error", message: "One or more selected assets could not be located. No assets were removed." };
       renderDetails();
       return;
     }
+    resolvedTargets
+      .sort((a, b) => parseXmlElementLocator(b.feature.xmlLocator).length - parseXmlElementLocator(a.feature.xmlLocator).length)
+      .forEach(({ target }) => target.parentNode.removeChild(target));
 
     const revision = ++state.editorRevision;
     state.editorBusy = true;
