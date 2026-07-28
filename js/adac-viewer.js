@@ -2743,7 +2743,7 @@
     const record = file ? state.documents.get(file.id) : null;
     if (!record?.workingXmlText) return;
     const fileName = state.mergePreview.fileName || buildMergedXmlFileName(record.name);
-    downloadBlob(new Blob([record.workingXmlText], { type: "application/xml;charset=utf-8" }), fileName);
+    downloadBlob(new Blob([ensureXmlDeclarationLineBreak(record.workingXmlText)], { type: "application/xml;charset=utf-8" }), fileName);
     setStatus(`Downloaded ${fileName} from the current merged working copy.`, false);
   }
 
@@ -5278,7 +5278,14 @@
   }
 
   function serializeXmlDocument(doc) {
-    return doc ? new XMLSerializer().serializeToString(doc) : "";
+    return doc ? ensureXmlDeclarationLineBreak(new XMLSerializer().serializeToString(doc)) : "";
+  }
+
+  function ensureXmlDeclarationLineBreak(xmlText) {
+    return String(xmlText || "").replace(
+      /^(\s*<\?xml\b[\s\S]*?\?>)[ \t]*(?=<)/i,
+      "$1\n",
+    );
   }
 
   function buildFeatureUid(fileId, feature, fallbackIndex = 0) {
@@ -5526,7 +5533,7 @@
       setStatus("No repaired XML is available to download yet.", true);
       return;
     }
-    const blob = new Blob([preview.repairedXmlText], { type: "application/xml;charset=utf-8" });
+    const blob = new Blob([ensureXmlDeclarationLineBreak(preview.repairedXmlText)], { type: "application/xml;charset=utf-8" });
     downloadBlob(blob, preview.repairedFileName || buildRepairedXmlFileName(preview.originalFileName));
     setStatus("Downloaded the viewer-repaired XML copy. The original upload was not changed.", false);
   }
@@ -13654,7 +13661,7 @@
   function downloadEditedXml() {
     const context = getSelectedEditorContext();
     if (!context?.record?.workingXmlText) return;
-    const blob = new Blob([context.record.workingXmlText], { type: "application/xml;charset=utf-8" });
+    const blob = new Blob([ensureXmlDeclarationLineBreak(context.record.workingXmlText)], { type: "application/xml;charset=utf-8" });
     downloadBlob(blob, buildEditedXmlFileName(context.record.name));
     setStatus(`Downloaded ${buildEditedXmlFileName(context.record.name)} from the current working copy.`, false);
   }
