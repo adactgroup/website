@@ -19,6 +19,7 @@
   const reportRegistrationLine = "ABN 62 700 080 155 | ACN 700 080 155";
   const reportContactEmail = "projects@adact.com.au";
   const reportLogoPath = "img/LOGO-Black-Transparent.png";
+  const xmlExportExtentBufferM = 10;
   let reportLogoImagePromise = null;
   let xmlValidatorPromise = null;
   const schemaBundleCache = new Map();
@@ -2743,8 +2744,11 @@
     const record = file ? state.documents.get(file.id) : null;
     if (!record?.workingXmlText) return;
     const fileName = state.mergePreview.fileName || buildMergedXmlFileName(record.name);
-    downloadBlob(new Blob([ensureXmlDeclarationLineBreak(record.workingXmlText)], { type: "application/xml;charset=utf-8" }), fileName);
-    setStatus(`Downloaded ${fileName} from the current merged working copy.`, false);
+    downloadPreparedXml(
+      record.workingXmlText,
+      fileName,
+      `Downloaded ${fileName} from the current merged working copy.`,
+    );
   }
 
   function buildMergedXmlFileName(fileName) {
@@ -5288,6 +5292,129 @@
     );
   }
 
+  function prepareXmlDownload(xmlText, exportedAt = new Date()) {
+    const doc = parseXmlDocument(xmlText);
+    if (!doc) {
+      return {
+        ok: false,
+        message: "The XML could not be prepared for download because it is not well-formed.",
+      };
+    }
+    const duplicateAdacIds = findDuplicateAdacIds(doc);
+    if (duplicateAdacIds.length) {
+      return {
+        ok: false,
+        message: formatDuplicateAdacIdExportMessage(duplicateAdacIds),
+      };
+    }
+    updateXmlDownloadDrawingExtents(doc, xmlExportExtentBufferM);
+    const projectElement = firstElementByName(doc.documentElement, "Project");
+    const exportDateTime = firstDirectChild(projectElement, "ExportDateTime");
+    if (exportDateTime) exportDateTime.textContent = formatUtcExportDateTime(exportedAt);
+    return {
+      ok: true,
+      xmlText: serializeXmlDocument(doc),
+    };
+  }
+
+  function findDuplicateAdacIds(doc) {
+    const projectData = firstElementByName(doc?.documentElement, "ProjectData");
+    if (!projectData) return [];
+    const ids = new Map();
+
+    Array.from(projectData.querySelectorAll("*")).forEach((assetElement) => {
+      const idElement = firstDirectChild(assetElement, "ADACId");
+      const id = String(idElement?.textContent || "").trim();
+      if (!id) return;
+      const assetType = cleanName(assetElement.tagName);
+      const key = `${assetType.toLocaleLowerCase()}\u0000${id.toLocaleLowerCase()}`;
+      const entry = ids.get(key) || {
+        id,
+        count: 0,
+        assetTypes: new Set(),
+      };
+      entry.count += 1;
+      entry.assetTypes.add(assetType);
+      ids.set(key, entry);
+    });
+
+    return Array.from(ids.values())
+      .filter((entry) => entry.count > 1)
+      .map((entry) => ({
+        id: entry.id,
+        count: entry.count,
+        assetTypes: Array.from(entry.assetTypes).sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: "base" }));
+  }
+
+  function formatDuplicateAdacIdExportMessage(duplicates) {
+    const visible = duplicates.slice(0, 5).map((entry) => {
+      const typeText = entry.assetTypes.length === 1
+        ? ` ${formatDetailLabel(entry.assetTypes[0])} assets`
+        : " assets";
+      return `${entry.id} (${entry.count}${typeText})`;
+    });
+    const remaining = duplicates.length > visible.length
+      ? `, and ${duplicates.length - visible.length} more`
+      : "";
+    const subject = duplicates.length === 1 ? "A duplicate ADAC ID was" : `${duplicates.length} duplicate ADAC IDs were`;
+    return `Export blocked: ${subject} found within the same asset type: ${visible.join(", ")}${remaining}. Rename or delete the duplicate assets before downloading.`;
+  }
+
+  function downloadPreparedXml(xmlText, fileName, successMessage) {
+    const prepared = prepareXmlDownload(xmlText);
+    if (!prepared.ok) {
+      setStatus(prepared.message, true);
+      return false;
+    }
+    downloadBlob(new Blob([prepared.xmlText], { type: "application/xml;charset=utf-8" }), fileName);
+    setStatus(successMessage, false);
+    return true;
+  }
+
+  function updateXmlDownloadDrawingExtents(doc, bufferM = 0) {
+    const coordinateGroups = getGeometryCoordinateGroups(doc?.documentElement);
+    const points = coordinateGroups
+      .map((group) => {
+        const xText = String(group.elements.x?.textContent || "").trim();
+        const yText = String(group.elements.y?.textContent || "").trim();
+        const zText = String(group.elements.z?.textContent || "").trim();
+        return {
+          x: xText ? Number(xText) : NaN,
+          y: yText ? Number(yText) : NaN,
+          z: zText ? Number(zText) : NaN,
+          hasZ: Boolean(zText) && Number.isFinite(Number(zText)),
+        };
+      })
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    if (!points.length) return;
+
+    const projectElement = firstElementByName(doc.documentElement, "Project");
+    const extents = firstDirectChild(projectElement, "DrawingExtents");
+    const southWest = firstDirectChild(extents, "SouthWest");
+    const northEast = firstDirectChild(extents, "NorthEast");
+    if (!southWest || !northEast) return;
+
+    const buffer = Number.isFinite(Number(bufferM)) ? Math.max(0, Number(bufferM)) : 0;
+    setMergeDirectChildText(southWest, "X", Math.min(...points.map((point) => point.x)) - buffer);
+    setMergeDirectChildText(southWest, "Y", Math.min(...points.map((point) => point.y)) - buffer);
+    setMergeDirectChildText(northEast, "X", Math.max(...points.map((point) => point.x)) + buffer);
+    setMergeDirectChildText(northEast, "Y", Math.max(...points.map((point) => point.y)) + buffer);
+
+    const zValues = points.filter((point) => point.hasZ).map((point) => point.z);
+    if (zValues.length) {
+      setMergeDirectChildText(southWest, "Z", Math.min(...zValues));
+      setMergeDirectChildText(northEast, "Z", Math.max(...zValues));
+    }
+  }
+
+  function formatUtcExportDateTime(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+  }
+
   function buildFeatureUid(fileId, feature, fallbackIndex = 0) {
     return `${fileId}:${feature.xmlLocator || `${fallbackIndex}:${feature.id}`}`;
   }
@@ -5533,9 +5660,11 @@
       setStatus("No repaired XML is available to download yet.", true);
       return;
     }
-    const blob = new Blob([ensureXmlDeclarationLineBreak(preview.repairedXmlText)], { type: "application/xml;charset=utf-8" });
-    downloadBlob(blob, preview.repairedFileName || buildRepairedXmlFileName(preview.originalFileName));
-    setStatus("Downloaded the viewer-repaired XML copy. The original upload was not changed.", false);
+    downloadPreparedXml(
+      preview.repairedXmlText,
+      preview.repairedFileName || buildRepairedXmlFileName(preview.originalFileName),
+      "Downloaded the viewer-repaired XML copy. The original upload was not changed.",
+    );
   }
 
   async function previewSelectedValidationFixes() {
@@ -13661,9 +13790,12 @@
   function downloadEditedXml() {
     const context = getSelectedEditorContext();
     if (!context?.record?.workingXmlText) return;
-    const blob = new Blob([ensureXmlDeclarationLineBreak(context.record.workingXmlText)], { type: "application/xml;charset=utf-8" });
-    downloadBlob(blob, buildEditedXmlFileName(context.record.name));
-    setStatus(`Downloaded ${buildEditedXmlFileName(context.record.name)} from the current working copy.`, false);
+    const fileName = buildEditedXmlFileName(context.record.name);
+    downloadPreparedXml(
+      context.record.workingXmlText,
+      fileName,
+      `Downloaded ${fileName} from the current working copy.`,
+    );
   }
 
   function renderEditedXmlDownloadButton() {
