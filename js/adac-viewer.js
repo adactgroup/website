@@ -20841,8 +20841,10 @@
     if (points.length <= 1) return "Point";
     if (isLinearSurfaceFeature(node, context)) return "Line";
     if (/^cadastre\/landparcels\/roadreserve/i.test(String(context.assetPath || "")) && points.length > 2) return "Polygon";
-    const hasPolygon = Array.from(node.querySelectorAll("*")).some((item) => cleanName(item.tagName).toLowerCase() === "polygon");
+    const geometryTags = new Set(Array.from(node.querySelectorAll("*")).map((item) => cleanName(item.tagName).toLowerCase()));
+    const hasPolygon = geometryTags.has("polygon");
     if (hasPolygon) return "Polygon";
+    if (geometryTags.has("polyline")) return "Line";
     if (/polygon|area|surface|pavement|footpath|island|reserve/i.test(`${node.tagName} ${getFirstValue(node, ["Type", "AssetType", "Name"])}`)) {
       return "Polygon";
     }
