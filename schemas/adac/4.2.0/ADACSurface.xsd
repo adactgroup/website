@@ -1,0 +1,204 @@
+<?xml version="1.0"?>
+<!-- version 4.0.0 edited by Ian Read 24 Feb 2011 (RCC) -->
+<!-- version 4.0.1 edited by Ian Read 25 Aug 2011 (RCC) -->
+<!-- version 4.1.0 edited by Ian Read 6 Aug 2012 (RCC) -->
+<!-- version 4.1.0 edited by Ian Read 4 Jan 2013 (RCC) -->
+<!-- version 4.2.0 edited by Martin Dore' Feb 2015(LCC) change to version number only -->
+
+
+<xs:schema version="4.2.0" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.adac.com.au" targetNamespace="http://www.adac.com.au" elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:annotation>
+    <xs:documentation>The ADAC Surface Schema constrains the data structure for all surface elevation features within an ADAC Project</xs:documentation>
+  </xs:annotation>
+  <!-- INCLUDES -->
+  <!-- Enumerated Types -->
+  <xs:include schemaLocation="./ADACEnumeratedTypes.xsd">
+    <xs:annotation>
+      <xs:documentation>Uses ADAC enumerated SimpleType definitions</xs:documentation>
+    </xs:annotation>
+  </xs:include>
+  <!-- Global Types -->
+  <xs:include schemaLocation ="./ADACGlobalTypes.xsd">
+    <xs:annotation>
+      <xs:documentation>Uses ADAC globally referenced type definitions</xs:documentation>
+    </xs:annotation>
+  </xs:include>
+  <!-- Geometry -->
+  <xs:include schemaLocation ="./ADACGeometry.xsd">
+    <xs:annotation>
+      <xs:documentation>Uses ADAC geometry definitions</xs:documentation>
+    </xs:annotation>
+  </xs:include>
+  <!-- **************************************************************************************** -->
+  <!-- SURFACE - Contains the specification for surface elevation information                   -->
+  <!-- **************************************************************************************** -->
+  <xs:complexType name="objectModelSurface">
+    <xs:annotation>
+      <xs:documentation>Data structure constraining information relating to surface level features.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence minOccurs="1" maxOccurs="1">
+      <xs:element name="SpotHeights" minOccurs="1" maxOccurs="1" nillable="false">
+        <xs:annotation>
+          <xs:documentation>Represents the feature class of surface elevation spot heights</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="SpotHeight" type="Feature_Surface_SpotHeight" minOccurs="0" maxOccurs="unbounded" nillable="false">
+              <xs:annotation>
+                <xs:documentation>Represents a single spot height feature.</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Contours" minOccurs="1" maxOccurs="1" nillable="false">
+        <xs:annotation>
+          <xs:documentation>Represents the feature class of surface elevation contours</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="Contour" type="Feature_Surface_Contour" minOccurs="0" maxOccurs="unbounded" nillable="false">
+              <xs:annotation>
+                <xs:documentation>Represents a single contour feature.</xs:documentation>
+              </xs:annotation>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    </xs:sequence>
+  </xs:complexType>
+  <!-- **************************************************************************************** -->
+  <!-- FEATURES  - Surface                                                                      -->
+  <!-- **************************************************************************************** -->
+  <!-- FEATURE SURFACE CONTOUR -->
+  <xs:complexType name="Feature_Surface_Contour" abstract="false">
+    <xs:annotation>
+      <xs:documentation>Represents a single contour feature.</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="object_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Status" type="surface_elevation_status" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>The status of this contour, whether the surface level is existing or proposed</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Elevation_m" type="xs:float" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>The elevation of this contour relative to the vertical datum for this project</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_linear_multipath_simple" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>polyline geometry representing the feature in coordinate space.  If 2D geometry is defined then the elevation is assumed to be that stated in Elevation_m.  If 3D geometry is used, it is the data author's responsibility to ensure that the Z values agree with the stated elevation in Elevation_m</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <!-- FEATURE SURFACE SPOTHEIGHT -->
+  <xs:complexType name="Feature_Surface_SpotHeight" abstract="false">
+    <xs:annotation>
+      <xs:documentation>Represents a single elevation point feature.</xs:documentation>
+    </xs:annotation>
+    <xs:complexContent>
+      <xs:extension base="object_abstract">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+          <xs:element name="Status" type="surface_elevation_status" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>The status of this contour, whether the surface level is existing or proposed</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Elevation_m" type="xs:float" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>The elevation of this contour relative to the vertical datum for this project</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element name="Geometry" type="geometry_point_singlepoint" minOccurs="1" maxOccurs="1" nillable="false">
+            <xs:annotation>
+              <xs:documentation>point geometry representing the feature in coordinate space.</xs:documentation>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+</xs:schema>

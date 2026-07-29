@@ -26,10 +26,36 @@
   const schemaValueLookupCache = new Map();
 
   const adacSchemaConfigs = {
+    v4: {
+      key: "v4",
+      label: "ADAC 4.2.0",
+      version: "4.2.0",
+      editable: false,
+      basePath: "schemas/adac/4.2.0/",
+      rootFile: "ADAC_V420.xsd",
+      files: [
+        "ADAC_V420.xsd",
+        "ADACStringTypes.xsd",
+        "ADACEnhancements.xsd",
+        "ADACEnumeratedTypes_Generic.xsd",
+        "ADACGlobalTypes.xsd",
+        "ADACTransport.xsd",
+        "ADACSewerage.xsd",
+        "ADACOpenSpace.xsd",
+        "ADACWaterSupply.xsd",
+        "ADACStormWater.xsd",
+        "ADACSurface.xsd",
+        "ADACSupplementary.xsd",
+        "ADACCadastre.xsd",
+        "ADACGeometry.xsd",
+        "ADACEnumeratedTypes.xsd",
+      ],
+    },
     v5: {
       key: "v5",
       label: "ADAC 5.0.1",
       version: "5.0.1",
+      editable: true,
       basePath: "schemas/adac/5.0.1/",
       rootFile: "ADAC_V501.xsd",
       files: [
@@ -54,6 +80,7 @@
       key: "v6",
       label: "ADAC 6.0.0",
       version: "6.0.0",
+      editable: true,
       basePath: "schemas/adac/6.0.0/",
       rootFile: "ADAC_V600.xsd",
       files: [
@@ -2066,15 +2093,16 @@
 
   function openMergeXmlModal() {
     if (!els.mergeModal) return;
-    if (state.loadedFiles.length < 2) {
-      setStatus("Load at least two schema-valid ADAC XML files before merging.", true);
+    const editableFiles = getEditableLoadedFiles();
+    if (editableFiles.length < 2) {
+      setStatus("Load at least two editable ADAC 5.0.1 or 6.0.0 XML files before merging. ADAC 4.2 files are view-only.", true);
       return;
     }
     closeTransientUi("merge");
-    const baseFileId = state.loadedFiles[0]?.id || "";
+    const baseFileId = editableFiles[0]?.id || "";
     state.mergeSession = {
       baseFileId,
-      sourceFileIds: new Set(state.loadedFiles.filter((file) => file.id !== baseFileId).map((file) => file.id)),
+      sourceFileIds: new Set(editableFiles.filter((file) => file.id !== baseFileId).map((file) => file.id)),
       scope: "all",
       assetPaths: new Set(),
       typeSelectionInitialized: false,
@@ -2105,7 +2133,7 @@
     const kind = control.dataset.mergeControl;
     if (kind === "base") {
       session.baseFileId = control.value;
-      session.sourceFileIds = new Set(state.loadedFiles.filter((file) => file.id !== session.baseFileId).map((file) => file.id));
+      session.sourceFileIds = new Set(getEditableLoadedFiles().filter((file) => file.id !== session.baseFileId).map((file) => file.id));
       session.assetPaths = new Set();
       session.typeSelectionInitialized = false;
       session.conflictResolutions.clear();
@@ -2141,6 +2169,7 @@
     const session = state.mergeSession;
     if (!els.mergeModalContent || !session) return;
     const analysis = buildMergeAnalysis(session);
+    const editableFiles = getEditableLoadedFiles();
     session.analysis = analysis;
     const selectedIncomingCount = state.features.filter((feature) => (
       session.sourceFileIds.has(feature.sourceFileId) && state.selectedIds.has(feature.uid)
@@ -2181,7 +2210,7 @@
           <label class="viewer-merge-field">
             <span>Base XML</span>
             <select data-merge-control="base" aria-label="Base XML file">
-              ${state.loadedFiles.map((file) => `<option value="${escapeHtml(file.id)}" ${file.id === session.baseFileId ? "selected" : ""}>${escapeHtml(`${file.name} (${file.assetCount} assets)`)}</option>`).join("")}
+              ${editableFiles.map((file) => `<option value="${escapeHtml(file.id)}" ${file.id === session.baseFileId ? "selected" : ""}>${escapeHtml(`${file.name} (${file.assetCount} assets)`)}</option>`).join("")}
             </select>
           </label>
           <label class="viewer-merge-field">
@@ -2194,7 +2223,7 @@
           </label>
         </div>
         <div class="viewer-merge-file-list">
-          ${state.loadedFiles.filter((file) => file.id !== session.baseFileId).map((file) => `
+          ${editableFiles.filter((file) => file.id !== session.baseFileId).map((file) => `
             <label class="viewer-merge-check">
               <input type="checkbox" data-merge-control="source" data-merge-file-id="${escapeHtml(file.id)}" ${session.sourceFileIds.has(file.id) ? "checked" : ""} />
               <span>${escapeHtml(file.name)}</span>
@@ -2255,12 +2284,12 @@
     const sourceFiles = state.loadedFiles.filter((file) => session.sourceFileIds.has(file.id) && file.id !== session.baseFileId);
     const errors = [];
     const warnings = [];
-    if (!baseRecord?.workingDocument || !baseRecord.validation?.valid) errors.push("Choose a schema-valid base XML file.");
+    if (!canEditDocumentRecord(baseRecord)) errors.push("Choose an editable ADAC 5.0.1 or 6.0.0 base XML file.");
     if (!sourceFiles.length) errors.push("Choose at least one source XML file.");
     sourceFiles.forEach((file) => {
       const record = state.documents.get(file.id);
-      if (!record?.workingDocument || !record.validation?.valid) {
-        errors.push(`${file.name} does not have a schema-valid working copy.`);
+      if (!canEditDocumentRecord(record)) {
+        errors.push(`${file.name} is not available for editing or merging.`);
         return;
       }
       if (baseRecord && record.schemaKey !== baseRecord.schemaKey) {
@@ -2790,12 +2819,17 @@
 
   function openTransformXmlModal() {
     if (!els.transformModal || state.editorBusy || !state.loadedFiles.length) return;
+    const editableFiles = getEditableLoadedFiles();
+    if (!editableFiles.length) {
+      setStatus("Position shifting is unavailable for ADAC 4.2 view-only files.", true);
+      return;
+    }
     closeTransientUi("transform");
     const selectedFeature = state.features.find((feature) => feature.uid === state.selectedId);
     const selectedPoint = selectedFeature?.points?.[0];
     state.transformSession = {
       scope: "files",
-      fileIds: new Set(state.loadedFiles.map((file) => file.id)),
+      fileIds: new Set(editableFiles.map((file) => file.id)),
       assetIds: new Set(state.selectedIds),
       method: "offset",
       delta: { x: "0", y: "0", z: "0" },
@@ -2810,7 +2844,7 @@
       picking: "",
       busy: false,
       error: "",
-      documentStats: new Map(state.loadedFiles.map((file) => {
+      documentStats: new Map(editableFiles.map((file) => {
         const record = state.documents.get(file.id);
         return [file.id, getTransformDocumentStats(record?.workingDocument)];
       })),
@@ -2871,6 +2905,7 @@
     const session = state.transformSession;
     if (!session || !els.transformModalContent) return;
     const analysis = buildTransformAnalysis(session);
+    const editableFiles = getEditableLoadedFiles();
     session.analysis = analysis;
     const deltaFields = ["x", "y", "z"].map((axis) => `
       <label class="viewer-merge-field">
@@ -2907,7 +2942,7 @@
         </div>
         ${session.scope === "files" ? `
           <div class="viewer-merge-file-list">
-            ${state.loadedFiles.map((file) => `
+            ${editableFiles.map((file) => `
               <label class="viewer-merge-check">
                 <input type="checkbox" data-transform-control="file" data-transform-file-id="${escapeHtml(file.id)}" ${session.fileIds.has(file.id) ? "checked" : ""} />
                 <span>${escapeHtml(file.name)}</span>
@@ -3028,8 +3063,11 @@
     if (!files.length) errors.push(scope === "selected" ? "The selected assets are not available in a loaded XML working copy." : "Choose at least one XML working copy.");
     files.forEach((file) => {
       const record = state.documents.get(file.id);
-      if (!record?.workingDocument || !record.validation?.valid) errors.push(`${file.name} does not have a schema-valid working copy.`);
+      if (!canEditDocumentRecord(record)) errors.push(`${file.name} is view-only and cannot be position shifted.`);
     });
+    if (scope === "selected" && targetFeatures.some((feature) => !canEditFeature(feature))) {
+      errors.push("The selection includes ADAC 4.2 view-only assets. Select only editable ADAC 5.0.1 or 6.0.0 assets.");
+    }
     const deltaResult = getTransformDeltas(session);
     errors.push(...deltaResult.errors);
     const { dx, dy, dz } = deltaResult;
@@ -4002,7 +4040,7 @@
 
   function reportAssetId(asset) {
     const values = asset.values || {};
-    for (const key of ["ADACId", "ADACID", "AssetID", "AssetId"]) {
+    for (const key of ["ADACId", "ADACID", "AssetID", "AssetId", "ObjectId", "ObjectID"]) {
       const value = formatReportValue(values[key]);
       if (value) return value;
     }
@@ -4099,6 +4137,7 @@
   }
 
   function schemaLabel(schemaVersion) {
+    if (schemaVersion === "v4") return "4.2.0";
     if (schemaVersion === "v5") return "5.0.1";
     if (schemaVersion === "v6") return "6.0.0";
     return schemaVersion || "";
@@ -5140,12 +5179,18 @@
     const loadedAssetCount = parsedFiles.reduce((total, item) => total + item.features.length, 0);
     const loadedReportAssetCount = parsedFiles.reduce((total, item) => total + item.reportBundle.assets.length, 0);
     const loadedFileCount = parsedFiles.length;
+    const viewOnlyCount = parsedFiles.filter((item) => item.schemaValidation?.viewOnly).length;
     const skippedCount = state.validationErrorResults.length;
+    const viewOnlyText = viewOnlyCount
+      ? ` ${viewOnlyCount === loadedFileCount
+        ? (loadedFileCount === 1 ? "This file is" : "These files are")
+        : `${viewOnlyCount} file${viewOnlyCount === 1 ? " is" : "s are"}`} available in ADAC 4.2 view-only mode; editing tools are disabled.`
+      : "";
     const skippedText = skippedCount ? ` ${skippedCount} file${skippedCount === 1 ? "" : "s"} failed validation and were not loaded.` : "";
     if (state.features.length) {
-      setStatus(`Loaded ${loadedAssetCount} mapped assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}.${skippedText}`, Boolean(skippedCount));
+      setStatus(`Loaded ${loadedAssetCount} mapped assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}.${viewOnlyText}${skippedText}`, Boolean(skippedCount));
     } else if (loadedReportAssetCount) {
-      setStatus(`Loaded ${loadedReportAssetCount} report assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}, but no mapped asset geometry was found.${skippedText}`, Boolean(skippedCount));
+      setStatus(`Loaded ${loadedReportAssetCount} report assets from ${loadedFileCount} XML file${loadedFileCount === 1 ? "" : "s"}, but no mapped asset geometry was found.${viewOnlyText}${skippedText}`, Boolean(skippedCount));
     } else {
       setStatus("The XML loaded, but no mapped asset geometry was found.", true);
     }
@@ -6215,6 +6260,8 @@
         schemaKey: schemaConfig.key,
         schemaVersion: schemaConfig.version,
         schemaLabel: schemaConfig.label,
+        editable: schemaConfig.editable !== false,
+        viewOnly: schemaConfig.editable === false,
 	        errors: (validation.errors || []).map((error) => ({
 	          ...error,
 	          schemaKey: schemaConfig.key,
@@ -6230,6 +6277,8 @@
         schemaKey: schemaConfig.key,
         schemaVersion: schemaConfig.version,
         schemaLabel: schemaConfig.label,
+        editable: schemaConfig.editable !== false,
+        viewOnly: schemaConfig.editable === false,
         errors: [{ message: error.message || String(error), loc: null }],
         message: `The ${schemaConfig.label} validator could not complete.`,
       };
@@ -6263,7 +6312,14 @@
   }
 
   function prepareAdacSchemaForValidation(schemaConfig, fileName, contents) {
-    if (fileName === schemaConfig.rootFile || fileName === "ADACGlobalTypes.xsd") return contents;
+    if (fileName === schemaConfig.rootFile) {
+      if (schemaConfig.key !== "v4") return contents;
+      return contents.replace(
+        /(<xs:include\s+schemaLocation\s*=\s*["']ADACGeometry\.xsd["'])/i,
+        '<xs:include schemaLocation="ADACEnumeratedTypes.xsd"/>\n\t$1',
+      );
+    }
+    if (fileName === "ADACGlobalTypes.xsd") return contents;
     return contents.replace(
       /<xs:include\s+schemaLocation\s*=\s*["']\.?\/?(ADACGeometry|ADACGlobalTypes|ADACEnumeratedTypes|ADACStringTypes)\.xsd["']\s*(?:\/>|>[\s\S]*?<\/xs:include>)/gi,
       ""
@@ -6620,8 +6676,8 @@
     const rootElement = doc.documentElement;
     const versionText = String(rootElement.getAttribute("version") || rootElement.getAttribute("Version") || "").trim();
     return versionText
-      ? `ADAC schema version ${versionText} is not supported by this viewer yet. Supported versions are 5.0.1 and 6.0.0.`
-      : "No supported ADAC schema version was found. Supported versions are 5.0.1 and 6.0.0.";
+      ? `ADAC schema version ${versionText} is not supported by this viewer yet. Supported versions are 4.2.0, 5.0.1 and 6.0.0.`
+      : "No supported ADAC schema version was found. Supported versions are 4.2.0, 5.0.1 and 6.0.0.";
   }
 
   function sanitizeValidationFileName(fileName, extension) {
@@ -7106,6 +7162,7 @@
   function inferReportSchemaVersion(doc) {
     const rootElement = doc.documentElement;
     const versionText = String(rootElement.getAttribute("version") || rootElement.getAttribute("Version") || "").trim();
+    if (versionText.startsWith("4.2")) return "v4";
     if (versionText.startsWith("5")) return "v5";
     if (versionText.startsWith("6")) return "v6";
     const schemaHint = Array.from(rootElement.attributes || [])
@@ -7113,6 +7170,7 @@
       .map((attr) => attr.value)
       .join(" ")
       .toUpperCase();
+    if (schemaHint.includes("V420") || schemaHint.includes("4.2.0")) return "v4";
     if (schemaHint.includes("V501") || schemaHint.includes("5.0.1")) return "v5";
     if (schemaHint.includes("V600") || schemaHint.includes("6.0.0")) return "v6";
     return "";
@@ -8409,6 +8467,24 @@
     drawMap();
   }
 
+  function canEditDocumentRecord(record) {
+    return Boolean(
+      record?.workingDocument
+      && record?.validation?.valid
+      && record.validation.editable !== false
+      && !record.validation.viewOnly
+      && record.schemaKey
+    );
+  }
+
+  function canEditFeature(feature) {
+    return Boolean(feature && canEditDocumentRecord(state.documents.get(feature.sourceFileId)));
+  }
+
+  function getEditableLoadedFiles() {
+    return state.loadedFiles.filter((file) => canEditDocumentRecord(state.documents.get(file.id)));
+  }
+
   function renderMetrics() {
     const visibleXmlLayers = Array.from(state.layers.values()).filter((layer) => layer.visible).length;
     const visibleDxfLayers = state.dxfReferences.reduce((total, reference) => (
@@ -8421,7 +8497,8 @@
     if (els.repairedXmlDownloadButton) els.repairedXmlDownloadButton.hidden = !state.repairPreview?.repairedXmlText;
     if (els.mergeButton) {
       const isMergedPreview = Boolean(state.mergePreview?.active);
-      els.mergeButton.hidden = !isMergedPreview && state.loadedFiles.length < 2;
+      const editableFiles = getEditableLoadedFiles();
+      els.mergeButton.hidden = !isMergedPreview && editableFiles.length < 2;
       els.mergeButton.setAttribute("aria-label", isMergedPreview ? "Return to source XML files" : "Merge loaded XML files");
       els.mergeButton.title = isMergedPreview ? "Return to source XML files" : "Merge loaded XML files";
       const icon = els.mergeButton.querySelector("i");
@@ -8434,8 +8511,8 @@
       els.mergedXmlDownloadButton.disabled = !canDownloadMerged || state.editorBusy;
     }
     if (els.transformButton) {
-      const canTransform = state.loadedFiles.length > 0 && !state.editorBusy;
-      els.transformButton.hidden = !state.loadedFiles.length;
+      const canTransform = getEditableLoadedFiles().length > 0 && !state.editorBusy;
+      els.transformButton.hidden = !getEditableLoadedFiles().length;
       els.transformButton.disabled = !canTransform;
     }
     renderEditedXmlDownloadButton();
@@ -10125,13 +10202,23 @@
   }
 
   function buildEngineeringResolutionPreview(requestedIssues, scope) {
-    const repairableIssues = requestedIssues.filter((issue) => issue.repair);
-    const manualIssues = requestedIssues.filter((issue) => !issue.repair);
+    const repairableIssues = requestedIssues.filter((issue) => {
+      const feature = state.features.find((item) => item.uid === issue.featureUid);
+      return Boolean(issue.repair && canEditFeature(feature));
+    });
+    const manualIssues = requestedIssues
+      .filter((issue) => !repairableIssues.includes(issue))
+      .map((issue) => {
+        const feature = state.features.find((item) => item.uid === issue.featureUid);
+        return issue.repair && !canEditFeature(feature)
+          ? { ...issue, repairReason: "ADAC 4.2 files are view-only, so this recalculation cannot be applied in the viewer." }
+          : issue;
+      });
     const groupedFiles = new Map();
     repairableIssues.forEach((issue) => {
       const feature = state.features.find((item) => item.uid === issue.featureUid);
       const record = feature ? state.documents.get(feature.sourceFileId) : null;
-      if (!feature || !record?.workingXmlText || !record.validation?.valid) {
+      if (!feature || !canEditDocumentRecord(record)) {
         manualIssues.push({ ...issue, repairReason: "The working XML is no longer available or schema-valid." });
         return;
       }
@@ -10506,7 +10593,7 @@
     }
 
     const documentRecord = state.documents.get(feature.sourceFileId);
-    const canEdit = Boolean(documentRecord?.validation?.valid);
+    const canEdit = canEditDocumentRecord(documentRecord);
     if (state.editMode && !canEdit) state.editMode = false;
     let rows = "";
     if (state.editMode) {
@@ -10533,6 +10620,7 @@
           </div>
         </div>
       </div>
+      ${renderViewOnlyDocumentNotice(documentRecord)}
       ${state.editMode ? renderXmlEditorToolbar(documentRecord) : ""}
       ${state.editMode ? renderSplitAssetPanel(feature, documentRecord) : ""}
       ${state.editMode ? renderDeleteConfirmation(selectedFeatures) : ""}
@@ -10552,8 +10640,10 @@
     const commonLayer = getCommonSelectionValue(features.map((feature) => feature.layer));
     const commonAssetType = getCommonSelectionValue(features.map((feature) => feature.assetTag || feature.type));
     const sourceFiles = uniqueValues(features.map((feature) => feature.sourceFile || "Loaded XML"));
-    const recordsAreValid = features.every((feature) => state.documents.get(feature.sourceFileId)?.validation?.valid);
-    const canEdit = recordsAreValid;
+    const selectedRecords = uniqueValues(features.map((feature) => feature.sourceFileId))
+      .map((fileId) => state.documents.get(fileId))
+      .filter(Boolean);
+    const canEdit = selectedRecords.length > 0 && selectedRecords.every(canEditDocumentRecord);
     if (state.editMode && !canEdit) state.editMode = false;
     const rows = state.editMode
       ? renderBulkEditableRows(groups)
@@ -10571,6 +10661,7 @@
         </div>
         <p class="viewer-details__selection-help">Click another asset while multi-select is on, or use Shift or Command/Ctrl click, to update this selection.</p>
       </div>
+      ${selectedRecords.some((record) => record.validation?.viewOnly) ? renderViewOnlyDocumentNotice(selectedRecords.find((record) => record.validation?.viewOnly)) : ""}
       ${state.editMode ? renderBulkXmlEditorToolbar(features) : ""}
       ${state.editMode ? renderJoinConfirmation(features) : ""}
       ${state.editMode ? renderDeleteConfirmation(features) : ""}
@@ -10830,6 +10921,16 @@
         <i class="fa-solid ${state.editMode ? "fa-eye" : "fa-pen"}" aria-hidden="true"></i>
         <span>${state.editMode ? "View" : "Edit"}</span>
       </button>
+    `;
+  }
+
+  function renderViewOnlyDocumentNotice(record) {
+    if (!record?.validation?.viewOnly) return "";
+    return `
+      <div class="viewer-details__view-only" role="note">
+        <i class="fa-solid fa-eye" aria-hidden="true"></i>
+        <span><strong>ADAC 4.2 view-only</strong>This file is schema-validated and available for viewing, labels, measurements and reports. Editing tools are disabled.</span>
+      </div>
     `;
   }
 
@@ -15140,13 +15241,16 @@
       });
     }
     geometryTopologyIssues.forEach((issue) => {
+      const editable = canEditFeature(issue.feature);
       checks.push({
         tone: issue.tone || "warn",
         icon: issue.icon || "fa-route",
-        text: issue.message,
+        text: editable ? issue.message : (issue.viewOnlyMessage || issue.message),
         featureUid: issue.feature.uid,
-        engineeringRepairReason: issue.repairReason,
-        reviewLabel: issue.reviewLabel || "Edit geometry",
+        engineeringRepairReason: editable
+          ? issue.repairReason
+          : "ADAC 4.2 files are view-only; correct the geometry in the source system.",
+        reviewLabel: editable ? (issue.reviewLabel || "Edit geometry") : "View geometry",
       });
     });
     if (unknownLayers) {
@@ -15193,6 +15297,7 @@
           feature,
           tone: "warn",
           message: `${feature.id || feature.assetTag} has a repeated geometry vertex at vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating a zero-length boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+          viewOnlyMessage: `${feature.id || feature.assetTag} has a repeated geometry vertex at vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating a zero-length boundary segment. Review this vertex in the source system.`,
           repairReason: `Delete repeated vertex ${vertexNumber}; the original uploaded XML will remain unchanged until the edited copy is downloaded.`,
         });
         return;
@@ -15219,6 +15324,7 @@
             feature,
             tone: "warn",
             message: `${feature.id || feature.assetTag} doubles back at geometry vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating an overlapping boundary segment. Delete vertex ${vertexNumber} in Edit geometry.`,
+            viewOnlyMessage: `${feature.id || feature.assetTag} doubles back at geometry vertex ${vertexNumber} (${formatTopologyPoint(point)}), creating an overlapping boundary segment. Review this vertex in the source system.`,
             repairReason: `Delete doubled-back vertex ${vertexNumber}; for a closed polygon the editor will keep the ring closed using the next valid boundary point.`,
           });
     });
@@ -15304,7 +15410,10 @@
       tone: "warn",
       icon: "fa-triangle-exclamation",
       text: `Engineering consistency found ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"} while checking ${scope}. Select an issue below to inspect its asset.`,
-      engineeringResolveAll: report.issues.some((issue) => issue.repair),
+      engineeringResolveAll: report.issues.some((issue) => {
+        const feature = state.features.find((item) => item.uid === issue.featureUid);
+        return Boolean(issue.repair && canEditFeature(feature));
+      }),
     }, getEngineeringToleranceCheck()];
     report.issues.forEach((issue) => {
       checks.push({
@@ -15313,8 +15422,10 @@
         text: issue.text,
         featureUid: issue.featureUid,
         engineeringIssueKey: issue.key,
-        engineeringRepairable: Boolean(issue.repair),
-        engineeringRepairReason: issue.repairReason,
+        engineeringRepairable: Boolean(issue.repair && canEditFeature(state.features.find((item) => item.uid === issue.featureUid))),
+        engineeringRepairReason: issue.repair && !canEditFeature(state.features.find((item) => item.uid === issue.featureUid))
+          ? "ADAC 4.2 files are view-only; review this value in the source system."
+          : issue.repairReason,
       });
     });
     return checks;
@@ -15502,7 +15613,7 @@
 
   function getEngineeringDirectionRepairAnalysis(feature) {
     const record = feature ? state.documents.get(feature.sourceFileId) : null;
-    if (!record?.workingXmlText || !record.validation?.valid) {
+    if (!canEditDocumentRecord(record)) {
       return { supported: false, reason: "A schema-valid working XML copy is required." };
     }
     return getEditorDirectionFlipAnalysis(feature, "US_InvertLevel_m", record.workingXmlText);
@@ -15589,12 +15700,18 @@
     if (!validResults.length) {
       return { tone: "muted", icon: "fa-circle-info", text: "ADAC schema validation has not run for the loaded files." };
     }
+    const viewOnlyResults = validResults.filter((result) => result.viewOnly);
     const versions = Array.from(new Set(validResults.map((result) => result.schemaVersion || result.schemaLabel).filter(Boolean)));
     const versionText = versions.length ? ` (${versions.join(", ")})` : "";
+    const viewOnlyText = viewOnlyResults.length
+      ? ` ${viewOnlyResults.length === validResults.length
+        ? (validResults.length === 1 ? "The loaded XML is" : "The loaded ADAC 4.2 files are")
+        : `${viewOnlyResults.length} file${viewOnlyResults.length === 1 ? " is" : "s are"}`} available in ADAC 4.2 view-only mode.`
+      : "";
     return {
       tone: "good",
       icon: "fa-check",
-      text: `ADAC schema validation passed for ${validResults.length} file${validResults.length === 1 ? "" : "s"}${versionText}.`,
+      text: `ADAC schema validation passed for ${validResults.length} file${validResults.length === 1 ? "" : "s"}${versionText}.${viewOnlyText}`,
     };
   }
 

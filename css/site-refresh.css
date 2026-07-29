@@ -6064,6 +6064,37 @@ h3,
     border-bottom: 1px solid var(--mockup-line);
 }
 
+.viewer-details__view-only {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 9px;
+    align-items: start;
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid #cdddeb;
+    border-radius: 8px;
+    background: #f4f8fc;
+    color: #43546a;
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+.viewer-details__view-only i {
+    margin-top: 2px;
+    color: #206fcf;
+}
+
+.viewer-details__view-only span,
+.viewer-details__view-only strong {
+    display: block;
+}
+
+.viewer-details__view-only strong {
+    margin-bottom: 2px;
+    color: var(--mockup-ink);
+    font-weight: 800;
+}
+
 .viewer-details__selection-help {
     margin: 9px 0 0;
     color: #65758a;

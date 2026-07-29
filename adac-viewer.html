@@ -14,7 +14,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Open, validate, map, edit and merge ADAC XML files in the free ADACT browser tool. Review assets, repair schema issues and download validated working copies." />
-  <meta name="keywords" content="ADAC XML viewer, ADAC XML editor, ADAC schema validator, ADAC viewer, free ADAC viewer, online ADAC XML tool, edit ADAC XML, ADAC 5.0.1, ADAC 6.0.0, ADACT, civil asset mapping" />
+  <meta name="keywords" content="ADAC XML viewer, ADAC XML editor, ADAC schema validator, ADAC viewer, free ADAC viewer, online ADAC XML tool, edit ADAC XML, ADAC 4.2.0, ADAC 5.0.1, ADAC 6.0.0, ADACT, civil asset mapping" />
   <link rel="icon" href="favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="512x512" href="img/favicon.png" />
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
@@ -66,7 +66,8 @@
         },
         "featureList": [
           "Upload one or more ADAC XML files",
-          "Validate ADAC 5.0.1 and ADAC 6.0.0 XML against supported schemas",
+          "Validate ADAC 4.2.0, ADAC 5.0.1 and ADAC 6.0.0 XML against supported schemas",
+          "Open ADAC 4.2.0 files in view-only compatibility mode",
           "Review readable validation errors and suggested repairs",
           "Inspect mapped civil infrastructure assets and project details",
           "Toggle XML layers, labels, basemaps and reference overlays",
@@ -148,7 +149,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260729a" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260729b" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -541,7 +542,7 @@
             <article class="adac-viewer__seo-card">
               <h3>Validate and repair</h3>
               <p>
-                  Validate ADAC 5.0.1 and 6.0.0 XML against the supported schemas, then check mapped lengths and related grade, depth, invert, surface and endpoint values for internal consistency. Review readable errors, valid value guidance and suggested fixes, or preview high-confidence repairs without changing the original upload.
+                  Validate ADAC 4.2.0, 5.0.1 and 6.0.0 XML against the supported schemas, then check mapped lengths and related grade, depth, invert, surface and endpoint values for internal consistency. ADAC 4.2.0 files open in view-only mode; editing remains available for supported 5.0.1 and 6.0.0 working copies.
               </p>
             </article>
             <article class="adac-viewer__seo-card">
@@ -796,7 +797,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260729e"></script>
+  <script src="js/adac-viewer.js?v=20260729g"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
   <script src="js/firebase-config.js?v=20260723e"></script>
   <script src="js/adact-usage-tracking.js?v=20260723f"></script>
