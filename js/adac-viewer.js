@@ -1149,6 +1149,7 @@
     mergePreview: null,
     transformSession: null,
     engineeringResolution: null,
+    duplicateIdCorrection: null,
     bulkHistoryPast: [],
     bulkHistoryFuture: [],
     filters: {
@@ -1220,6 +1221,10 @@
     engineeringModalContent: document.querySelector("[data-role='engineering-modal-content']"),
     engineeringModalStatus: document.querySelector("[data-role='engineering-modal-status']"),
     applyEngineeringResolutionButton: document.querySelector("[data-role='apply-engineering-resolution']"),
+    duplicateIdModal: document.querySelector("[data-role='duplicate-id-modal']"),
+    duplicateIdModalContent: document.querySelector("[data-role='duplicate-id-modal-content']"),
+    duplicateIdModalStatus: document.querySelector("[data-role='duplicate-id-modal-status']"),
+    applyDuplicateIdCorrectionButton: document.querySelector("[data-role='apply-duplicate-id-correction']"),
     shell: root.querySelector(".viewer-shell"),
     search: root.querySelector("[data-role='asset-search']"),
     layerFilter: root.querySelector("[data-role='layer-filter']"),
@@ -1303,6 +1308,10 @@
     }
     if (els.engineeringModal) {
       els.engineeringModal.addEventListener("click", handleClick);
+    }
+    if (els.duplicateIdModal) {
+      els.duplicateIdModal.addEventListener("click", handleClick);
+      els.duplicateIdModal.addEventListener("input", handleDuplicateIdCorrectionInput);
     }
     if (els.dropzone && els.dropTarget) {
       let dragDepth = 0;
@@ -1591,6 +1600,7 @@
     "confirm-join-selected-assets": "line_join",
     "confirm-delete-selected-assets": "asset_delete",
     "download-edited-xml": "edited_xml_download",
+    "apply-duplicate-id-correction": "duplicate_id_correction",
     "recalculate-related-xml-fields": "related_field_recalculation",
     "flip-gravity-asset-direction": "gravity_direction_flip",
     "snap-geometry-to-dxf": "geometry_snap",
@@ -1629,6 +1639,10 @@
       closeEngineeringResolution();
     } else if (action === "apply-engineering-resolution") {
       applyEngineeringResolution();
+    } else if (action === "close-duplicate-id-correction") {
+      closeDuplicateIdCorrectionModal();
+    } else if (action === "apply-duplicate-id-correction") {
+      applyDuplicateIdCorrectionsAndDownload();
     } else if (action === "export-report-pdf") {
       handleReportExportRequest();
     } else if (action === "export-combined-report-pdf") {
@@ -1779,6 +1793,11 @@
       else commitEditorFieldControl(editorField);
       return;
     }
+    if (event.key === "Enter" && event.target.closest?.("[data-duplicate-id-input]")) {
+      event.preventDefault();
+      applyDuplicateIdCorrectionsAndDownload();
+      return;
+    }
     if (event.key === "Escape") {
       if (isTransformPointPicking()) {
         cancelTransformPointPick();
@@ -1790,6 +1809,10 @@
       }
       if (isEngineeringResolutionOpen()) {
         closeEngineeringResolution();
+        return;
+      }
+      if (isDuplicateIdCorrectionOpen()) {
+        closeDuplicateIdCorrectionModal();
         return;
       }
       if (isMergeXmlModalOpen()) {
@@ -1826,6 +1849,7 @@
       || isMergeXmlModalOpen()
       || isTransformXmlModalOpen()
       || isEngineeringResolutionOpen()
+      || isDuplicateIdCorrectionOpen()
       || (els.termsModal && !els.termsModal.hidden)
       || els.suggestionWidget?.classList.contains("is-open")
     );
@@ -1932,6 +1956,7 @@
     if (except !== "merge") closeMergeXmlModal();
     if (except !== "transform" && !isTransformPointPicking()) closeTransformXmlModal();
     if (except !== "engineering") closeEngineeringResolution();
+    if (except !== "duplicate-ids") closeDuplicateIdCorrectionModal();
     if (except !== "terms") closeTermsModal();
     if (except !== "suggestions") closeSuggestions();
   }
@@ -2748,6 +2773,7 @@
       record.workingXmlText,
       fileName,
       `Downloaded ${fileName} from the current merged working copy.`,
+      record,
     );
   }
 
@@ -5304,6 +5330,7 @@
     if (duplicateAdacIds.length) {
       return {
         ok: false,
+        duplicateAdacIds,
         message: formatDuplicateAdacIdExportMessage(duplicateAdacIds),
       };
     }
@@ -5318,23 +5345,20 @@
   }
 
   function findDuplicateAdacIds(doc) {
-    const projectData = firstElementByName(doc?.documentElement, "ProjectData");
-    if (!projectData) return [];
+    const assets = getAdacIdAssetEntries(doc);
     const ids = new Map();
 
-    Array.from(projectData.querySelectorAll("*")).forEach((assetElement) => {
-      const idElement = firstDirectChild(assetElement, "ADACId");
-      const id = String(idElement?.textContent || "").trim();
-      if (!id) return;
-      const assetType = cleanName(assetElement.tagName);
-      const key = `${assetType.toLocaleLowerCase()}\u0000${id.toLocaleLowerCase()}`;
+    assets.forEach((asset) => {
+      const key = `${asset.assetClassKey}\u0000${asset.id.toLowerCase()}`;
       const entry = ids.get(key) || {
-        id,
+        id: asset.id,
         count: 0,
         assetTypes: new Set(),
+        assets: [],
       };
       entry.count += 1;
-      entry.assetTypes.add(assetType);
+      entry.assetTypes.add(asset.displayType);
+      entry.assets.push(asset);
       ids.set(key, entry);
     });
 
@@ -5344,8 +5368,40 @@
         id: entry.id,
         count: entry.count,
         assetTypes: Array.from(entry.assetTypes).sort((a, b) => a.localeCompare(b)),
+        assets: entry.assets,
       }))
       .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: "base" }));
+  }
+
+  function getAdacIdAssetEntries(doc) {
+    const projectData = firstElementByName(doc?.documentElement, "ProjectData");
+    if (!projectData) return [];
+    return Array.from(projectData.querySelectorAll("*")).map((assetElement) => {
+      const idElement = firstDirectChild(assetElement, "ADACId");
+      const id = String(idElement?.textContent || "").trim();
+      if (!id) return null;
+      const point = getGeometryCoordinateGroups(assetElement)
+        .map((group) => ({
+          x: Number(String(group.elements.x?.textContent || "").trim()),
+          y: Number(String(group.elements.y?.textContent || "").trim()),
+        }))
+        .find((candidate) => Number.isFinite(candidate.x) && Number.isFinite(candidate.y));
+      const assetType = cleanName(assetElement.tagName);
+      const assetPath = getAssetPathFromStructure(assetElement);
+      const styleKey = getPlanStyleKeyForAssetPath(assetPath);
+      const displayType = styleKey && styleKey !== "generic"
+        ? planAssetTypeLabel(styleKey, collectLabelValues(assetElement))
+        : formatDetailLabel(assetType);
+      return {
+        id,
+        assetType,
+        assetPath,
+        assetClassKey: normalizePlanAssetPath(assetPath) || assetType.toLowerCase(),
+        displayType,
+        locator: getXmlElementLocator(assetElement),
+        location: point ? `X ${formatNumber(point.x, 3)}, Y ${formatNumber(point.y, 3)}` : "Geometry location unavailable",
+      };
+    }).filter(Boolean);
   }
 
   function formatDuplicateAdacIdExportMessage(duplicates) {
@@ -5362,15 +5418,314 @@
     return `Export blocked: ${subject} found within the same asset type: ${visible.join(", ")}${remaining}. Rename or delete the duplicate assets before downloading.`;
   }
 
-  function downloadPreparedXml(xmlText, fileName, successMessage) {
+  function downloadPreparedXml(xmlText, fileName, successMessage, record = null) {
     const prepared = prepareXmlDownload(xmlText);
     if (!prepared.ok) {
+      if (prepared.duplicateAdacIds?.length && record?.workingXmlText) {
+        openDuplicateIdCorrectionModal({
+          record,
+          sourceXmlText: xmlText,
+          fileName,
+          successMessage,
+          duplicates: prepared.duplicateAdacIds,
+        });
+        return false;
+      }
       setStatus(prepared.message, true);
       return false;
     }
     downloadBlob(new Blob([prepared.xmlText], { type: "application/xml;charset=utf-8" }), fileName);
     setStatus(successMessage, false);
     return true;
+  }
+
+  function openDuplicateIdCorrectionModal({ record, sourceXmlText, fileName, successMessage, duplicates }) {
+    if (!els.duplicateIdModal || state.editorBusy) {
+      setStatus(formatDuplicateAdacIdExportMessage(duplicates), true);
+      return;
+    }
+    const doc = parseXmlDocument(sourceXmlText);
+    if (!doc) {
+      setStatus("The duplicate ADAC IDs could not be reviewed because the working XML is not well-formed.", true);
+      return;
+    }
+    const allAssets = getAdacIdAssetEntries(doc);
+    const correctionLocators = new Set(duplicates.flatMap((group) => group.assets.map((asset) => asset.locator)));
+    const usedByType = new Map();
+    const reserve = (assetClassKey, id) => {
+      const typeKey = assetClassKey;
+      if (!usedByType.has(typeKey)) usedByType.set(typeKey, new Set());
+      usedByType.get(typeKey).add(id.toLowerCase());
+    };
+    allAssets.filter((asset) => !correctionLocators.has(asset.locator)).forEach((asset) => reserve(asset.assetClassKey, asset.id));
+
+    const values = new Map();
+    const groups = duplicates.map((group) => ({
+      ...group,
+      assets: group.assets.map((asset, index) => {
+        const typeKey = asset.assetClassKey;
+        if (!usedByType.has(typeKey)) usedByType.set(typeKey, new Set());
+        const used = usedByType.get(typeKey);
+        const proposedId = index === 0 && !used.has(asset.id.toLowerCase())
+          ? asset.id
+          : buildUniqueDuplicateCorrectionId(asset.id, used);
+        used.add(proposedId.toLowerCase());
+        values.set(asset.locator, proposedId);
+        return { ...asset, proposedId };
+      }),
+    }));
+
+    closeTransientUi("duplicate-ids");
+    state.duplicateIdCorrection = {
+      recordId: record.id,
+      sourceXmlText: String(sourceXmlText || ""),
+      fileName,
+      successMessage,
+      allAssets,
+      groups,
+      values,
+      busy: false,
+      error: "",
+    };
+    els.duplicateIdModal.hidden = false;
+    renderDuplicateIdCorrectionModal();
+    setStatus(`Export paused: review ${duplicates.length} duplicate ADAC ID group${duplicates.length === 1 ? "" : "s"} before downloading.`, true);
+    window.setTimeout(() => {
+      const firstChanged = els.duplicateIdModal.querySelector("[data-duplicate-id-changed='true']");
+      firstChanged?.focus();
+      firstChanged?.select();
+    }, 0);
+  }
+
+  function buildUniqueDuplicateCorrectionId(originalId, usedIds, maxLength = 64) {
+    const base = String(originalId || "ASSET").trim() || "ASSET";
+    for (let index = 2; index <= 9999; index += 1) {
+      const suffix = `-${index}`;
+      const candidate = `${base.slice(0, Math.max(1, maxLength - suffix.length))}${suffix}`;
+      if (!usedIds.has(candidate.toLowerCase())) return candidate;
+    }
+    return `${base.slice(0, Math.max(1, maxLength - 7))}-UNIQUE`;
+  }
+
+  function renderDuplicateIdCorrectionModal() {
+    const session = state.duplicateIdCorrection;
+    if (!session || !els.duplicateIdModalContent) return;
+    const affectedCount = session.groups.reduce((count, group) => count + group.assets.length, 0);
+    const groupsHtml = session.groups.map((group, groupIndex) => `
+      <section class="viewer-duplicate-id-group">
+        <div class="viewer-duplicate-id-group__header">
+          <strong>${escapeHtml(group.assets[0]?.displayType || formatDetailLabel(group.assets[0]?.assetType || "Asset"))}</strong>
+          <span>Duplicate value: ${escapeHtml(group.id)} · ${group.assets.length} assets</span>
+        </div>
+        ${group.assets.map((asset, assetIndex) => {
+          const value = session.values.get(asset.locator) ?? asset.proposedId ?? asset.id;
+          const inputId = `duplicate-adac-id-${groupIndex}-${assetIndex}`;
+          return `
+            <div class="viewer-duplicate-id-row" data-duplicate-id-row="${escapeHtml(asset.locator)}">
+              <span class="viewer-duplicate-id-row__asset">
+                <strong>Occurrence ${assetIndex + 1}</strong>
+                <span>Current ADAC ID: ${escapeHtml(asset.id)}</span>
+                <small>${escapeHtml(asset.location)}</small>
+              </span>
+              <label for="${inputId}">
+                <span>Replacement ADAC ID</span>
+                <input id="${inputId}" type="text" maxlength="64" value="${escapeHtml(value)}" data-duplicate-id-input data-duplicate-id-locator="${escapeHtml(asset.locator)}" data-duplicate-id-asset-type="${escapeHtml(asset.assetType)}" data-duplicate-id-original="${escapeHtml(asset.id)}" data-duplicate-id-changed="${value !== asset.id}" autocomplete="off" spellcheck="false" />
+                <small class="viewer-duplicate-id-row__error" data-duplicate-id-error></small>
+              </label>
+            </div>
+          `;
+        }).join("")}
+      </section>
+    `).join("");
+    els.duplicateIdModalContent.innerHTML = `
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading">
+          <strong>Export correction summary</strong>
+          <span>Original upload remains unchanged</span>
+        </span>
+        <div class="viewer-duplicate-id-summary">
+          <span><strong>${session.groups.length}</strong><small>Duplicate ID groups</small></span>
+          <span><strong>${affectedCount}</strong><small>Affected assets</small></span>
+        </div>
+        <span class="viewer-merge-notice">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          <span>The first occurrence keeps its current ID by default. Later occurrences receive editable unique suggestions. The complete XML will be schema-validated before downloading.</span>
+        </span>
+      </section>
+      <section class="viewer-merge-section">
+        <span class="viewer-merge-section__heading">
+          <strong>Choose replacement IDs</strong>
+          <span>IDs are compared without regard to letter case</span>
+        </span>
+        <div class="viewer-duplicate-id-groups">${groupsHtml}</div>
+      </section>
+    `;
+    updateDuplicateIdCorrectionControls();
+  }
+
+  function handleDuplicateIdCorrectionInput(event) {
+    const control = event.target.closest?.("[data-duplicate-id-input]");
+    const session = state.duplicateIdCorrection;
+    if (!control || !session || session.busy) return;
+    session.values.set(control.dataset.duplicateIdLocator, control.value);
+    session.error = "";
+    updateDuplicateIdCorrectionControls();
+  }
+
+  function evaluateDuplicateIdCorrections(session) {
+    const counts = new Map();
+    let changedCount = 0;
+    const blankLocators = new Set();
+    session.allAssets.forEach((asset) => {
+      const selectedValue = session.values.has(asset.locator) ? session.values.get(asset.locator) : asset.id;
+      const value = String(selectedValue || "").trim();
+      if (!value) {
+        blankLocators.add(asset.locator);
+        return;
+      }
+      if (value !== asset.id) changedCount += 1;
+      const key = `${asset.assetClassKey}\u0000${value.toLowerCase()}`;
+      if (!counts.has(key)) counts.set(key, []);
+      counts.get(key).push(asset.locator);
+    });
+    const duplicateLocators = new Set(
+      Array.from(counts.values()).filter((locators) => locators.length > 1).flat(),
+    );
+    const invalidLocators = new Set([...blankLocators, ...duplicateLocators]);
+    let message = "";
+    if (blankLocators.size) {
+      message = `${blankLocators.size} asset${blankLocators.size === 1 ? " needs" : "s need"} an ADAC ID.`;
+    } else if (duplicateLocators.size) {
+      message = "One or more replacement IDs are still duplicated within the same asset type.";
+    } else if (!changedCount) {
+      message = "Change at least one duplicate value before continuing.";
+    }
+    return {
+      valid: !invalidLocators.size && changedCount > 0,
+      changedCount,
+      invalidLocators,
+      blankLocators,
+      duplicateLocators,
+      message,
+    };
+  }
+
+  function updateDuplicateIdCorrectionControls() {
+    const session = state.duplicateIdCorrection;
+    if (!session || !els.duplicateIdModal) return;
+    const evaluation = evaluateDuplicateIdCorrections(session);
+    els.duplicateIdModal.querySelectorAll("[data-duplicate-id-input]").forEach((control) => {
+      const locator = control.dataset.duplicateIdLocator;
+      const row = control.closest("[data-duplicate-id-row]");
+      const error = row?.querySelector("[data-duplicate-id-error]");
+      const isBlank = evaluation.blankLocators.has(locator);
+      const isDuplicate = evaluation.duplicateLocators.has(locator);
+      const message = isBlank ? "Enter an ADAC ID." : isDuplicate ? "This ID is still duplicated for this asset type." : "";
+      row?.classList.toggle("is-invalid", Boolean(message));
+      control.setAttribute("aria-invalid", String(Boolean(message)));
+      if (error) error.textContent = message;
+    });
+    if (els.applyDuplicateIdCorrectionButton) {
+      els.applyDuplicateIdCorrectionButton.disabled = session.busy || !evaluation.valid;
+      const label = els.applyDuplicateIdCorrectionButton.querySelector("span");
+      if (label) label.textContent = session.busy
+        ? "Validating corrected XML..."
+        : `Apply ${evaluation.changedCount} correction${evaluation.changedCount === 1 ? "" : "s"} and download`;
+    }
+    if (els.duplicateIdModalStatus) {
+      els.duplicateIdModalStatus.textContent = session.busy
+        ? "Checking the corrected working copy against the ADAC schema..."
+        : session.error || evaluation.message || `${evaluation.changedCount} replacement ID${evaluation.changedCount === 1 ? " is" : "s are"} ready.`;
+    }
+  }
+
+  function closeDuplicateIdCorrectionModal() {
+    if (!els.duplicateIdModal) return;
+    if (state.duplicateIdCorrection?.busy) return;
+    els.duplicateIdModal.hidden = true;
+    state.duplicateIdCorrection = null;
+  }
+
+  function isDuplicateIdCorrectionOpen() {
+    return Boolean(els.duplicateIdModal && !els.duplicateIdModal.hidden);
+  }
+
+  async function applyDuplicateIdCorrectionsAndDownload() {
+    const session = state.duplicateIdCorrection;
+    if (!session || session.busy || state.editorBusy) return;
+    const evaluation = evaluateDuplicateIdCorrections(session);
+    if (!evaluation.valid) {
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+    const record = state.documents.get(session.recordId);
+    if (!record?.workingXmlText || record.workingXmlText !== session.sourceXmlText) {
+      session.error = "The working XML changed after this review opened. Close this window and start the download again.";
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+    const candidateDoc = parseXmlDocument(record.workingXmlText);
+    if (!candidateDoc) {
+      session.error = "The working XML could not be parsed. No IDs were changed.";
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+    const changes = [];
+    session.allAssets.forEach((asset) => {
+      if (!session.values.has(asset.locator)) return;
+      const nextId = String(session.values.get(asset.locator) || "").trim();
+      if (nextId === asset.id) return;
+      const assetElement = findXmlElementByLocator(candidateDoc, asset.locator);
+      const idElement = firstDirectChild(assetElement, "ADACId");
+      if (!idElement) return;
+      removeXmlNilAttribute(idElement);
+      idElement.textContent = nextId;
+      changes.push({ ...asset, nextId });
+    });
+    if (changes.length !== evaluation.changedCount) {
+      session.error = "One or more duplicate assets could not be located in the working XML. No IDs were changed.";
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+    const remainingDuplicates = findDuplicateAdacIds(candidateDoc);
+    if (remainingDuplicates.length) {
+      session.error = formatDuplicateAdacIdExportMessage(remainingDuplicates);
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+
+    const candidateXmlText = serializeXmlDocument(candidateDoc);
+    const revision = ++state.editorRevision;
+    session.busy = true;
+    session.error = "";
+    state.editorBusy = true;
+    updateDuplicateIdCorrectionControls();
+    const validation = await validateAdacSchema(candidateXmlText, record.name, candidateDoc);
+    if (revision !== state.editorRevision || state.duplicateIdCorrection !== session) return;
+    session.busy = false;
+    state.editorBusy = false;
+    if (!validation.valid) {
+      const details = formatValidationErrorDetails(normalizeValidationErrors(validation.errors)[0]);
+      session.error = `${details.title}. ${details.suggestion || details.detail || "No duplicate IDs were changed."}`;
+      updateDuplicateIdCorrectionControls();
+      return;
+    }
+
+    const selectedFeature = state.features.find((feature) => feature.uid === state.selectedId && feature.sourceFileId === record.id);
+    pushXmlHistory(record, record.workingXmlText);
+    record.historyFuture = [];
+    applyValidatedWorkingDocument(record, candidateXmlText, candidateDoc, validation, selectedFeature?.xmlLocator || changes[0]?.locator || "");
+    state.duplicateIdCorrection = null;
+    els.duplicateIdModal.hidden = true;
+    const correctionMessage = `Corrected ${changes.length} duplicate ADAC ID${changes.length === 1 ? "" : "s"} in the working XML copy.`;
+    state.editorFeedback = { bulk: true, tone: "success", message: `${correctionMessage} Use Undo to restore the previous IDs.` };
+    renderAll();
+    downloadPreparedXml(
+      record.workingXmlText,
+      session.fileName,
+      `${correctionMessage} ${session.successMessage}`,
+      record,
+    );
   }
 
   function updateXmlDownloadDrawingExtents(doc, bufferM = 0) {
@@ -5664,6 +6019,7 @@
       preview.repairedXmlText,
       preview.repairedFileName || buildRepairedXmlFileName(preview.originalFileName),
       "Downloaded the viewer-repaired XML copy. The original upload was not changed.",
+      state.loadedFiles[0] ? state.documents.get(state.loadedFiles[0].id) : null,
     );
   }
 
@@ -6344,6 +6700,8 @@
     closeTransformXmlModal();
     state.engineeringResolution = null;
     closeEngineeringResolution();
+    state.duplicateIdCorrection = null;
+    closeDuplicateIdCorrectionModal();
     state.features = [];
     state.filteredFeatures = [];
     state.layers = new Map();
@@ -13795,6 +14153,7 @@
       context.record.workingXmlText,
       fileName,
       `Downloaded ${fileName} from the current working copy.`,
+      context.record,
     );
   }
 
@@ -14090,8 +14449,16 @@
     const id = formatReportValue(feature.id);
     const type = formatReportValue(feature.type);
     if (usesIdOnlyDetailsTitle(feature)) return id || type || "Asset";
+    const structuralType = getStructuralFeatureDetailsType(feature);
+    if (structuralType) return id ? `${structuralType} ${id}` : structuralType;
     if (type && id) return `${type} ${id}`;
     return type || id || "Asset";
+  }
+
+  function getStructuralFeatureDetailsType(feature) {
+    const styleKey = feature?.planStyleKey || getPlanStyleKeyForAssetPath(feature?.assetPath);
+    if (!["water_pipe", "water_service", "sewer_pipe", "sewer_connection", "stormwater_pipe"].includes(styleKey)) return "";
+    return planAssetTypeLabel(styleKey, getPlanLabelValues(feature));
   }
 
   function usesIdOnlyDetailsTitle(feature) {
