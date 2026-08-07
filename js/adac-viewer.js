@@ -5383,10 +5383,20 @@
     const projectElement = firstElementByName(doc.documentElement, "Project");
     const exportDateTime = firstDirectChild(projectElement, "ExportDateTime");
     if (exportDateTime) exportDateTime.textContent = formatUtcExportDateTime(exportedAt);
+    normalizeEmptyXmlElements(doc);
     return {
       ok: true,
       xmlText: serializeXmlDocument(doc),
     };
+  }
+
+  function normalizeEmptyXmlElements(doc) {
+    Array.from(doc?.querySelectorAll?.("*") || []).forEach((element) => {
+      if (elementChildren(element).length || String(element.textContent || "").trim()) return;
+      Array.from(element.childNodes || []).forEach((node) => {
+        if (node.nodeType === 3 && !String(node.nodeValue || "").trim()) element.removeChild(node);
+      });
+    });
   }
 
   function findDuplicateAdacIds(doc) {
