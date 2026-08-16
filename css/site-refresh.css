@@ -3347,9 +3347,197 @@ h3,
 .viewer-symbol-tool,
 .viewer-measure-tool,
 .viewer-selection-tool,
+.viewer-location-tool,
 .viewer-sample-tool {
     position: relative;
     display: inline-flex;
+}
+
+.viewer-location-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    width: min(390px, calc(100vw - 32px));
+}
+
+.viewer-location-menu[hidden] {
+    display: none;
+}
+
+.viewer-location-menu__panel {
+    display: grid;
+    box-sizing: border-box;
+    width: 100%;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid rgba(11, 31, 58, 0.16);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 20px 48px rgba(11, 31, 58, 0.2);
+    color: var(--mockup-ink);
+}
+
+.viewer-location-menu__heading,
+.viewer-location-current__heading,
+.viewer-location-current__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.viewer-location-menu__heading {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--mockup-line);
+}
+
+.viewer-location-menu__heading strong,
+.viewer-location-current__heading strong {
+    min-width: 0;
+    font-size: 0.8rem;
+    font-weight: 850;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.viewer-tool-buttons .viewer-location-menu__heading button {
+    flex: 0 0 30px;
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+}
+
+.viewer-location-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    gap: 7px;
+}
+
+.viewer-location-form input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid var(--mockup-line);
+    border-radius: 7px;
+    outline: 0;
+    background: #f8fbfe;
+    color: var(--mockup-ink);
+    font: 700 0.75rem "Manrope", "Segoe UI", Arial, sans-serif;
+}
+
+.viewer-location-form input:focus {
+    border-color: var(--mockup-blue);
+    box-shadow: 0 0 0 3px rgba(31, 105, 204, 0.12);
+}
+
+.viewer-tool-buttons .viewer-location-form button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-color: var(--mockup-navy);
+    background: var(--mockup-navy);
+    color: #ffffff;
+}
+
+.viewer-location-current {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(31, 105, 204, 0.2);
+    border-radius: 7px;
+    background: #f4f8fd;
+}
+
+.viewer-location-current[hidden] {
+    display: none;
+}
+
+.viewer-location-current__heading i {
+    flex: 0 0 auto;
+    color: var(--mockup-blue);
+}
+
+.viewer-location-current small,
+.viewer-location-status,
+.viewer-location-credit {
+    color: #65758a;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.viewer-location-current__actions {
+    justify-content: flex-start;
+}
+
+.viewer-tool-buttons .viewer-location-current__actions button {
+    width: auto;
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 0.68rem;
+}
+
+.viewer-location-results {
+    display: grid;
+    gap: 6px;
+    max-height: 265px;
+    overflow: auto;
+}
+
+.viewer-tool-buttons .viewer-location-result {
+    display: grid;
+    align-content: center;
+    justify-items: start;
+    width: 100%;
+    min-height: 52px;
+    gap: 2px;
+    padding: 9px 10px;
+    border-color: var(--mockup-line);
+    background: #f9fbfd;
+    text-align: left;
+}
+
+.viewer-tool-buttons .viewer-location-result:hover {
+    transform: none;
+    border-color: rgba(11, 31, 58, 0.28);
+    background: #ffffff;
+}
+
+.viewer-location-result strong,
+.viewer-location-result small {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.viewer-location-result strong {
+    color: var(--mockup-ink);
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.viewer-location-result small {
+    color: #65758a;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.viewer-location-status:empty,
+.viewer-location-results:empty {
+    display: none;
+}
+
+.viewer-location-status.is-error {
+    color: #b73c34;
+}
+
+.viewer-location-credit {
+    justify-self: end;
+    font-size: 0.62rem;
 }
 
 .viewer-sample-menu {
@@ -7948,6 +8136,11 @@ h3,
 
     .viewer-sample-menu {
         right: -44px;
+    }
+
+    .viewer-location-menu {
+        left: -8px;
+        width: min(390px, calc(100vw - 24px));
     }
 
     .viewer-selection-menu {

@@ -149,7 +149,7 @@
   </script>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="css/adact-styles.css" />
-  <link rel="stylesheet" href="css/site-refresh.css?v=20260729b" />
+  <link rel="stylesheet" href="css/site-refresh.css?v=20260816a" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 </head>
 
@@ -288,6 +288,31 @@
                 <button type="button" data-map-mode="satellite" aria-pressed="false">Satellite</button>
               </div>
               <div class="viewer-tool-buttons" aria-label="Map tools">
+                <span class="viewer-location-tool">
+                  <button type="button" data-action="toggle-location-search" data-role="location-search-button" title="Search map location" aria-label="Search map location" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+                  </button>
+                  <span class="viewer-location-menu" data-role="location-search-menu" role="dialog" aria-label="Search map location" hidden>
+                    <span class="viewer-location-menu__panel">
+                      <span class="viewer-location-menu__heading">
+                        <strong>Search location</strong>
+                        <button type="button" data-action="close-location-search" aria-label="Close location search">
+                          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                      </span>
+                      <form class="viewer-location-form" data-role="location-search-form">
+                        <input type="search" data-role="location-search-input" placeholder="Address, suburb, postcode or coordinates" aria-label="Address, suburb, postcode or coordinates" autocomplete="off" />
+                        <button type="submit" aria-label="Search">
+                          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        </button>
+                      </form>
+                      <span class="viewer-location-current" data-role="location-search-current" hidden></span>
+                      <span class="viewer-location-results" data-role="location-search-results"></span>
+                      <span class="viewer-location-status" data-role="location-search-status" aria-live="polite"></span>
+                      <small class="viewer-location-credit">Location search by Esri</small>
+                    </span>
+                  </span>
+                </span>
                 <button type="button" data-action="fit" title="Fit map" aria-label="Fit map">
                   <i class="fa-solid fa-expand" aria-hidden="true"></i>
                 </button>
@@ -515,8 +540,8 @@
               </div>
               <div class="viewer-empty" data-role="empty-state">
                 <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
-                <strong>Load ADAC XML or a DXF reference</strong>
-                <span>The map and layer manager will update automatically. XML remains the editable source.</span>
+                <strong>Load a file or search a location</strong>
+                <span>Open ADAC XML, add a DXF reference, or use the location tool to inspect map overlays.</span>
               </div>
               <div class="viewer-validation-panel" data-role="schema-validation-panel" hidden></div>
               <div class="viewer-repair-banner" data-role="repair-preview-banner" hidden></div>
@@ -797,7 +822,7 @@
     </footer>
   </div>
   <script src="js/script.js"></script>
-  <script src="js/adac-viewer.js?v=20260807a"></script>
+  <script src="js/adac-viewer.js?v=20260816a"></script>
   <script src="js/adact-tracking.js?v=20260602"></script>
   <script src="js/firebase-config.js?v=20260723e"></script>
   <script src="js/adact-usage-tracking.js?v=20260723f"></script>

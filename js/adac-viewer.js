@@ -237,6 +237,7 @@
   const mapMinZoom = 0.35;
   const mapMaxZoom = 64;
   const mapMaxTileZoom = 20;
+  const locationSearchServiceUrl = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates";
   const symbolScaleMin = 0.5;
   const symbolScaleMax = 2;
   const symbolScaleStorageKey = "adact-viewer-symbol-scale";
@@ -1145,6 +1146,19 @@
       providers: [],
     },
     locationCheckAbort: null,
+    searchLocation: {
+      query: "",
+      status: "idle",
+      message: "",
+      results: [],
+      active: null,
+      councils: [],
+      providers: [],
+      authorityStatus: "idle",
+      abortController: null,
+      authorityAbortController: null,
+      overlaySnapshot: null,
+    },
     overlays: overlayPresets.map((overlay) => ({
       ...overlay,
       defaultEnabled: Boolean(overlay.enabled),
@@ -1199,6 +1213,13 @@
     reportExportMenu: root.querySelector("[data-role='report-export-menu']"),
     sampleMenuButton: root.querySelector("[data-role='sample-menu-button']"),
     sampleMenu: root.querySelector("[data-role='sample-menu']"),
+    locationSearchButton: root.querySelector("[data-role='location-search-button']"),
+    locationSearchMenu: root.querySelector("[data-role='location-search-menu']"),
+    locationSearchForm: root.querySelector("[data-role='location-search-form']"),
+    locationSearchInput: root.querySelector("[data-role='location-search-input']"),
+    locationSearchCurrent: root.querySelector("[data-role='location-search-current']"),
+    locationSearchResults: root.querySelector("[data-role='location-search-results']"),
+    locationSearchStatus: root.querySelector("[data-role='location-search-status']"),
     labelButton: root.querySelector("[data-role='label-button']"),
     labelMenu: root.querySelector("[data-role='label-menu']"),
     symbolButton: root.querySelector("[data-role='symbol-button']"),
@@ -1419,6 +1440,9 @@
     if (els.suggestionForm) {
       els.suggestionForm.addEventListener("submit", handleSuggestionSubmit);
     }
+    if (els.locationSearchForm) {
+      els.locationSearchForm.addEventListener("submit", handleLocationSearchSubmit);
+    }
     renderAll();
   }
 
@@ -1444,6 +1468,9 @@
     }
     if (isSampleMenuOpen() && !event.target.closest("[data-role='sample-menu']") && !event.target.closest("[data-role='sample-menu-button']")) {
       closeSampleMenu();
+    }
+    if (isLocationSearchOpen() && !event.target.closest("[data-role='location-search-menu']") && !event.target.closest("[data-role='location-search-button']")) {
+      closeLocationSearch();
     }
     if (isLabelMenuOpen() && !event.target.closest("[data-role='label-menu']") && !event.target.closest("[data-role='label-button']")) {
       closeLabelMenu();
@@ -1612,6 +1639,7 @@
     "set-label-simple": "simple_labels",
     "set-label-detailed": "as_constructed_labels",
     "toggle-symbol-menu": "symbol_scale",
+    "toggle-location-search": "location_search",
     "set-measure-distance": "distance_measurement",
     "set-measure-area": "area_measurement",
     "preview-repaired-xml": "suggested_repair_preview",
@@ -1642,6 +1670,16 @@
     emitViewerUsageTool(viewerUsageToolActions[action]);
     if (action === "fit") {
       fitMap();
+    } else if (action === "toggle-location-search") {
+      toggleLocationSearch();
+    } else if (action === "close-location-search") {
+      closeLocationSearch();
+    } else if (action === "choose-search-location") {
+      chooseSearchLocation(Number(control?.dataset.locationIndex));
+    } else if (action === "clear-search-location") {
+      clearSearchLocation();
+    } else if (action === "return-to-xml") {
+      returnToXmlLocation();
     } else if (action === "toggle-workspace") {
       toggleWorkspaceMode();
     } else if (action === "toggle-multi-select") {
@@ -1812,6 +1850,11 @@
   }
 
   function handleWindowKeydown(event) {
+    if (event.key === "Enter" && event.target.closest?.("[data-role='location-search-input']")) {
+      event.preventDefault();
+      els.locationSearchForm?.requestSubmit();
+      return;
+    }
     const editorField = event.target.closest?.("input[data-editor-field], input[data-editor-geometry], input[data-bulk-editor-field]");
     if (event.key === "Enter" && editorField) {
       event.preventDefault();
@@ -1869,6 +1912,7 @@
     return Boolean(
       isReportExportMenuOpen()
       || isSampleMenuOpen()
+      || isLocationSearchOpen()
       || isLabelMenuOpen()
       || isSymbolMenuOpen()
       || isMeasurementMenuOpen()
@@ -1976,6 +2020,7 @@
   function closeTransientUi(except = "") {
     if (except !== "report") closeReportExportMenu();
     if (except !== "sample") closeSampleMenu();
+    if (except !== "location") closeLocationSearch();
     if (except !== "label") closeLabelMenu();
     if (except !== "symbol") closeSymbolMenu();
     if (except !== "measurement") closeMeasurementMenu();
@@ -2081,6 +2126,460 @@
 
   function isSampleMenuOpen() {
     return Boolean(els.sampleMenu && !els.sampleMenu.hidden);
+  }
+
+  function toggleLocationSearch() {
+    if (isLocationSearchOpen()) closeLocationSearch();
+    else openLocationSearch();
+  }
+
+  function openLocationSearch() {
+    if (!els.locationSearchMenu) return;
+    closeTransientUi("location");
+    els.locationSearchMenu.hidden = false;
+    els.locationSearchButton?.setAttribute("aria-expanded", "true");
+    renderLocationSearchUi();
+    window.requestAnimationFrame(() => els.locationSearchInput?.focus());
+  }
+
+  function closeLocationSearch() {
+    if (!els.locationSearchMenu) return;
+    els.locationSearchMenu.hidden = true;
+    els.locationSearchButton?.setAttribute("aria-expanded", "false");
+  }
+
+  function isLocationSearchOpen() {
+    return Boolean(els.locationSearchMenu && !els.locationSearchMenu.hidden);
+  }
+
+  async function handleLocationSearchSubmit(event) {
+    event.preventDefault();
+    const query = String(els.locationSearchInput?.value || "").trim();
+    state.searchLocation.query = query;
+    if (!query) {
+      setLocationSearchMessage("Enter an address, suburb, postcode or coordinates.", true);
+      return;
+    }
+
+    const coordinateResult = parseLocationCoordinateQuery(query);
+    if (coordinateResult) {
+      cancelLocationSearchRequest();
+      state.searchLocation.results = [coordinateResult];
+      state.searchLocation.status = "ready";
+      state.searchLocation.message = "";
+      renderLocationSearchUi();
+      chooseSearchLocation(0);
+      return;
+    }
+
+    if (query.length < 3) {
+      setLocationSearchMessage("Enter at least three characters to search.", true);
+      return;
+    }
+
+    cancelLocationSearchRequest();
+    const controller = new AbortController();
+    state.searchLocation.abortController = controller;
+    state.searchLocation.status = "searching";
+    state.searchLocation.message = "Searching...";
+    state.searchLocation.results = [];
+    renderLocationSearchUi();
+
+    const params = new URLSearchParams({
+      f: "json",
+      SingleLine: query,
+      countryCode: "AUS",
+      maxLocations: "5",
+      outSR: "4326",
+      outFields: "Match_addr,Addr_type,City,Subregion,Region,Postal,Country",
+    });
+
+    try {
+      const response = await fetch(`${locationSearchServiceUrl}?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message || "Location search failed");
+
+      state.searchLocation.results = (data.candidates || [])
+        .map((candidate, index) => normalizeLocationCandidate(candidate, index))
+        .filter(Boolean);
+      state.searchLocation.status = state.searchLocation.results.length ? "ready" : "empty";
+      state.searchLocation.message = state.searchLocation.results.length
+        ? ""
+        : "No Australian locations matched that search.";
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      state.searchLocation.status = "error";
+      state.searchLocation.message = "Location search is temporarily unavailable.";
+      state.searchLocation.results = [];
+    } finally {
+      if (state.searchLocation.abortController === controller) state.searchLocation.abortController = null;
+      renderLocationSearchUi();
+    }
+  }
+
+  function parseLocationCoordinateQuery(query) {
+    const values = (String(query || "").match(/-?\d+(?:\.\d+)?/g) || []).map(Number).filter(Number.isFinite);
+    if (values.length < 2) return null;
+
+    const first = values[0];
+    const second = values[1];
+    let lat = null;
+    let lng = null;
+    let label = "";
+    let sourceType = "Coordinates";
+
+    if (Math.abs(first) <= 90 && Math.abs(second) <= 180) {
+      lat = first;
+      lng = second;
+    } else if (Math.abs(first) <= 180 && Math.abs(second) <= 90) {
+      lng = first;
+      lat = second;
+    } else {
+      const easting = values.find((value) => value >= 100000 && value <= 900000);
+      const northing = values.find((value) => value >= 5000000 && value <= 10000000);
+      if (!Number.isFinite(easting) || !Number.isFinite(northing)) return null;
+      const zoneMatch = String(query || "").match(/(?:MGA\s*|ZONE\s*)(5[0-9])/i);
+      const zone = zoneMatch ? Number(zoneMatch[1]) : (state.coordinateZone || 56);
+      const converted = mgaToLatLng(easting, northing, zone);
+      if (!converted) return null;
+      [lat, lng] = converted;
+      sourceType = `MGA zone ${zone}`;
+      label = `${formatCoordinateValue(easting)}, ${formatCoordinateValue(northing)}`;
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return {
+      id: `coordinate-${Date.now()}`,
+      label: label || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+      subtitle: sourceType,
+      lat,
+      lng,
+      extent: buildLocationPointExtent(lat, lng),
+      attributes: {},
+      score: 100,
+    };
+  }
+
+  function normalizeLocationCandidate(candidate, index) {
+    const lat = Number(candidate?.location?.y);
+    const lng = Number(candidate?.location?.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const attributes = candidate.attributes || {};
+    const type = formatLocationResultType(attributes.Addr_type || "Location");
+    const locality = uniqueValues([attributes.Subregion, attributes.Region, attributes.Postal].filter(Boolean)).join(" · ");
+    return {
+      id: `geocoder-${Date.now()}-${index}`,
+      label: String(candidate.address || attributes.Match_addr || `${lat.toFixed(6)}, ${lng.toFixed(6)}`).trim(),
+      subtitle: [type, locality].filter(Boolean).join(" · "),
+      lat,
+      lng,
+      extent: normalizeLocationExtent(candidate.extent, lat, lng),
+      attributes,
+      score: Number(candidate.score) || 0,
+    };
+  }
+
+  function formatLocationResultType(value) {
+    return titleCase(String(value || "Location").replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2"));
+  }
+
+  function normalizeLocationExtent(extent, lat, lng) {
+    const normalized = {
+      minLat: Number(extent?.ymin),
+      maxLat: Number(extent?.ymax),
+      minLng: Number(extent?.xmin),
+      maxLng: Number(extent?.xmax),
+    };
+    if (
+      !Number.isFinite(normalized.minLat)
+      || !Number.isFinite(normalized.maxLat)
+      || !Number.isFinite(normalized.minLng)
+      || !Number.isFinite(normalized.maxLng)
+      || normalized.minLat >= normalized.maxLat
+      || normalized.minLng >= normalized.maxLng
+    ) {
+      return buildLocationPointExtent(lat, lng);
+    }
+    const bounded = {
+      minLat: clamp(normalized.minLat, -85, 85),
+      maxLat: clamp(normalized.maxLat, -85, 85),
+      minLng: clamp(normalized.minLng, -180, 180),
+      maxLng: clamp(normalized.maxLng, -180, 180),
+    };
+    const maximumLatitudeSpan = 0.018;
+    const maximumLongitudeSpan = maximumLatitudeSpan / Math.max(0.25, Math.cos(lat * Math.PI / 180));
+    if (
+      bounded.maxLat - bounded.minLat > maximumLatitudeSpan
+      || bounded.maxLng - bounded.minLng > maximumLongitudeSpan
+    ) {
+      return {
+        minLat: clamp(lat - maximumLatitudeSpan / 2, -85, 85),
+        maxLat: clamp(lat + maximumLatitudeSpan / 2, -85, 85),
+        minLng: clamp(lng - maximumLongitudeSpan / 2, -180, 180),
+        maxLng: clamp(lng + maximumLongitudeSpan / 2, -180, 180),
+      };
+    }
+    return bounded;
+  }
+
+  function buildLocationPointExtent(lat, lng) {
+    const latitudePadding = 0.0014;
+    const longitudePadding = latitudePadding / Math.max(0.25, Math.cos(lat * Math.PI / 180));
+    return {
+      minLat: clamp(lat - latitudePadding, -85, 85),
+      maxLat: clamp(lat + latitudePadding, -85, 85),
+      minLng: clamp(lng - longitudePadding, -180, 180),
+      maxLng: clamp(lng + longitudePadding, -180, 180),
+    };
+  }
+
+  function chooseSearchLocation(index) {
+    const result = state.searchLocation.results[index];
+    if (!result) return;
+    captureOverlayStateBeforeLocationSearch();
+    prepareOverlaysForLocationSearch();
+    state.searchLocation.active = { ...result, extent: { ...result.extent } };
+    if (state.searchLocation.results.length === 1 && String(result.id).startsWith("coordinate-")) {
+      state.searchLocation.results = [];
+    }
+    state.searchLocation.councils = [];
+    state.searchLocation.providers = [];
+    state.searchLocation.authorityStatus = "checking";
+    state.searchLocation.message = "Checking available map overlays...";
+    state.searchLocation.status = "ready";
+    state.dxfFitReferenceId = "";
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    if (state.mapMode === "grid") state.mapMode = "map";
+    invalidateOverlayQueriesForNavigation();
+    renderMetrics();
+    renderOverlays();
+    renderLocationSearchUi();
+    drawMap();
+    setStatus(`Showing map overlays near ${result.label}.`, false);
+    detectSearchLocationAuthorities(result);
+  }
+
+  function clearSearchLocation(options = {}) {
+    cancelLocationSearchRequest();
+    cancelSearchAuthorityRequest();
+    state.searchLocation.active = null;
+    state.searchLocation.councils = [];
+    state.searchLocation.providers = [];
+    state.searchLocation.authorityStatus = "idle";
+    state.searchLocation.message = "";
+    state.zoom = 1;
+    state.pan = { x: 0, y: 0 };
+    restoreOverlayStateAfterLocationSearch();
+    invalidateOverlayQueriesForNavigation();
+    renderMetrics();
+    renderOverlays();
+    renderLocationSearchUi();
+    drawMap();
+    if (!options.silent) {
+      setStatus(state.features.length ? "Returned to the loaded XML extent." : "Cleared the searched map location.", false);
+    }
+  }
+
+  function returnToXmlLocation() {
+    clearSearchLocation({ silent: true });
+    closeLocationSearch();
+    setStatus("Returned to the loaded XML extent.", false);
+  }
+
+  function cancelLocationSearchRequest() {
+    if (state.searchLocation.abortController) state.searchLocation.abortController.abort();
+    state.searchLocation.abortController = null;
+  }
+
+  function cancelSearchAuthorityRequest() {
+    if (state.searchLocation.authorityAbortController) state.searchLocation.authorityAbortController.abort();
+    state.searchLocation.authorityAbortController = null;
+  }
+
+  function invalidateOverlayQueriesForNavigation() {
+    window.clearTimeout(state.overlayTimer);
+    state.overlays.forEach((overlay) => {
+      if (overlay.abortController) overlay.abortController.abort();
+      overlay.features = [];
+      overlay.status = overlay.enabled ? "Ready" : "Off";
+      overlay.lastExtentKey = "";
+      overlay.requestKey = "";
+      overlay.abortController = null;
+    });
+  }
+
+  function captureOverlayStateBeforeLocationSearch() {
+    if (state.searchLocation.overlaySnapshot) return;
+    state.searchLocation.overlaySnapshot = state.overlays.map((overlay) => ({
+      id: overlay.id,
+      enabled: overlay.enabled,
+      userToggled: overlay.userToggled,
+    }));
+  }
+
+  function prepareOverlaysForLocationSearch() {
+    state.overlays.forEach((overlay) => {
+      if (isGlobalOverlay(overlay)) {
+        overlay.enabled = Boolean(overlay.defaultEnabled);
+      } else {
+        overlay.enabled = false;
+      }
+      overlay.userToggled = false;
+    });
+  }
+
+  function restoreOverlayStateAfterLocationSearch() {
+    const snapshot = state.searchLocation.overlaySnapshot;
+    state.searchLocation.overlaySnapshot = null;
+    if (!snapshot) return;
+    const savedById = new Map(snapshot.map((item) => [item.id, item]));
+    state.overlays.forEach((overlay) => {
+      const saved = savedById.get(overlay.id);
+      if (!saved) return;
+      overlay.enabled = saved.enabled;
+      overlay.userToggled = saved.userToggled;
+    });
+  }
+
+  function enableDetectedLocationOverlays() {
+    const authorities = getActiveOverlayAuthorities();
+    state.overlays.forEach((overlay) => {
+      if (isGlobalOverlay(overlay)) {
+        if (overlay.defaultEnabled) overlay.enabled = true;
+        return;
+      }
+      const providerMatch = overlay.provider && authorities.providers.some((provider) => (
+        normalizeAuthorityName(provider) === normalizeAuthorityName(overlay.provider)
+      ));
+      const councilMatch = overlay.council && authorities.councils.some((council) => (
+        normalizeCouncilKey(council) === normalizeCouncilKey(overlay.council)
+      ));
+      if ((!providerMatch && !councilMatch) || isRoadCentrelineOverlay(overlay)) return;
+      overlay.enabled = true;
+      overlay.status = "Ready";
+      overlay.lastExtentKey = "";
+    });
+  }
+
+  async function detectSearchLocationAuthorities(location) {
+    cancelSearchAuthorityRequest();
+    const controller = new AbortController();
+    state.searchLocation.authorityAbortController = controller;
+    const extent = buildLocationPointExtent(location.lat, location.lng);
+
+    try {
+      const detected = await queryAuthoritiesForExtent(extent, controller.signal);
+      if (state.searchLocation.active?.id !== location.id) return;
+      const inferred = inferSearchLocationAuthorities(location);
+      state.searchLocation.councils = uniqueValues([...detected.councils, ...inferred.councils]);
+      state.searchLocation.providers = uniqueValues([
+        ...detected.providers,
+        ...inferred.providers,
+        ...state.searchLocation.councils.map((council) => waterProviderByCouncil[normalizeCouncilKey(council)]).filter(Boolean),
+      ]);
+      state.searchLocation.authorityStatus = state.searchLocation.councils.length || state.searchLocation.providers.length
+        ? "ready"
+        : "unknown";
+      state.searchLocation.message = state.searchLocation.authorityStatus === "ready"
+        ? ""
+        : "No matching regional overlay provider was detected at this location.";
+      enableDetectedLocationOverlays();
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      if (state.searchLocation.active?.id !== location.id) return;
+      const inferred = inferSearchLocationAuthorities(location);
+      state.searchLocation.councils = inferred.councils;
+      state.searchLocation.providers = inferred.providers;
+      state.searchLocation.authorityStatus = inferred.councils.length || inferred.providers.length ? "ready" : "unavailable";
+      state.searchLocation.message = state.searchLocation.authorityStatus === "ready"
+        ? ""
+        : "Regional overlay detection is temporarily unavailable.";
+      if (state.searchLocation.authorityStatus === "ready") enableDetectedLocationOverlays();
+    } finally {
+      if (state.searchLocation.authorityAbortController === controller) state.searchLocation.authorityAbortController = null;
+      renderOverlays();
+      renderLocationSearchUi();
+      drawMap();
+    }
+  }
+
+  function inferSearchLocationAuthorities(location) {
+    const text = [location.label, ...Object.values(location.attributes || {})].filter(Boolean).join(" ");
+    const councils = uniqueValues(state.overlays.map((overlay) => overlay.council).filter((council) => (
+      council && isAuthorityMatch(text, council)
+    )));
+    const providers = uniqueValues([
+      ...state.overlays.map((overlay) => overlay.provider).filter((provider) => provider && isAuthorityMatch(text, provider)),
+      ...councils.map((council) => waterProviderByCouncil[normalizeCouncilKey(council)]).filter(Boolean),
+    ]);
+    return { councils, providers };
+  }
+
+  function setLocationSearchMessage(message, isError = false) {
+    state.searchLocation.status = isError ? "error" : "ready";
+    state.searchLocation.message = message;
+    renderLocationSearchUi();
+  }
+
+  function renderLocationSearchUi() {
+    if (els.locationSearchButton) {
+      const active = Boolean(state.searchLocation.active);
+      els.locationSearchButton.classList.toggle("is-active", active);
+      els.locationSearchButton.setAttribute("aria-pressed", String(active));
+      els.locationSearchButton.title = active
+        ? `Viewing ${state.searchLocation.active.label}`
+        : "Search map location";
+    }
+    if (els.locationSearchInput && document.activeElement !== els.locationSearchInput) {
+      els.locationSearchInput.value = state.searchLocation.query;
+    }
+    if (els.locationSearchStatus) {
+      els.locationSearchStatus.textContent = state.searchLocation.message;
+      els.locationSearchStatus.classList.toggle("is-error", state.searchLocation.status === "error");
+    }
+    if (els.locationSearchResults) {
+      els.locationSearchResults.innerHTML = state.searchLocation.results.map((result, index) => `
+        <button type="button" class="viewer-location-result" data-action="choose-search-location" data-location-index="${index}">
+          <strong>${escapeHtml(result.label)}</strong>
+          <small>${escapeHtml(result.subtitle || `${result.lat.toFixed(6)}, ${result.lng.toFixed(6)}`)}</small>
+        </button>
+      `).join("");
+    }
+    if (els.locationSearchCurrent) {
+      const active = state.searchLocation.active;
+      els.locationSearchCurrent.hidden = !active;
+      els.locationSearchCurrent.innerHTML = active ? `
+        <span class="viewer-location-current__heading">
+          <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+          <strong>${escapeHtml(active.label)}</strong>
+        </span>
+        <small>${escapeHtml(getSearchLocationAuthorityText())}</small>
+        <span class="viewer-location-current__actions">
+          ${state.features.length ? `
+            <button type="button" data-action="return-to-xml">
+              <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+              <span>Return to XML</span>
+            </button>
+          ` : ""}
+          <button type="button" data-action="clear-search-location">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            <span>Clear location</span>
+          </button>
+        </span>
+      ` : "";
+    }
+  }
+
+  function getSearchLocationAuthorityText() {
+    if (state.searchLocation.authorityStatus === "checking") return "Checking regional overlays...";
+    const parts = [];
+    if (state.searchLocation.councils.length) parts.push(formatList(state.searchLocation.councils));
+    if (state.searchLocation.providers.length) parts.push(formatList(state.searchLocation.providers));
+    return parts.length ? parts.join(" · ") : "Map and cadastre location";
   }
 
   function handleMergeXmlButton() {
@@ -5263,6 +5762,14 @@
     if (replace) {
       clearLoadedFiles(false, { keepDxf: true });
     }
+    cancelLocationSearchRequest();
+    cancelSearchAuthorityRequest();
+    state.searchLocation.active = null;
+    state.searchLocation.councils = [];
+    state.searchLocation.providers = [];
+    state.searchLocation.authorityStatus = "idle";
+    state.searchLocation.message = "";
+    state.searchLocation.overlaySnapshot = null;
     state.validationErrorResults = options.validationErrorResults || [];
     if (options.repairPreview) state.repairPreview = options.repairPreview;
 
@@ -6816,6 +7323,14 @@
     setMeasurementMode("off");
     resetLocationCheck();
     resetOverlayQueries();
+    if (state.searchLocation.active) {
+      state.searchLocation.overlaySnapshot = state.overlays.map((overlay) => ({
+        id: overlay.id,
+        enabled: overlay.enabled,
+        userToggled: overlay.userToggled,
+      }));
+      if (state.searchLocation.authorityStatus === "ready") enableDetectedLocationOverlays();
+    }
     clearAssetFilters(false);
     if (els.fileInput) els.fileInput.value = "";
     if (els.dxfInput && !keepDxf) els.dxfInput.value = "";
@@ -7870,7 +8385,7 @@
     if (!rect || rect.width < 5 || rect.height < 5 || !state.filteredFeatures.length) return [];
     const width = els.canvas.clientWidth || els.canvas.width;
     const height = els.canvas.clientHeight || els.canvas.height;
-    const transform = getActiveMapTransform(state.filteredFeatures, width, height);
+    const transform = getActiveMapTransform(getCurrentMapExtentFeatures(), width, height);
     return state.filteredFeatures.filter((feature) => {
       const pointPairs = getProjectedFeatureScreenPairs(feature, transform);
       const points = pointPairs.map((pair) => pair.screenPoint);
@@ -8471,6 +8986,7 @@
     renderDetails();
     renderValidationPanel();
     renderRepairPreviewBanner();
+    renderLocationSearchUi();
     if (isMergeXmlModalOpen()) renderMergeXmlModal();
     if (isTransformXmlModalOpen()) renderTransformXmlModal();
     renderTransformPickUi();
@@ -8529,7 +9045,7 @@
     if (state.reportBundles.length < 2) closeReportExportMenu();
     if (els.visibleLayerCount) els.visibleLayerCount.textContent = `${visibleLayers} visible`;
     updateLabelPanelState();
-    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0 || state.dxfReferences.length > 0 || shouldShowValidationPanel());
+    if (els.empty) els.empty.classList.toggle("is-hidden", state.features.length > 0 || state.dxfReferences.length > 0 || Boolean(state.searchLocation.active) || shouldShowValidationPanel());
   }
 
   function shouldShowValidationPanel() {
@@ -9909,9 +10425,11 @@
   function shouldShowOverlayInLayerManager(overlay) {
     if (isGlobalOverlay(overlay)) return true;
     if (overlay.enabled || overlay.userToggled) return true;
-    if (!state.features.length) return false;
-    if (state.locationCheck.status === "checking") return false;
-    if (!hasDetectedOverlayRegion()) return true;
+    const searchActive = Boolean(state.searchLocation.active);
+    if (!state.features.length && !searchActive) return false;
+    if (searchActive && state.searchLocation.authorityStatus === "checking") return false;
+    if (!searchActive && state.locationCheck.status === "checking") return false;
+    if (!hasDetectedOverlayRegion()) return !searchActive;
     return isRecommendedOverlay(overlay);
   }
 
@@ -9920,7 +10438,21 @@
   }
 
   function hasDetectedOverlayRegion() {
-    return Boolean(state.locationCheck.councils.length || state.locationCheck.providers.length);
+    const authorities = getActiveOverlayAuthorities();
+    return Boolean(authorities.councils.length || authorities.providers.length);
+  }
+
+  function getActiveOverlayAuthorities() {
+    if (state.searchLocation.active) {
+      return {
+        councils: state.searchLocation.councils,
+        providers: state.searchLocation.providers,
+      };
+    }
+    return {
+      councils: state.locationCheck.councils,
+      providers: state.locationCheck.providers,
+    };
   }
 
   function getOverlayTree(overlays = state.overlays) {
@@ -10048,6 +10580,7 @@
   function isOverlayRelevantToLoadedAssets(overlay) {
     if (overlay.mode === "parcel") return true;
     if (!overlay.serviceKind) return true;
+    if (state.searchLocation.active) return true;
     return state.assetKinds.has(overlay.serviceKind);
   }
 
@@ -10064,18 +10597,19 @@
   }
 
   function getOverlayStatusText(overlay) {
-    if (!overlay.enabled && isRecommendedOverlay(overlay)) return "Recommended for this file";
+    const recommendedText = state.searchLocation.active ? "Available near searched location" : "Recommended for this file";
+    if (!overlay.enabled && isRecommendedOverlay(overlay)) return recommendedText;
     if (overlay.status && overlay.status !== "Ready") return overlay.status;
-    if (isRecommendedOverlay(overlay)) return "Recommended for this file";
+    if (isRecommendedOverlay(overlay)) return recommendedText;
     return overlay.status || overlay.source;
   }
 
   function isRecommendedOverlayProvider(provider) {
-    return state.locationCheck.providers.some((item) => normalizeAuthorityName(item) === normalizeAuthorityName(provider));
+    return getActiveOverlayAuthorities().providers.some((item) => normalizeAuthorityName(item) === normalizeAuthorityName(provider));
   }
 
   function isRecommendedOverlayCouncil(council) {
-    return state.locationCheck.councils.some((item) => normalizeCouncilKey(item) === normalizeCouncilKey(council));
+    return getActiveOverlayAuthorities().councils.some((item) => normalizeCouncilKey(item) === normalizeCouncilKey(council));
   }
 
   function getAssetKindsForFeatures(features) {
@@ -15817,6 +16351,7 @@
     getFeaturesForMapDrawing(features).forEach((feature) => {
       drawAssetFeature(feature, transform);
     });
+    drawSearchLocationMarker(transform);
     drawDxfSnapTargetHighlight(transform);
     drawSplitOverlay(transform);
     drawMeasurementOverlay(transform);
@@ -15838,6 +16373,15 @@
   }
 
   function getMapExtentFeatures(xmlFeatures) {
+    if (state.searchLocation.active?.extent) {
+      const extent = state.searchLocation.active.extent;
+      return [getBoundsExtentFeature({
+        minX: extent.minLng,
+        minY: extent.minLat,
+        maxX: extent.maxLng,
+        maxY: extent.maxLat,
+      }, `search-${state.searchLocation.active.id}`)];
+    }
     if (state.dxfFitReferenceId) {
       const reference = getDxfReference(state.dxfFitReferenceId);
       if (reference?.bounds) return [getBoundsExtentFeature(reference.bounds, `fit-${reference.id}`)];
@@ -15845,6 +16389,28 @@
     if (xmlFeatures.length) return xmlFeatures;
     const bounds = getVisibleDxfBounds();
     return bounds ? [getBoundsExtentFeature(bounds, "dxf-extent")] : [];
+  }
+
+  function drawSearchLocationMarker(transform) {
+    const location = state.searchLocation.active;
+    if (!location || !transform || transform.type !== "geo") return;
+    const point = projectFeaturePoint({ x: location.lng, y: location.lat, z: null }, transform);
+    if (!point || point.x < -30 || point.x > transform.width + 30 || point.y < -30 || point.y > transform.height + 30) return;
+
+    ctx.save();
+    ctx.translate(point.x, point.y);
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#0b1f3a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#1769c2";
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function getVisibleDxfBounds() {
@@ -17551,28 +18117,8 @@
     renderChecks();
     renderOverlays();
 
-    const params = new URLSearchParams({
-      f: "geojson",
-      where: "1=1",
-      outFields: "lga,abbrev_name,lga_code",
-      returnGeometry: "false",
-      geometry: `${extent.minLng},${extent.minLat},${extent.maxLng},${extent.maxLat}`,
-      geometryType: "esriGeometryEnvelope",
-      inSR: "4326",
-      spatialRel: "esriSpatialRelIntersects",
-      resultRecordCount: "10",
-    });
-
     try {
-      const response = await fetch(`${councilBoundaryServiceUrl}/query?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (data.error) throw new Error(data.error.message || "ArcGIS query failed");
-
-      const councils = uniqueValues((data.features || []).map((feature) => getCouncilName(feature.properties || "")).filter(Boolean));
-      const providers = uniqueValues(councils.map((council) => waterProviderByCouncil[normalizeCouncilKey(council)]).filter(Boolean));
+      const { councils, providers } = await queryAuthoritiesForExtent(extent, controller.signal);
       const unmatchedReceivers = receivers.filter((receiver) => {
         const councilMatch = councils.find((council) => isAuthorityMatch(receiver, council));
         const providerMatch = providers.find((provider) => isAuthorityMatch(receiver, provider));
@@ -17617,16 +18163,45 @@
     }
   }
 
+  async function queryAuthoritiesForExtent(extent, signal) {
+    const params = new URLSearchParams({
+      f: "geojson",
+      where: "1=1",
+      outFields: "lga,abbrev_name,lga_code",
+      returnGeometry: "false",
+      geometry: `${extent.minLng},${extent.minLat},${extent.maxLng},${extent.maxLat}`,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "4326",
+      spatialRel: "esriSpatialRelIntersects",
+      resultRecordCount: "10",
+    });
+    const response = await fetch(`${councilBoundaryServiceUrl}/query?${params.toString()}`, { signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message || "ArcGIS query failed");
+    const councils = uniqueValues((data.features || []).map((feature) => getCouncilName(feature.properties || "")).filter(Boolean));
+    const providers = uniqueValues(councils.map((council) => waterProviderByCouncil[normalizeCouncilKey(council)]).filter(Boolean));
+    return { councils, providers };
+  }
+
   function applySuggestedOverlaysForFile() {
     if (state.suggestedOverlaysApplied) return;
     state.suggestedOverlaysApplied = true;
 
     state.overlays.forEach((overlay) => {
-      if (!isRecommendedOverlay(overlay) || !shouldAutoEnableRecommendedOverlay(overlay) || overlay.userToggled || overlay.enabled) return;
+      if (!isRecommendedOverlayForFile(overlay) || !shouldAutoEnableRecommendedOverlay(overlay) || overlay.userToggled || overlay.enabled) return;
       overlay.enabled = true;
       overlay.status = "Ready";
       overlay.lastExtentKey = "";
     });
+  }
+
+  function isRecommendedOverlayForFile(overlay) {
+    if (overlay.mode !== "parcel" && overlay.serviceKind && !state.assetKinds.has(overlay.serviceKind)) return false;
+    return Boolean(
+      (overlay.provider && state.locationCheck.providers.some((item) => normalizeAuthorityName(item) === normalizeAuthorityName(overlay.provider)))
+      || (overlay.council && state.locationCheck.councils.some((item) => normalizeCouncilKey(item) === normalizeCouncilKey(overlay.council)))
+    );
   }
 
   function getFeatureLngLatExtent(features) {
@@ -20457,7 +21032,7 @@
 
     const width = els.canvas.clientWidth || els.canvas.width;
     const height = els.canvas.clientHeight || els.canvas.height;
-    const transform = getActiveMapTransform(features, width, height);
+    const transform = getActiveMapTransform(getCurrentMapExtentFeatures(), width, height);
     const hitCandidates = [];
 
     features.forEach((feature, index) => {
@@ -20499,12 +21074,12 @@
   }
 
   function findOverlayFeatureAtCanvasPoint(point) {
-    const features = state.filteredFeatures;
-    if (!features.length) return null;
+    const extentFeatures = getCurrentMapExtentFeatures();
+    if (!extentFeatures.length) return null;
 
     const width = els.canvas.clientWidth || els.canvas.width;
     const height = els.canvas.clientHeight || els.canvas.height;
-    const transform = getActiveMapTransform(features, width, height);
+    const transform = getActiveMapTransform(extentFeatures, width, height);
     if (!transform || transform.type !== "geo") return null;
 
     const candidates = [];
